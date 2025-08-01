@@ -1,0 +1,33 @@
+CompileFlags:
+  Add: 
+    - -isystem
+    - /usr/include/c++/11
+    - -isystem
+    - /usr/include/x86_64-linux-gnu/c++/11
+    - -isystem
+    - /usr/include/c++/11/backward
+    - -isystem
+    - /usr/lib/gcc/x86_64-linux-gnu/11/include
+    - -isystem
+    - /usr/local/include
+    - -isystem
+    - /usr/include/x86_64-linux-gnu
+    - -isystem
+    - /usr/include
+    - -std=gnu++17
+    - -isystem
+    - /root/.conan2/p/b/protof64c39ff68e07/p/include
+    - -isystem
+    - /root/.conan2/p/paho-1c47575921c09/p/include
+    - -isystem
+    - /root/.conan2/p/b/abseia430819b129cd/p/include
+    - -isystem
+    - /root/.conan2/p/spdlo1270358f38cfc/p/include/
+    - -I
+    - /mnt/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/include/
+    - -I
+    - /mnt/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/
+  CompilationDatabase: compile_commands.json
+
+Index:
+  Background: true 

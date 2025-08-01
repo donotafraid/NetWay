@@ -1,0 +1,8 @@
+{
+    "broker_address": "172.28.80.94",
+    "client_id": "client_MQTT",
+    "persistence_type": 1,
+    "persistence_context": "NONE",
+    "topicName": "datasheet",
+    "port": 1883
+}

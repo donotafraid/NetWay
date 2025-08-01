@@ -1,0 +1,26 @@
+[requires]
+# 高频开发依赖
+spdlog/1.15.0
+gtest/[>=1.12.1]
+nlohmann_json/[>=3.11.2]
+protobuf/5.27.0
+grpc/[>=1.72.0]
+libuv/[>=1.44.2]
+onetbb/[>=2021.7.0]
+xsimd/[>=8.1.0]
+paho-mqtt-cpp/1.4.0
+sqlite3/3.47.0
+backward-cpp/1.6
+boost/1.85.0
+
+# 基础工具链
+openssl/[>=3.1.2]
+zlib/[>=1.2.13]
+libevent/[>=2.1.12]
+
+# 科学计算库
+openblas/[>=0.3.21]
+
+[generators]
+CMakeDeps
+CMakeToolchain
