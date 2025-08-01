@@ -189,13 +189,9 @@ int Sqlite_DB_process_slice_info::ready_for_transmission_data(
                 std::string msg_string;
                 msg.SerializeToString(&msg_string);
                                        // Multi-threading enabled
-                rc = (*m_transmission_ptr)->interface_process_transmission_and_write_to_file(
+                (*m_transmission_ptr)->interface_process_transmission_and_write_to_file(
                     msg_string,
                     shared_db_ptr);
-                if (rc == -1)
-                {
-                    std::cerr << "DB_process_slice_info:failed to write to file!" << std::endl;
-                }
                 return 1;
             });
     }
@@ -270,6 +266,41 @@ std::vector<int> Sqlite_DB_store::get_failIndex_vector(std::shared_ptr<DB_Info> 
         int missing_index = sqlite3_column_int((connectionWrapped_ptr->return_stmt_ptr(DB_Type::GETINDEX)), 0);
         missing_index_vector.push_back(missing_index);
     }
+
+    if ( rc != SQLITE_DONE)
+    {
+        std::cerr<<"get_failIndex_vector : rc != SQLITE_DONE and error infromation : "<<sqlite3_errmsg(connectionWrapped_ptr->db_ptr)<<std::endl;
+        this->m_connection_pool_ptr->release_connectionWrapper_ptr(std::move(connectionWrapped_ptr));
+        return {};
+    }
+
+    std::string vector_string;
+    vector_string = nlohmann::json(missing_index_vector).dump();
+
+    rc = sqlite3_bind_text(
+    connectionWrapped_ptr->return_stmt_ptr(DB_Type::GETFAILINDEX),
+    1,
+    vector_string.c_str(),
+    vector_string.size(),
+    SQLITE_STATIC
+    );
+
+    rc = sqlite3_bind_blob(
+        connectionWrapped_ptr->return_stmt_ptr(DB_Type::GETFAILINDEX),
+        2,
+        db_info->header_info.file_id.data(),
+        db_info->header_info.file_id.size(),
+        SQLITE_STATIC
+    );
+
+    if (rc != SQLITE_OK)
+    {
+        std::cerr<<"get_failIndex_vector : rc != SQLITE_OK and error infromation : "<<sqlite3_errmsg(connectionWrapped_ptr->db_ptr)<<std::endl;
+        this->m_connection_pool_ptr->release_connectionWrapper_ptr(std::move(connectionWrapped_ptr));
+        return {};
+    }
+
+    rc = sqlite3_step(connectionWrapped_ptr->return_stmt_ptr(DB_Type::GETFAILINDEX));
 
     if ( rc != SQLITE_DONE)
     {

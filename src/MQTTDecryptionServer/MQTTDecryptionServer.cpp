@@ -40,7 +40,7 @@ int MqttServer::connectinstance()
 }
 int MqttServer::config_load()
 {
-    std::ifstream ifs("../config_folder/config_server.json");
+    std::ifstream ifs("../config_folder/server_config.json");
     if (!ifs.is_open())
     {
         std::cout<<"open config.json failed!"<<std::endl;
