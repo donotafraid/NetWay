@@ -450,7 +450,7 @@ void DownloadTasks::run()
                 m_isFinished = true;
             }
         }
-        // this->m_sqlite_DB_Manager->merge_download_file(tem_vector);
+        std::cout<<"the run() is overed!\n";
         this->m_sqlite_DB_Manager->delete_done_tasks_in_process_map();
         this->clear_run_status();
     }

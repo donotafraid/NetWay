@@ -169,6 +169,7 @@ int Sqlite_DB_process_slice_info::ready_for_transmission_data(
                 int rc = RAND_bytes(header.AES_KEY.data(), sizeof(header.AES_KEY));
                 if (rc != 1)
                 {
+                    std::cerr<<"Error: Failed to generate AES_KEY\n";
                     return -1;
                 }
 
@@ -176,6 +177,7 @@ int Sqlite_DB_process_slice_info::ready_for_transmission_data(
                 header.slice_index = (slice_index);
                 header.total_slices = (shared_db_ptr->header_info.total_slices);
                 header.plaintext_size = (slice.size());
+                std::copy(shared_db_ptr->header_info.file_id.begin(), shared_db_ptr->header_info.file_id.end(), header.file_id.begin());
     
                 // Encrypt slice by AES , need record AES , Ciphertext
                 std::vector<uint8_t> CipherText;
@@ -188,7 +190,8 @@ int Sqlite_DB_process_slice_info::ready_for_transmission_data(
                 ProtocolHeader_To_Proto(header, CipherText, msg);
                 std::string msg_string;
                 msg.SerializeToString(&msg_string);
-                                       // Multi-threading enabled
+
+                // Multi-threading enabled
                 (*m_transmission_ptr)->interface_process_transmission_and_write_to_file(
                     msg_string,
                     shared_db_ptr);
@@ -386,14 +389,18 @@ int Sqlite_DB_process_transmission_and_write_to_file::interface_process_transmis
     std::shared_ptr<DB_Info> db_info)
 {
         {
-            if(m_mqtt_client_ptr->SendSliceData(payload)==-1)
+            int ret = m_mqtt_client_ptr->SendSliceData(payload); 
+            if(ret == -1)
             {
                 std::cerr << "Send Slice Data Failed" << std::endl;
                 return static_cast<ssize_t>(-1);
             }
             else
             {
-                int rc = write_message_to_file(payload,db_info);
+                m_spdlogger->info("send_to_batch:file_name : {} , slice_index : {}",
+                (db_info->input_file_path), db_info->header_info.slice_index);
+
+                int rc = write_message_to_lockFreeQueue(payload,db_info);
                 if (rc != SQLITE_DONE)
                 {
                     std::cerr<<"operate_raw_DBfiles : write message to file failed!"<<std::endl;
@@ -405,7 +412,7 @@ int Sqlite_DB_process_transmission_and_write_to_file::interface_process_transmis
     return 0;
 }
 
-int Sqlite_DB_process_transmission_and_write_to_file::write_message_to_file(const std::string &proto_msg,std::shared_ptr<DB_Info> file_path_info)
+int Sqlite_DB_process_transmission_and_write_to_file::write_message_to_lockFreeQueue(const std::string &proto_msg,std::shared_ptr<DB_Info> file_path_info)
 {
     TestMsg msg;
     ProtocolHeader header;
@@ -425,7 +432,7 @@ int Sqlite_DB_process_transmission_and_write_to_file::write_message_to_file(cons
     int rc =DecryptSharedData(ciphertext_data,plaintext_data,header);  
     if (rc != true)
     {
-        std::cerr<<"write_message_to_file : Decrypt Shared Data Failed" << std::endl;
+        std::cerr<<"write_message_to_lockFreeQueue : Decrypt Shared Data Failed" << std::endl;
         return false;
     }
     
@@ -437,7 +444,12 @@ int Sqlite_DB_process_transmission_and_write_to_file::write_message_to_file(cons
     db_info_ptr.output_folder_path = new std::string (file_path_info->output_folder_path); 
     db_info_ptr.file_size =(file_path_info->file_size);
 
-    m_lockfree_queue.push(std::move(db_info_ptr));
+    bool status =m_lockfree_queue.push(std::move(db_info_ptr));
+    if(!status)
+    {
+        m_spdlogger->info("push_message_to_lockfreequeue_fail:file_name : {} , slice_index : {}",
+        *(db_info_ptr.input_file_path), db_info_ptr.header_info->slice_index);
+    }
 
     return SQLITE_DONE;
 
@@ -453,7 +465,7 @@ int Sqlite_DB_process_transmission_and_write_to_file::write_message_to_file(cons
     //         std::ofstream file(output_file_path,std::ios::binary | std::ios::app);
     //         if (!file.is_open())
     //         {
-    //             std::cout<<"write_message_to_file : open file failed!"<<std::endl;
+    //             std::cout<<"write_message_to_lockFreeQueue : open file failed!"<<std::endl;
     //             return -1;
     //         }
     //         else
@@ -467,64 +479,6 @@ int Sqlite_DB_process_transmission_and_write_to_file::write_message_to_file(cons
     // }
 }
 
-// int Sqlite_DB_process_transmission_and_write_to_file::write_dbData_to_file(const DB_Info &db_info)
-// {
-//     auto connection_wrapped_ptr = this->m_connection_pool_ptr->return_connectionWrapper_ptr(db_info.db_file_path);
-//     if (connection_wrapped_ptr == nullptr || connection_wrapped_ptr->return_stmt_ptr(DB_Type::CONTENT)== nullptr)
-//     {
-//         std::cerr << "get_DBfile_parameters : return_connectionWrapper_ptr is nullptr ! and connectino_wrapped_ptr.get() is "
-//         <<connection_wrapped_ptr.get() << std::endl;
-//         return false;
-//     }
-
-//     sqlite3_exec(connection_wrapped_ptr->db_ptr,"BEGIN TRANSACTION",nullptr,nullptr,nullptr);
-
-//     // blind parameters with slice_contents
-//     int rc = sqlite3_bind_blob(connection_wrapped_ptr->return_stmt_ptr(DB_Type::CONTENT), 1,
-//                                db_info.header_info.file_id.data(), 
-//                                db_info.header_info.file_id.size(), 
-//                                SQLITE_STATIC);
-//     rc = sqlite3_bind_int(connection_wrapped_ptr->return_stmt_ptr(DB_Type::CONTENT), 2,
-//                           db_info.header_info.slice_index);
-//     rc = sqlite3_bind_blob(connection_wrapped_ptr->return_stmt_ptr(DB_Type::CONTENT), 3,
-//                            &db_info.header_info.AES_KEY,
-//                            sizeof(db_info.header_info.AES_KEY),
-//                            SQLITE_TRANSIENT);
-//     rc = sqlite3_bind_blob(connection_wrapped_ptr->return_stmt_ptr(DB_Type::CONTENT), 4,
-//                            db_info.header_info.iv.data(),
-//                            sizeof(db_info.header_info.iv),
-//                            SQLITE_STATIC);
-
-//     // update slice_records 
-//     rc = sqlite3_step(connection_wrapped_ptr->return_stmt_ptr(DB_Type::CONTENT));
-//     if (rc != SQLITE_DONE || connection_wrapped_ptr->return_stmt_ptr(DB_Type::CONTENT) == nullptr)
-//     {
-//         std::cerr<< "Insert slice_contents failed and error :"<<sqlite3_errmsg(connection_wrapped_ptr->db_ptr)<<std::endl;
-//         sqlite3_exec(connection_wrapped_ptr->db_ptr,"ROLLBACK",nullptr,nullptr,nullptr);
-//         this->m_connection_pool_ptr->release_connectionWrapper_ptr(std::move(connection_wrapped_ptr));
-//         return false;
-//     }
-
-//     sqlite3_reset(connection_wrapped_ptr->return_stmt_ptr(DB_Type::CONTENT));
-
-//     rc = UpdateReceivedSlices(db_info,connection_wrapped_ptr.get());
-//     if (rc != SQLITE_DONE)
-//     {
-//         std::cerr<<"UpdateReceivedSlices failed and error is : "<<sqlite3_errmsg(connection_wrapped_ptr->db_ptr)<<std::endl;
-//         sqlite3_exec(connection_wrapped_ptr->db_ptr,"ROLLBACK",nullptr,nullptr,nullptr);
-//         this->m_connection_pool_ptr->release_connectionWrapper_ptr(std::move(connection_wrapped_ptr));
-//         return false;
-//     }
-
-//     {
-//         this->file_data_map[db_info.input_file_path]->fetch_add(db_info.header_info.plaintext_len, std::memory_order_relaxed);
-//         this->m_worked_tasks.fetch_add(1, std::memory_order_relaxed);
-//         // connection_wrapped_ptr->is_done = this->file_data_map[db_info.input_file_path]->load(std::memory_order_relaxed) == db_info.file_size;
-//     }
-//     sqlite3_exec(connection_wrapped_ptr->db_ptr,"COMMIT",nullptr,nullptr,nullptr);
-//     this->m_connection_pool_ptr->release_connectionWrapper_ptr(std::move(connection_wrapped_ptr));
-//     return SQLITE_DONE;
-// }
 
 int Sqlite_DB_process_transmission_and_write_to_file::UpdateReceivedSlices(const DB_Info &db_info, ConnectionWrapper* ConnectionWrapped_ptr)
 {
@@ -634,9 +588,6 @@ void Sqlite_DB_process_transmission_and_write_to_file::load_work_from_lockFreeQu
     while(m_lockfree_queue.pop(db_info) && m_DB_Info_vector.size() <1000)
     {
         // add tasks from queue to vector( empty() return true if queue is empty) )
-        m_spdlogger->info("file_name : {} , slice_index : {}",
-        *(db_info.input_file_path), db_info.header_info->slice_index);
-
         m_DB_Info_vector.push_back(db_info);
     }
     
@@ -644,6 +595,7 @@ void Sqlite_DB_process_transmission_and_write_to_file::load_work_from_lockFreeQu
     std::swap(m_DB_Info_vector,m_swap_DB_Info_vector);
     if(m_swap_DB_Info_vector.empty())
     {
+        std::cerr<<"swap_vector is empty\n";
         return;
     }
 
@@ -695,8 +647,6 @@ int Sqlite_DB_process_transmission_and_write_to_file::batch_deal_with_db_info(co
             return false;
         }
     
-        sqlite3_reset(connection_wrapped_ptr->return_stmt_ptr(DB_Type::CONTENT));
-
         {
             //update file_progress_map
             this->file_data_map[db_info.input_file_path->data()]->fetch_add(db_info.header_info->plaintext_size, std::memory_order_relaxed);

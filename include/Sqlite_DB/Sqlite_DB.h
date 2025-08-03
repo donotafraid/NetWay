@@ -70,7 +70,7 @@ public:
     const std::string &msg,
     std::shared_ptr<DB_Info> db_info);
 
-    int write_message_to_file(const std::string& proto_msg,std::shared_ptr<DB_Info> db_info);
+    int write_message_to_lockFreeQueue(const std::string& proto_msg,std::shared_ptr<DB_Info> db_info);
 
     int write_dbData_to_file(const DB_Info& payload);
 

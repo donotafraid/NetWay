@@ -158,5 +158,9 @@ int MqttClient::SendSliceData(const std::string& proto_msg)
     token->set_action_callback(listener);
     }
 
+    if(result_future.get()==(-1))
+    {
+        std::cerr<<"Error : Failed to publish message in SendSliceData !\n";
+    }
     return result_future.get();
 }

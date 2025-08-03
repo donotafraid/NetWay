@@ -44,14 +44,14 @@ constexpr int magic = 0xDEADBEEF;
 namespace fs = std::filesystem;
 
 struct ProtocolHeader {
-    std::array<uint8_t, 16> file_id {} ;  // 文件唯一ID（UUID，16字节）// 文件唯一ID（UUID，16字节）
+    std::array<uint8_t, 16> file_id {} ;  // 文件唯一ID（UUID，16字节
     uint32_t magic;         // 魔数（如 0xDEADBEEF，4字节）
     uint32_t slice_index = UINT32_MAX;   // 分片索引（从0开始，4字节）
     uint32_t total_slices;  // 总分片数（4字节）
     uint32_t plaintext_size=0;  // 明文数据长度（4字节）
-    uint32_t ciphertext_len=0;      // 加密后数据长度（4字节）
     std::array<uint8_t,32> AES_KEY;    // AES_KEY（32字节）
     std::array<uint8_t, 16> iv;  // 16 字节的二进制数组
+    uint32_t ciphertext_len=0;      // 加密后数据长度（4字节）
 };
 
 struct ArrayHash {
