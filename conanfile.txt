@@ -12,6 +12,7 @@ paho-mqtt-cpp/1.4.0
 sqlite3/3.47.0
 backward-cpp/1.6
 boost/1.85.0
+concurrentqueue/1.0.3
 
 # 基础工具链
 openssl/[>=3.1.2]

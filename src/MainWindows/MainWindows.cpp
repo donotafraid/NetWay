@@ -1,13 +1,20 @@
 #include "MainWindows/MainWindows.h"
 #include "Sqlite_DB/Sqlite_DB.h"
 
-MainWindows::MainWindows(QWidget *parent)
-    : QMainWindow(parent)
+MainWindows::MainWindows(QWidget *parent,DownloadTasks* downloadTasks)
+    :QMainWindow(parent), m_downloadTasks(downloadTasks)
 {
     initUI();
     setWindowTitle("文件传输工具");
     setAcceptDrops(true);
     resize(600, 400);   
+    
+    #ifdef DEBUG
+    {
+        emit m_loadDownTaskButton->clicked(); 
+        emit m_DownloadButton->clicked();
+    }
+    #endif
 
 }
 
@@ -418,6 +425,7 @@ void DownloadTasks::run()
     
     try
     {
+        int cycle_count = 0;
         for(auto& item : m_fileInfoMap)
         {
             tem_vector.push_back(item.second);
@@ -445,7 +453,7 @@ void DownloadTasks::run()
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
             while(return_isPause())
             {
-                std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+                std::this_thread::sleep_for(std::chrono::milliseconds(3000));
                 std::cout<<"the thread is paused !"<<std::endl;
                 m_isFinished = true;
             }

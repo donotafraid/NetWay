@@ -34,12 +34,15 @@
 #include <mqtt/async_client.h>
 #include <nlohmann/json.hpp>
 #include "spdlog/spdlog.h"
+#include <cassert>
+#include "concurrentqueue.h"
 
 const uint32_t MAGIC = 0xDEADBEEF;
 constexpr size_t SLICE_SIZE = static_cast<size_t>(1024 *10*1);
 constexpr size_t MAXIMUM_SLICE_SIZE = static_cast<size_t>(1024 * 1024 * 1.5);
 constexpr size_t THREAD_NUM = 4; 
 constexpr int magic = 0xDEADBEEF;
+#define DEBUG
 
 namespace fs = std::filesystem;
 

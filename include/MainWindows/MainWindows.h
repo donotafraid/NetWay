@@ -129,7 +129,7 @@ class MainWindows : public QMainWindow
     Q_OBJECT
 
     public:
-    MainWindows(QWidget *parent = 0);
+    MainWindows(QWidget *parent = nullptr,DownloadTasks* downloadTasks=nullptr);
     ~MainWindows();
     void process_file(const QString& file_path);
     void check_DownLoadFolder_initalize();

@@ -160,7 +160,7 @@ int Sqlite_DB_process_slice_info::ready_for_transmission_data(
             [m_transmission_ptr = &this->m_transmission_ptr,
              slice = std::move(slice),
              shared_db_ptr = db_info,
-             slice_index = std::move(*slice_index)]() mutable
+             slice_index = (*slice_index)]() mutable
             {
                 // construct ProtocolHeader
                 ProtocolHeader header;
@@ -381,7 +381,8 @@ Sqlite_DB_process_transmission_and_write_to_file::Sqlite_DB_process_transmission
     m_connection_pool_ptr(connection_pool_ptr),
     m_spdlogger(logger)
     {
-
+        m_DB_Info_vector.reserve(1000000);
+        m_swap_DB_Info_vector.reserve(1000000);
     }
 
 int Sqlite_DB_process_transmission_and_write_to_file::interface_process_transmission_and_write_to_file(
@@ -397,8 +398,7 @@ int Sqlite_DB_process_transmission_and_write_to_file::interface_process_transmis
             }
             else
             {
-                m_spdlogger->info("send_to_batch:file_name : {} , slice_index : {}",
-                (db_info->input_file_path), db_info->header_info.slice_index);
+           
 
                 int rc = write_message_to_lockFreeQueue(payload,db_info);
                 if (rc != SQLITE_DONE)
@@ -444,21 +444,23 @@ int Sqlite_DB_process_transmission_and_write_to_file::write_message_to_lockFreeQ
     db_info_ptr.output_folder_path = new std::string (file_path_info->output_folder_path); 
     db_info_ptr.file_size =(file_path_info->file_size);
 
-    bool status =m_lockfree_queue.push(std::move(db_info_ptr));
+    rc = verify_ptr_valid(db_info_ptr); 
+    if(rc !=1)
+    {
+        std::cerr<<"db_info_ptr is not valid\n";
+        return -1;
+    }
+
+    bool status =m_lockfree_queue.enqueue(std::move(db_info_ptr));
     if(!status)
     {
         m_spdlogger->info("push_message_to_lockfreequeue_fail:file_name : {} , slice_index : {}",
         *(db_info_ptr.input_file_path), db_info_ptr.header_info->slice_index);
     }
-
+     m_spdlogger->info("send_to_lockfreequeue :file_name : {}",
+    *(db_info_ptr.input_file_path));
     return SQLITE_DONE;
 
-    // {
-    //     rc = this->write_dbData_to_file(db_info);
-    //     if (rc != SQLITE_DONE)
-    //     {
-    //         std::cout<<"insert data into DB file failed !"<<std::endl;
-    //     }   
     
     //     {
     //         std::string output_file_path = db_info.output_folder_path + "/tmp_"+ std::to_string(db_info.header_info.slice_index) + ".txt";
@@ -473,12 +475,17 @@ int Sqlite_DB_process_transmission_and_write_to_file::write_message_to_lockFreeQ
     //             file.write((char*)db_info.slice_data_info.data(),db_info.slice_data_info.size());
     //             file.close();
               
-    //         }
-    //     }
-    //     return rc;
-    // }
 }
 
+int Sqlite_DB_process_transmission_and_write_to_file::verify_ptr_valid(const DB_Info_raw_ptr db_info_raw_ptr)
+{
+    return db_info_raw_ptr.db_file_path!=nullptr&&
+    db_info_raw_ptr.file_size!=0 &&
+    db_info_raw_ptr.header_info!=nullptr&&
+    db_info_raw_ptr.input_file_path!=nullptr&&
+    db_info_raw_ptr.output_folder_path!=nullptr&&
+    db_info_raw_ptr.slice_data_info!=nullptr;
+}
 
 int Sqlite_DB_process_transmission_and_write_to_file::UpdateReceivedSlices(const DB_Info &db_info, ConnectionWrapper* ConnectionWrapped_ptr)
 {
@@ -549,7 +556,7 @@ void Sqlite_DB_process_transmission_and_write_to_file::delete_done_tasks_in_proc
     this->m_worked_tasks = 0;   
     DB_Info_raw_ptr db_info;
     //clear lockfree_queue , m_DB_Info_vector , m_swap_DB_Info_vector
-    while(m_lockfree_queue.pop(db_info))
+    while(m_lockfree_queue.try_dequeue(db_info))
     {
         db_info.clear();
     }
@@ -585,7 +592,7 @@ void Sqlite_DB_process_transmission_and_write_to_file::delete_done_tasks_periodi
 void Sqlite_DB_process_transmission_and_write_to_file::load_work_from_lockFreeQueue()
 {
     DB_Info_raw_ptr db_info;
-    while(m_lockfree_queue.pop(db_info) && m_DB_Info_vector.size() <1000)
+    while(m_DB_Info_vector.size() <1000&&m_lockfree_queue.try_dequeue(db_info))
     {
         // add tasks from queue to vector( empty() return true if queue is empty) )
         m_DB_Info_vector.push_back(db_info);
@@ -647,11 +654,14 @@ int Sqlite_DB_process_transmission_and_write_to_file::batch_deal_with_db_info(co
             return false;
         }
     
+        //reset last bind data,because in this loop , we have not release the connectionWrapped_ptr
+        sqlite3_reset(connection_wrapped_ptr->return_stmt_ptr(DB_Type::CONTENT));
         {
             //update file_progress_map
             this->file_data_map[db_info.input_file_path->data()]->fetch_add(db_info.header_info->plaintext_size, std::memory_order_relaxed);
             //update tasks_worked_count  
             this->m_worked_tasks.fetch_add(1, std::memory_order_relaxed);
+
             // connection_wrapped_ptr->is_done = this->file_data_map[db_info.input_file_path->data()]->load(std::memory_order_relaxed) == db_info.file_size;
         }
     }

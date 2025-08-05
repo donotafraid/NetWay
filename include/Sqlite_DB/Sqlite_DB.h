@@ -91,6 +91,8 @@ public:
     void load_work_from_lockFreeQueue();
 
     int batch_deal_with_db_info(const std::vector<DB_Info_raw_ptr>& db_info_vector);
+
+    int verify_ptr_valid(const DB_Info_raw_ptr db_info_raw_ptr);
 private:
     Thread_pool* m_thread_pool_ptr ;
     MqttClient* m_mqtt_client_ptr;
@@ -98,7 +100,7 @@ private:
     std::unordered_map<std::string,std::shared_ptr<std::atomic<int>>> file_data_map = {};
     std::shared_mutex m_rwMutex;
     std::atomic<int> m_worked_tasks = 0;
-    boost::lockfree::queue<DB_Info_raw_ptr> m_lockfree_queue{1000};
+    moodycamel::ConcurrentQueue<DB_Info_raw_ptr> m_lockfree_queue{1000};
     std::vector<DB_Info_raw_ptr> m_DB_Info_vector;
     std::vector<DB_Info_raw_ptr> m_swap_DB_Info_vector {};
     std::shared_ptr<spdlog::logger> m_spdlogger;
