@@ -42,7 +42,8 @@ constexpr size_t SLICE_SIZE = static_cast<size_t>(1024 *10*1);
 constexpr size_t MAXIMUM_SLICE_SIZE = static_cast<size_t>(1024 * 1024 * 1.5);
 constexpr size_t THREAD_NUM = 4; 
 constexpr int magic = 0xDEADBEEF;
-#define DEBUG
+// #define DEBUG_TEST
+// #define VALGRIND_TEST
 
 namespace fs = std::filesystem;
 
@@ -85,7 +86,7 @@ struct DB_Info
 {
     std::string db_file_path;
     std::string input_file_path;
-    std::string output_folder_path;
+    std::string output_file_name;
     int file_size = 0;
     ProtocolHeader header_info;
     std::vector<uint8_t> slice_data_info;
@@ -95,7 +96,7 @@ struct DB_Info_raw_ptr
 {
     std::string* db_file_path = nullptr;
     std::string* input_file_path = nullptr;
-    std::string* output_folder_path = nullptr;
+    std::string* output_file_path = nullptr;
     ProtocolHeader* header_info = nullptr;
     std::vector<uint8_t>* slice_data_info = nullptr;
     int file_size = 0;
@@ -104,7 +105,7 @@ struct DB_Info_raw_ptr
     void clear() {
         delete db_file_path;
         delete input_file_path;
-        delete output_folder_path;
+        delete output_file_path;
         delete header_info;
         delete slice_data_info;
     }
@@ -114,10 +115,10 @@ struct MainWindows_Intermediate_Struct
 {
     std::string stored_DB_folder_path;
     std::string source_file_path;
-    std::string output_folder_path;
-    std::string db_file_path;
     std::string output_file_path;
+    std::string db_file_path;
     int file_size = 0;
     std::map<std::string,std::pair<int,bool>> terminate_symbol_to_file_map; 
 };
+
 #endif

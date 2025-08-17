@@ -1,24 +1,47 @@
 #指定所需的最低 CMake 版本
 cmake_minimum_required(VERSION 3.15)
 
-set(CMAKE_C_COMPILER gcc)
-set(CMAKE_CXX_COMPILER g++)
+include("${CMAKE_CURRENT_SOURCE_DIR}/toolchain.cmake")
 
 #设置项目名和支持语言,该部分应该在上述设置之后。不然会造成 不断更新设置的死循环
 project(CrossPlatformApp LANGUAGES CXX C)
 
 # 包含 Conan 工具链文件
 #${CMAKE_BINARY_DIR} 是 CMake 的内置变量，它会自动指向你执行 构建makefile 命令时所在的目录
+list(APPEND CMAKE_PREFIX_PATH "${CONAN_DIR}")
 set(CONAN_DIR "${CMAKE_CURRENT_SOURCE_DIR}/conan_debug_build")
 include(${CONAN_DIR}/conan_toolchain.cmake)
-list(APPEND CMAKE_PREFIX_PATH "${CONAN_DIR}")
+message(STATUS "Conan include paths: ${CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES}")
+message(STATUS "CXX Compiler: ${CMAKE_CXX_COMPILER}")
 
-option(USE_ASAN "Enable AddressSanitizer" OFF)
 if(USE_ASAN)
-    message(STATUS "AddressSanitizer enabled")
-    add_compile_options(-fsanitize=address -g -O1)
-    add_link_options(-fsanitize=address)
+    message(STATUS "AddressSanitizer enabled (Clang)")
+    add_compile_options(
+        -fsanitize=address
+        -fsanitize=undefined
+        -fno-omit-frame-pointer
+        -fno-optimize-sibling-calls
+    )
+    add_link_options(-fsanitize=address -fsanitize=undefined)
 endif()
+
+# 添加 Clang 特有编译选项
+add_compile_options(
+    -fstandalone-debug  # 更好的调试信息
+    -Wthread-safety     # 线程安全分析
+    -Wno-unused-command-line-argument
+)
+
+# 修改构建类型配置
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    add_compile_options(
+        -glldb            # 使用 LLDB 兼容格式
+        -fno-limit-debug-info
+    )
+endif()
+
+# 确保生成 compile_commands.json
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 #设置 Qt5 以及其他模块 的路径
 find_package(Qt5 COMPONENTS Core Widgets Gui REQUIRED)
@@ -39,7 +62,7 @@ set(PROTO_SRCS "${PROTO_DIR}/proto/message_struct.pb.cc" )
 set(PROTO_HDRS "${PROTO_DIR}/proto/message_struct.pb.h")
 # 将生成的 Protocol Buffers 文件编译为静态库
 add_library(proto_files STATIC ${PROTO_SRCS} ${PROTO_HDRS})
-target_include_directories(proto_files PUBLIC ${PROTO_DIR})
+target_include_directories(proto_files SYSTEM PUBLIC ${PROTO_DIR} ${CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES}) 
 target_link_libraries(proto_files PUBLIC protobuf::libprotobuf)
 
 #设置第三方依赖项 
@@ -53,7 +76,7 @@ target_link_libraries(third_party_deps INTERFACE
     spdlog::spdlog
     SQLite::SQLite3 
     Backward::Backward
-    boost::boost
+    Boost::headers
     protobuf::libprotobuf
     Qt5::Core
     Qt5::Widgets
@@ -98,25 +121,12 @@ add_subdirectory(
 )
 
 #设置头文件目录
-set(CurrentFolder "/mnt/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main")
+set(CurrentFolder "${CMAKE_CURRENT_SOURCE_DIR}")
+set(SRC_DIR "${CurrentFolder}/src")
 
 include_directories(
     "${CurrentFolder}/include"
 )
-
-# 添加系统包含目录
-include_directories(SYSTEM
-    "/usr/include"
-    "/usr/include/c++/11"
-    "/usr/include/x86_64-linux-gnu/c++/11"
-    "/usr/include/c++/11/backward"
-    "/usr/lib/gcc/x86_64-linux-gnu/11/include"
-    "/usr/local/include"
-    "/usr/include/x86_64-linux-gnu"
-)
-
-#设置源文件目录
-set(SRC_DIR "${CurrentFolder}/src")
 
 #获取 源入口 文件
 file(GLOB SRC_FILES  "${SRC_DIR}/main.cpp")

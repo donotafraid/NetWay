@@ -1,13 +1,9 @@
 CompileFlags:
   Add: 
     - -isystem
-    - /usr/include/c++/11
+    - /usr/lib/llvm-17/include
     - -isystem
-    - /usr/include/x86_64-linux-gnu/c++/11
-    - -isystem
-    - /usr/include/c++/11/backward
-    - -isystem
-    - /usr/lib/gcc/x86_64-linux-gnu/11/include
+    - /usr/lib/llvm-17/include/c++/v1
     - -isystem
     - /usr/local/include
     - -isystem
@@ -16,13 +12,9 @@ CompileFlags:
     - /usr/include
     - -std=gnu++17
     - -isystem
-    - /root/.conan2/p/b/protof64c39ff68e07/p/include
-    - -isystem
-    - /root/.conan2/p/paho-1c47575921c09/p/include
-    - -isystem
-    - /root/.conan2/p/b/abseia430819b129cd/p/include
-    - -isystem
-    - /root/.conan2/p/spdlo1270358f38cfc/p/include/
+    - /root/.conan2/p/b/spdlo3b2989ab5aced/p/include
+    - -I
+    - /root/.conan2/p/b/backwed58a3d05b5f6/p/include
     - -I
     - /mnt/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/include/
     - -I

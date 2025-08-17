@@ -101,7 +101,7 @@ private:
     std::shared_mutex m_rwMutex;
     std::atomic<int> m_worked_tasks = 0;
     moodycamel::ConcurrentQueue<DB_Info_raw_ptr> m_lockfree_queue{1000};
-    std::vector<DB_Info_raw_ptr> m_DB_Info_vector;
+    std::vector<DB_Info_raw_ptr> m_DB_Info_vector{};
     std::vector<DB_Info_raw_ptr> m_swap_DB_Info_vector {};
     std::shared_ptr<spdlog::logger> m_spdlogger;
 };

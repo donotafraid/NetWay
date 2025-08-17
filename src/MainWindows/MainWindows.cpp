@@ -9,7 +9,7 @@ MainWindows::MainWindows(QWidget *parent,DownloadTasks* downloadTasks)
     setAcceptDrops(true);
     resize(600, 400);   
     
-    #ifdef DEBUG
+    #ifdef DEBUG_TEST
     {
         emit m_loadDownTaskButton->clicked(); 
         emit m_DownloadButton->clicked();
@@ -71,11 +71,10 @@ void MainWindows::addFileToList(const QString & file_path)
     QString file_folder_name = file.fileName();
 
     MainWindows_Intermediate_Struct intermediate_struct;
-    intermediate_struct.stored_DB_folder_path =  (folder_path + "/" + file_folder_name).toStdString();
     intermediate_struct.source_file_path = file_path.toStdString();
-    intermediate_struct.db_file_path = folder_path.toStdString() + '/' + get_current_date_string() + ".db"; 
-    intermediate_struct.output_folder_path = intermediate_struct.stored_DB_folder_path;
-    intermediate_struct.output_file_path = intermediate_struct.output_folder_path + '/' + file.fileName().toStdString();
+    intermediate_struct.output_file_path = file.fileName().toStdString();
+    intermediate_struct.stored_DB_folder_path =  folder_path.toStdString() ;
+    intermediate_struct.db_file_path = folder_path.toStdString() + "/" + get_current_date_string() + ".db";
     intermediate_struct.file_size = file.size();
 
     FileProgressItem *progressItem = new FileProgressItem(this->m_fileListWidget,std::move(intermediate_struct));
@@ -111,6 +110,7 @@ void MainWindows::initUI()
     m_DownLoadedListButton = new QPushButton("download list button", this);
     m_pauseButton = new QPushButton("pause button", this);
     m_loadDownTaskButton = new QPushButton("load download task button", this);
+    m_mergeSQLiteDateButton = new QPushButton("merge SQLite date button", this);
 
     // 显示控件到布局
     QVBoxLayout *main_layout = new QVBoxLayout(centralWidget());
@@ -124,6 +124,7 @@ void MainWindows::initUI()
     button_layout_2->addWidget(m_DownLoadedListButton);
     button_layout_2->addWidget(m_pauseButton);
     button_layout_2->addWidget(m_loadDownTaskButton);
+    button_layout_2->addWidget(m_mergeSQLiteDateButton);
     main_layout->addLayout(button_layout);
     main_layout->addLayout(button_layout_2);
 
@@ -134,7 +135,23 @@ void MainWindows::initUI()
     connect (m_DownLoadedListButton, SIGNAL(clicked()),this, SLOT(on_information_downloadList_clicked()));
     connect (m_pauseButton, SIGNAL(clicked()),this, SLOT(on_pauseButton_clicked()));
     connect (m_loadDownTaskButton, SIGNAL(clicked()),this, SLOT(on_loadTaskButton_clicked()));
+    connect (m_mergeSQLiteDateButton, SIGNAL(clicked()),this, SLOT(on_mergeSQLiteDateButton_clicked()));
 }
+
+void MainWindows::on_mergeSQLiteDateButton_clicked()
+{
+    //build QDiaglog 
+    QDialog *dialog = new QDialog(this);
+    // build layout
+    QVBoxLayout *layout = new QVBoxLayout(dialog);
+    // build QListWidget
+    QListWidget *listWidget = new QListWidget(dialog);
+    layout->addWidget(listWidget);
+
+    this->m_merger.initialize_db_ptr(); 
+    this->m_merger.clear_struct_setting();
+}
+
 
 void MainWindows::on_DownloadButton_clicked()
 {
@@ -429,7 +446,7 @@ void DownloadTasks::run()
         for(auto& item : m_fileInfoMap)
         {
             tem_vector.push_back(item.second);
-            schduled_tasks +=(item.second.file_size + SLICE_SIZE -1 )/SLICE_SIZE - return_scheduled_tasks(item.second.output_folder_path); 
+            schduled_tasks +=(item.second.file_size + SLICE_SIZE -1 )/SLICE_SIZE - return_scheduled_tasks(item.second.stored_DB_folder_path); 
         }
 
         m_sqlite_DB_Manager->set_scheduled_tasks_to_ThreadPOol(schduled_tasks);
@@ -470,7 +487,6 @@ void DownloadTasks::run()
         backward::Printer p;
         p.print(st);
     }
-
 }
 
 bool DownloadTasks::addItem_cache(FileProgressItem* file_list_widget)
@@ -572,3 +588,110 @@ bool DownloadTasks::internalProgressUpdate()
     return false;
 }
 
+QDir mergeSQLData::loop_dbFile_in_path()
+{
+  QDir dir("./DownloadFileManagement"); 
+
+  if(!dir.exists())
+  {
+    std::cerr<<"mergeSQLData::loop_dbFile_in_path failed and error is : the folder is not exist !"<<std::endl;
+    return dir;
+  }
+
+  dir.setFilter(QDir::Files | QDir::NoDotAndDotDot);
+  dir.setNameFilters(QStringList("*.db"));
+
+  return dir;
+}
+
+void mergeSQLData::initialize_db_ptr()
+{
+    QDir dir = loop_dbFile_in_path();
+    QFileInfoList list = dir.entryInfoList();
+    for(const QFileInfo &fileInfo : list)
+    {
+        QString file_path = fileInfo.absoluteFilePath();
+        int rc = sqlite3_open_v2(file_path.toStdString().c_str(),
+        &(this->m_db_ptr),
+        SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE|SQLITE_OPEN_NOMUTEX,
+        nullptr);
+        if(rc !=SQLITE_OK)
+        {
+            std::cerr<<"mergeSQLData::open db_file failed and error is : "<<sqlite3_errmsg(this->m_db_ptr)<<std::endl;
+            sqlite3_close(this->m_db_ptr);
+            return;
+        }
+        
+        rc = sqlite3_prepare_v2(this->m_db_ptr,sql_select_from_record,-1,&this->m_stmt_select_from_record,nullptr);
+        if(rc != SQLITE_OK)
+        {
+            std::cerr<<"mergeSQLData::stmt_select_from_record fail and error is : "<<sqlite3_errmsg(this->m_db_ptr)<<std::endl;
+            sqlite3_close(this->m_db_ptr);
+            return;
+        }
+
+        rc = sqlite3_prepare_v2(this->m_db_ptr,sql_select_from_slice_content,-1,&this->m_stmt_select_from_slice_content,nullptr);
+        if (rc != SQLITE_OK)
+        {
+            std::cerr<<"mergeSQLData::stmt_select_from_slice_content fail and error is : "<<sqlite3_errmsg(this->m_db_ptr)<<std::endl;
+            sqlite3_close(this->m_db_ptr);
+            return;
+        }
+
+        this->merge_file();
+    }
+}
+
+void mergeSQLData::merge_file()
+{ 
+    int rc ;
+    // select file_id , input_file_path from record
+    while ( (rc = (sqlite3_step(m_stmt_select_from_record) == SQLITE_ROW)) ) {
+        int blob_file_id_size = sqlite3_column_bytes(m_stmt_select_from_record,0);
+        const void*  blob_file_id = sqlite3_column_blob(m_stmt_select_from_record,0);
+        const unsigned char* file_name = sqlite3_column_text(m_stmt_select_from_record,1);
+        std::string file_name_string = reinterpret_cast<const char*>(file_name);
+
+        sqlite3_reset(m_stmt_select_from_slice_content);
+
+        // bind file_id with stmt_cotent 
+        rc = sqlite3_bind_blob(m_stmt_select_from_slice_content,1,reinterpret_cast<const char*>(blob_file_id),blob_file_id_size,SQLITE_STATIC);
+        if(rc != SQLITE_OK)
+        {
+            std::cerr<<"mergerSQLData : sqlite3_bind_blob error : "<<sqlite3_errmsg(m_db_ptr)<<std::endl;
+            return;
+        }
+
+        // select slice_index , slice_content from slice_content where file_id = ?
+        while((sqlite3_step(m_stmt_select_from_slice_content))==SQLITE_ROW)
+        {
+            int slice_index = sqlite3_column_int(m_stmt_select_from_slice_content,1);
+            const void* slice_content = sqlite3_column_blob(m_stmt_select_from_slice_content,2);
+            int slice_content_size = sqlite3_column_bytes(m_stmt_select_from_slice_content,2);
+
+           //write message to file 
+           std::ofstream file_out("./"+file_name_string,std::ios::app | std::ios::binary);
+           if(!file_out)
+           {
+             std::cerr<<"mergerSQLData : open file error : "<<file_name_string<<std::endl;
+             return;
+           }
+
+           file_out.write(reinterpret_cast<const char*>(slice_content),slice_content_size);
+        }
+    }
+}
+
+void mergeSQLData::clear_struct_setting()
+{
+    if (m_db_ptr != nullptr||
+    m_stmt_select_from_record != nullptr||
+    m_stmt_select_from_slice_content != nullptr
+    )
+    {
+        sqlite3_finalize(m_stmt_select_from_record);
+        sqlite3_finalize(m_stmt_select_from_slice_content);
+        sqlite3_close(m_db_ptr);
+        std::cout<<"mergeSQLData::clear_struct_setting()"<<std::endl;
+    }
+}

@@ -1,17 +1,21 @@
 {
   "configurations": [
     {
-      "name": "WSL",
+      "name": "Clang",
       "includePath": [
         "${workspaceFolder}/include/**",
+        "${workspaceFolder}/build/**",  
         "/usr/include/**",
-        "/usr/local/include/**"
+        "/usr/lib/llvm-17/include/**"  
       ],
-      "defines": [],
-      "compilerPath": "/usr/bin/gcc",
-      "cStandard": "gnu17",
-      "cppStandard": "gnu++14",
-      "intelliSenseMode": "linux-gcc-x64"
+      "defines": [
+        "__clang__=1"
+      ],
+      "compilerPath": "/usr/bin/clang++",
+      "cStandard": "c17",
+      "cppStandard": "c++17",           
+      "intelliSenseMode": "linux-clang-x64",
+      "compileCommands": "${workspaceFolder}/build/compile_commands.json"
     }
   ],
   "version": 4

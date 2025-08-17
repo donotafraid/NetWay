@@ -11,7 +11,7 @@
 #include <type_traits>
 #include <utility>
 
-#include <google/protobuf/runtime_version.h>
+#include "google/protobuf/runtime_version.h"
 #if PROTOBUF_VERSION != 5027000
 #error "Protobuf C++ gencode is built with an incompatible version of"
 #error "Protobuf C++ headers/runtime. See"
@@ -357,56 +357,6 @@ class TestMsg final : public ::google::protobuf::Message
 
 // TestMsg
 
-// bytes file_id = 1;
-inline void TestMsg::clear_file_id() {
-  ::google::protobuf::internal::TSanWrite(&_impl_);
-  _impl_.file_id_.ClearToEmpty();
-}
-inline const std::string& TestMsg::file_id() const
-    ABSL_ATTRIBUTE_LIFETIME_BOUND {
-  // @@protoc_insertion_point(field_get:TestMsg.file_id)
-  return _internal_file_id();
-}
-template <typename Arg_, typename... Args_>
-inline PROTOBUF_ALWAYS_INLINE void TestMsg::set_file_id(Arg_&& arg,
-                                                     Args_... args) {
-  ::google::protobuf::internal::TSanWrite(&_impl_);
-  _impl_.file_id_.SetBytes(static_cast<Arg_&&>(arg), args..., GetArena());
-  // @@protoc_insertion_point(field_set:TestMsg.file_id)
-}
-inline std::string* TestMsg::mutable_file_id() ABSL_ATTRIBUTE_LIFETIME_BOUND {
-  std::string* _s = _internal_mutable_file_id();
-  // @@protoc_insertion_point(field_mutable:TestMsg.file_id)
-  return _s;
-}
-inline const std::string& TestMsg::_internal_file_id() const {
-  ::google::protobuf::internal::TSanRead(&_impl_);
-  return _impl_.file_id_.Get();
-}
-inline void TestMsg::_internal_set_file_id(const std::string& value) {
-  ::google::protobuf::internal::TSanWrite(&_impl_);
-  _impl_.file_id_.Set(value, GetArena());
-}
-inline std::string* TestMsg::_internal_mutable_file_id() {
-  ::google::protobuf::internal::TSanWrite(&_impl_);
-  return _impl_.file_id_.Mutable( GetArena());
-}
-inline std::string* TestMsg::release_file_id() {
-  ::google::protobuf::internal::TSanWrite(&_impl_);
-  // @@protoc_insertion_point(field_release:TestMsg.file_id)
-  return _impl_.file_id_.Release();
-}
-inline void TestMsg::set_allocated_file_id(std::string* value) {
-  ::google::protobuf::internal::TSanWrite(&_impl_);
-  _impl_.file_id_.SetAllocated(value, GetArena());
-  #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
-        if (_impl_.file_id_.IsDefault()) {
-          _impl_.file_id_.Set("", GetArena());
-        }
-  #endif  // PROTOBUF_FORCE_COPY_DEFAULT_STRING
-  // @@protoc_insertion_point(field_set_allocated:TestMsg.file_id)
-}
-
 // uint32 magic = 2;
 inline void TestMsg::clear_magic() {
   ::google::protobuf::internal::TSanWrite(&_impl_);
@@ -473,6 +423,28 @@ inline void TestMsg::_internal_set_total_slices(::uint32_t value) {
   _impl_.total_slices_ = value;
 }
 
+// uint32 plaintext_size = 8;
+inline void TestMsg::clear_plaintext_size() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.plaintext_size_ = 0u;
+}
+inline ::uint32_t TestMsg::plaintext_size() const {
+  // @@protoc_insertion_point(field_get:TestMsg.plaintext_size)
+  return _internal_plaintext_size();
+}
+inline void TestMsg::set_plaintext_size(::uint32_t value) {
+  _internal_set_plaintext_size(value);
+  // @@protoc_insertion_point(field_set:TestMsg.plaintext_size)
+}
+inline ::uint32_t TestMsg::_internal_plaintext_size() const {
+  ::google::protobuf::internal::TSanRead(&_impl_);
+  return _impl_.plaintext_size_;
+}
+inline void TestMsg::_internal_set_plaintext_size(::uint32_t value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.plaintext_size_ = value;
+}
+
 // bytes aes_key = 5;
 inline void TestMsg::clear_aes_key() {
   ::google::protobuf::internal::TSanWrite(&_impl_);
@@ -521,6 +493,56 @@ inline void TestMsg::set_allocated_aes_key(std::string* value) {
         }
   #endif  // PROTOBUF_FORCE_COPY_DEFAULT_STRING
   // @@protoc_insertion_point(field_set_allocated:TestMsg.aes_key)
+}
+
+// bytes file_id = 1;
+inline void TestMsg::clear_file_id() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.file_id_.ClearToEmpty();
+}
+inline const std::string& TestMsg::file_id() const
+    ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  // @@protoc_insertion_point(field_get:TestMsg.file_id)
+  return _internal_file_id();
+}
+template <typename Arg_, typename... Args_>
+inline PROTOBUF_ALWAYS_INLINE void TestMsg::set_file_id(Arg_&& arg,
+                                                     Args_... args) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.file_id_.SetBytes(static_cast<Arg_&&>(arg), args..., GetArena());
+  // @@protoc_insertion_point(field_set:TestMsg.file_id)
+}
+inline std::string* TestMsg::mutable_file_id() ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  std::string* _s = _internal_mutable_file_id();
+  // @@protoc_insertion_point(field_mutable:TestMsg.file_id)
+  return _s;
+}
+inline const std::string& TestMsg::_internal_file_id() const {
+  ::google::protobuf::internal::TSanRead(&_impl_);
+  return _impl_.file_id_.Get();
+}
+inline void TestMsg::_internal_set_file_id(const std::string& value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.file_id_.Set(value, GetArena());
+}
+inline std::string* TestMsg::_internal_mutable_file_id() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  return _impl_.file_id_.Mutable( GetArena());
+}
+inline std::string* TestMsg::release_file_id() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  // @@protoc_insertion_point(field_release:TestMsg.file_id)
+  return _impl_.file_id_.Release();
+}
+inline void TestMsg::set_allocated_file_id(std::string* value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.file_id_.SetAllocated(value, GetArena());
+  #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+        if (_impl_.file_id_.IsDefault()) {
+          _impl_.file_id_.Set("", GetArena());
+        }
+  #endif  // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  // @@protoc_insertion_point(field_set_allocated:TestMsg.file_id)
 }
 
 // bytes iv = 6;
@@ -621,28 +643,6 @@ inline void TestMsg::set_allocated_ciphertext(std::string* value) {
         }
   #endif  // PROTOBUF_FORCE_COPY_DEFAULT_STRING
   // @@protoc_insertion_point(field_set_allocated:TestMsg.ciphertext)
-}
-
-// uint32 plaintext_size = 8;
-inline void TestMsg::clear_plaintext_size() {
-  ::google::protobuf::internal::TSanWrite(&_impl_);
-  _impl_.plaintext_size_ = 0u;
-}
-inline ::uint32_t TestMsg::plaintext_size() const {
-  // @@protoc_insertion_point(field_get:TestMsg.plaintext_size)
-  return _internal_plaintext_size();
-}
-inline void TestMsg::set_plaintext_size(::uint32_t value) {
-  _internal_set_plaintext_size(value);
-  // @@protoc_insertion_point(field_set:TestMsg.plaintext_size)
-}
-inline ::uint32_t TestMsg::_internal_plaintext_size() const {
-  ::google::protobuf::internal::TSanRead(&_impl_);
-  return _impl_.plaintext_size_;
-}
-inline void TestMsg::_internal_set_plaintext_size(::uint32_t value) {
-  ::google::protobuf::internal::TSanWrite(&_impl_);
-  _impl_.plaintext_size_ = value;
 }
 
 #ifdef __GNUC__

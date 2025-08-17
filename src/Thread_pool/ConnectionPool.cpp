@@ -60,7 +60,7 @@ std::unique_ptr<ConnectionWrapper> ConnectionPool::check_use_ptr_in_connection_p
 
 ConnectionPool::~ConnectionPool()
 {
-
+    std::cout<<"~ConnectionPool called!\n";
 }
 
 int ConnectionWrapper::prepareStatements()
@@ -84,7 +84,7 @@ int ConnectionWrapper::prepareStatements()
     }
 
     // config data post-SQL statment : stmt 
-    const char* SQL_NewRecords = "INSERT INTO slice_records (file_id,input_file_path,magic,total_slices,output_folder_path,missing_slices_json) VALUES(?,?,?,?,?,?)";
+    const char* SQL_NewRecords = "INSERT INTO slice_records (file_id,input_file_path,magic,total_slices,output_file_path,missing_slices_json) VALUES(?,?,?,?,?,?)";
     rc = sqlite3_prepare_v2(db_ptr,SQL_NewRecords,-1,&stmt_NewRecord_ptr,nullptr);
     if(rc != SQLITE_OK || stmt_NewRecord_ptr == nullptr)
     {

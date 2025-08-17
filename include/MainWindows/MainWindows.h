@@ -119,10 +119,25 @@ class DownloadTasks : public QObject , public QRunnable
         Sqlite_DB_Manager*  m_sqlite_DB_Manager;
 
     //辅助工具*******************************************
-    std::mutex m_mutex;
-    QThreadPool* m_threadPool;
+        std::mutex m_mutex;
+        QThreadPool* m_threadPool;
 };
 
+class mergeSQLData
+{
+    public:
+
+    const char *sql_select_from_record = "SELECT file_id , output_file_path FROM slice_records";
+    const char *sql_select_from_slice_content = "SELECT file_id , slice_index , plaintext FROM slice_contents WHERE file_id = ? ORDER BY slice_index ASC";
+    sqlite3* m_db_ptr = nullptr;
+    sqlite3_stmt* m_stmt_select_from_record = nullptr;
+    sqlite3_stmt* m_stmt_select_from_slice_content = nullptr;
+
+    QDir loop_dbFile_in_path();
+    void initialize_db_ptr();
+    void merge_file();
+    void clear_struct_setting();
+};
 
 class MainWindows : public QMainWindow
 {
@@ -145,6 +160,7 @@ class MainWindows : public QMainWindow
     void on_information_downloadList_clicked();
     void on_pauseButton_clicked();
     void on_loadTaskButton_clicked();
+    void on_mergeSQLiteDateButton_clicked();
 
     // 显示
     private:
@@ -161,20 +177,20 @@ class MainWindows : public QMainWindow
     QPushButton *m_DownLoadedListButton;
     QPushButton *m_pauseButton;
     QPushButton *m_loadDownTaskButton;
+    QPushButton *m_mergeSQLiteDateButton;
     // 储存
     QDialog *m_DownLoadedListDialog;
     QStringList m_fileList;
     QMap<QString,FileProgressItem*> m_fileProgressMap;
-
     QWidget* current_page = nullptr;
 
     // 后台处理器
     QThread m_workerThread;
     DownloadTasks* m_downloadTasks;
+    mergeSQLData m_merger;
 
     protected:
     void dragEnterEvent(QDragEnterEvent *event)  override;
     void dropEvent(QDropEvent *event) override ;
-    
 }; 
 #endif

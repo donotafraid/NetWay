@@ -2,23 +2,23 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "GDB Debug",
-      "type": "cppdbg",
+      "name": "LLDB Debug",
+      "type": "lldb",
       "request": "launch",
-      "program": "${workspaceFolder}/build/your_program",
+      "program": "${workspaceFolder}/bin/file_platform",  // 对齐 CMake 输出路径
       "args": [],
-      "stopAtEntry": false,
       "cwd": "${workspaceFolder}",
-      "environment": [],
-      "externalConsole": false,
-      "MIMode": "gdb",
-      "setupCommands": [
+      "environment": [
         {
-          "description": "Enable pretty-printing for gdb",
-          "text": "-enable-pretty-printing",
-          "ignoreFailures": true
+          "name": "ASAN_OPTIONS",
+          "value": "detect_leaks=1:abort_on_error=1"
         }
-      ]
+      ],
+      "preLaunchTask": "cmake-build",
+      "postDebugTask": "reset-sanitizers",
+      "sourceMap": {
+        "/mnt": "${workspaceFolder}"  // WSL 路径映射
+      }
     }
   ]
 }

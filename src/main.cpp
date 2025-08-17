@@ -1,4 +1,3 @@
-
 #include "MQTTEncryptionClient/MQTTEncryptionClient.h"
 #include "MQTTDecryptionServer/MQTTDecryptionServer.h"
 #include "ProtocolHeader/ProtocolHeader.h"
@@ -54,16 +53,19 @@ int main(int argc, char *argv[])
         std::cout<<"Server is running , waiting for file .... \n";
     }
 
-    // QTimer *time = new QTimer(&w);
-    // QObject::connect(time, &QTimer::timeout, &w, [&]()
-    // {
-    //     std::cout<<"Auto shutdown timer triggered . \n";
-    //     a.quit();
-    // }
-    // );
+    #ifdef VALGRIND_TEST
+    QTimer *time = new QTimer(&w);
+    QObject::connect(time, &QTimer::timeout, &w, [&]()
+    {
+        std::cout<<"Auto shutdown timer triggered . \n";
+        a.quit();
+    }
+    );
         
-    // time->setSingleShot(true);
-    // time->start(30000);
+    time->setSingleShot(true);
+    time->start(10000);
+
+    #endif
     rc = a.exec();
     Sqlite_DB::CloseDB();
     return rc;

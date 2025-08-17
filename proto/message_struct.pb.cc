@@ -72,14 +72,14 @@ const ::uint32_t
         ~0u,  // no _inlined_string_donated_
         ~0u,  // no _split_
         ~0u,  // no sizeof(Split)
-        PROTOBUF_FIELD_OFFSET(::TestMsg, _impl_.file_id_),
         PROTOBUF_FIELD_OFFSET(::TestMsg, _impl_.magic_),
         PROTOBUF_FIELD_OFFSET(::TestMsg, _impl_.slice_index_),
         PROTOBUF_FIELD_OFFSET(::TestMsg, _impl_.total_slices_),
+        PROTOBUF_FIELD_OFFSET(::TestMsg, _impl_.plaintext_size_),
         PROTOBUF_FIELD_OFFSET(::TestMsg, _impl_.aes_key_),
+        PROTOBUF_FIELD_OFFSET(::TestMsg, _impl_.file_id_),
         PROTOBUF_FIELD_OFFSET(::TestMsg, _impl_.iv_),
         PROTOBUF_FIELD_OFFSET(::TestMsg, _impl_.ciphertext_),
-        PROTOBUF_FIELD_OFFSET(::TestMsg, _impl_.plaintext_size_),
 };
 
 static const ::_pbi::MigrationSchema
@@ -91,11 +91,11 @@ static const ::_pb::Message* const file_default_instances[] = {
 };
 const char descriptor_table_protodef_message_5fstruct_2eproto[] ABSL_ATTRIBUTE_SECTION_VARIABLE(
     protodesc_cold) = {
-    "\n\024message_struct.proto\"\235\001\n\007TestMsg\022\017\n\007fi"
-    "le_id\030\001 \001(\014\022\r\n\005magic\030\002 \001(\r\022\023\n\013slice_inde"
-    "x\030\003 \001(\r\022\024\n\014total_slices\030\004 \001(\r\022\017\n\007aes_key"
-    "\030\005 \001(\014\022\n\n\002iv\030\006 \001(\014\022\022\n\nciphertext\030\007 \001(\014\022\026"
-    "\n\016plaintext_size\030\010 \001(\rb\006proto3"
+    "\n\024message_struct.proto\"\235\001\n\007TestMsg\022\r\n\005ma"
+    "gic\030\002 \001(\r\022\023\n\013slice_index\030\003 \001(\r\022\024\n\014total_"
+    "slices\030\004 \001(\r\022\026\n\016plaintext_size\030\010 \001(\r\022\017\n\007"
+    "aes_key\030\005 \001(\014\022\017\n\007file_id\030\001 \001(\014\022\n\n\002iv\030\006 \001"
+    "(\014\022\022\n\nciphertext\030\007 \001(\014b\006proto3"
 };
 static ::absl::once_flag descriptor_table_message_5fstruct_2eproto_once;
 PROTOBUF_CONSTINIT const ::_pbi::DescriptorTable descriptor_table_message_5fstruct_2eproto = {

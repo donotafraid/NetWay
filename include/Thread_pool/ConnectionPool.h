@@ -23,10 +23,10 @@ class ConnectionWrapper{
     void set_db_name(std::string db_file_name);
     int initialize_connection_wrapper(std::string db_file_path);
     bool check_table_exists();
-
+    
+    bool is_done = false;
     std::string return_db_name();
     sqlite3_stmt* return_stmt_ptr(DB_Type type);
-    bool is_done = false;
     sqlite3* db_ptr = nullptr;
     private:
         sqlite3_stmt* stmt_content_ptr = nullptr; 
@@ -42,7 +42,7 @@ class ConnectionWrapper{
         input_file_path TEXT NOT NULL,
         magic INTEGER DEFAULT 0xDEADBEEF CHECK(magic = 0xDEADBEEF),  
         total_slices INTEGER NOT NULL CHECK(total_slices > 0),
-        output_folder_path TEXT NOT NULL, 
+        output_file_path TEXT NOT NULL, 
         missing_slices_json, -- Store missing slices as JSON array,
         UNIQUE(file_id)
         ))",
