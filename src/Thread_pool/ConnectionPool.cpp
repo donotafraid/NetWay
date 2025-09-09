@@ -1,12 +1,15 @@
 #include "Thread_pool/ConnectionPool.h"
 
+//static area
+std::unique_ptr<memory_pool> memory_pool::instance = nullptr;
+std::once_flag memory_pool::m_once_flag;
+//
 
-std::unique_ptr<ConnectionWrapper> ConnectionPool::return_connectionWrapper_ptr(std::string db_file_path)
+std::unique_ptr<ConnectionWrapper> ConnectionPool::return_connectionWrapper_ptr()
 {
     std::unique_ptr<ConnectionWrapper> ptr = nullptr;
     {
-        // std::unique_lock<std::mutex> lock(m_connection_mutex);
-        ptr = this->check_use_ptr_in_connection_pool(db_file_path);
+        ptr = this->check_use_ptr_in_connection_pool(verify_db_path_memorySize());
     }
     
     return (ptr);
@@ -22,10 +25,32 @@ void ConnectionPool::release_connectionWrapper_ptr(std::unique_ptr<ConnectionWra
     m_connection_cv.notify_one();
 }
 
-
-void ConnectionPool::close_db_file_opened()
+std::string ConnectionPool::return_current_date_string()
 {
+    auto now = std::chrono::system_clock::now();
+    auto time = std::chrono::system_clock::to_time_t(now);
+    std::tm tm = *std::localtime(&time);
 
+    std::ostringstream oss;
+    oss << std::put_time(&tm, "%Y%m%d"); // 格式化为 "20240520"
+    return oss.str();
+}
+std::string ConnectionPool::verify_db_path_memorySize()
+{
+    std::string db_file_path = db_file_pre + return_current_date_string() + ".db";
+    if(fs::exists(db_file_path))
+    {
+        auto db_file_size = fs::file_size(db_file_path);
+        if( db_file_size > MAX_DB_FILE_LIMIT)
+        {
+            std::string stem = fs::path(db_file_path).stem().string() + "A";
+            std::string extention = fs::path(db_file_path).extension().string();
+            std::string new_db_file_path = fs::path(db_file_path).parent_path().string() + stem + extention;
+
+            return new_db_file_path;
+        }
+    }
+    return db_file_path;
 }
 
 std::unique_ptr<ConnectionWrapper> ConnectionPool::check_use_ptr_in_connection_pool(std::string db_file_path)
@@ -38,7 +63,7 @@ std::unique_ptr<ConnectionWrapper> ConnectionPool::check_use_ptr_in_connection_p
             for(auto it = m_connection_pool.begin(); it != m_connection_pool.end(); ++it)
             {
                 //check if the connection pool has idle connection
-                if((*it != nullptr)&&(*it)->return_db_name() == db_file_path)
+                if((*it != nullptr)&&(*it)->return_db_file_path() == db_file_path)
                 {
                     ptr = std::move(*it);
                     m_connection_pool.erase(it);
@@ -65,94 +90,48 @@ ConnectionPool::~ConnectionPool()
 
 int ConnectionWrapper::prepareStatements()
 {
+    //  create new record in db_suborigate file
     int rc = sqlite3_prepare_v2(db_ptr,"INSERT INTO slice_contents(file_id,slice_index,aes_key,iv,plaintext)"
-    "VALUES(?,?,?,?,?)",-1,&stmt_content_ptr,nullptr);
-    if(rc != SQLITE_OK || stmt_content_ptr == nullptr)
+    "VALUES(?,?,?,?,?)",-1,&stmt_newRecord_ptr,nullptr);
+    if(rc != SQLITE_OK || stmt_newRecord_ptr == nullptr)
     {
         std::cerr<<"INSERT content failed and error is : "<<sqlite3_errmsg(db_ptr)<<std::endl;
-        sqlite3_finalize(stmt_content_ptr);
+        sqlite3_finalize(stmt_newRecord_ptr);
         return false;
     }
 
-    const char* SQL_InspectID = "SELECT file_id FROM slice_records WHERE file_id = ?";
-    rc = sqlite3_prepare_v2(db_ptr,SQL_InspectID,-1,&stmt_InspectID_ptr,nullptr);
-    if(rc != SQLITE_OK || stmt_InspectID_ptr == nullptr)
-    {
-        std::cerr<<"SELCET file_id failed and error is : "<<sqlite3_errmsg(db_ptr)<<std::endl;
-        sqlite3_finalize(stmt_InspectID_ptr);
-        return false;
+    // LEFT JOIN的本质：左表所有行都会被保留，而右表（slice_contents）的行如果没有匹配，右表该项对应的所有列都会为NULL。
+    // 随后，WHERE子句WHERE sc.slice_index IS NULL会过滤出这些行，即序列值n会被选中作为缺失的索引。
+    // 左连接中间结果集:包含所有左表的行，以及匹配的右表的行（如果有）。如果没有匹配，中间表里的该右表项的所有列都为NULL
+
+    // read missing_slices_from_db_subodinate_file
+    rc = (sqlite3_prepare_v2(db_ptr,read_missing_slices_from_db_subordinate_file_sql,strlen(read_missing_slices_from_db_subordinate_file_sql),&read_missing_slices_from_db_subordinate_file_stmt_ptr,nullptr));
+    if (rc != SQLITE_OK) {
+        std::cerr<<"Sqlite_information::presetting: prepare read_missing_slices_from_db_subordinate_file_sql failed\n";
+        return rc ;
     }
 
-    // config data post-SQL statment : stmt 
-    const char* SQL_NewRecords = "INSERT INTO slice_records (file_id,input_file_path,magic,total_slices,output_file_path,missing_slices_json) VALUES(?,?,?,?,?,?)";
-    rc = sqlite3_prepare_v2(db_ptr,SQL_NewRecords,-1,&stmt_NewRecord_ptr,nullptr);
-    if(rc != SQLITE_OK || stmt_NewRecord_ptr == nullptr)
-    {
-        std::cerr<<"INSERT records failed and error is : "<<sqlite3_errmsg(db_ptr)<<std::endl;
-        sqlite3_finalize(stmt_NewRecord_ptr);
-        return false;
-    }
-
-    const char *SQL_Query_Statement = R"(
-    WITH RECURSIVE 
-        sequence(n) AS (
-            SELECT 0 
-            UNION ALL
-            SELECT n + 1 FROM sequence WHERE n < ? 
-                        )
-    SELECT s.n AS missing_index
-    FROM sequence s
-    LEFT JOIN slice_contents sc 
-        ON s.n = sc.slice_index
-        AND sc.file_id  = ?
-    WHERE sc.slice_index IS NULL
-    ORDER BY s.n;
-            )";
-    rc = sqlite3_prepare_v2(db_ptr,SQL_Query_Statement,-1,&stmt_GetIndex_ptr,nullptr);
-    if (rc != SQLITE_OK || stmt_GetIndex_ptr == nullptr)
-    {
-        std::cerr<<"prepare SQL_Query_Statement failed and error is : "<<sqlite3_errmsg(db_ptr)<<std::endl;
-        sqlite3_finalize(stmt_GetIndex_ptr);
-        return false;
-    }
-
-    const char * SQL_GetFailIndex = R"(
-    UPDATE slice_records SET missing_slices_json = ? WHERE file_id = ?)";
-    rc =sqlite3_prepare_v2(db_ptr, SQL_GetFailIndex,-1, &stmt_GetFailIndex_ptr, nullptr);
-    if(rc != SQLITE_OK || stmt_GetFailIndex_ptr == nullptr)
-    {
-        std::cerr<<"prepare SQL_GetFailIndex failed and error is : "<<sqlite3_errmsg(db_ptr)<<std::endl;
-        sqlite3_finalize(stmt_GetFailIndex_ptr);
-        return false;
-    }
     return rc ;
 }
 
 void ConnectionWrapper::reset()
 {
-    sqlite3_reset(stmt_content_ptr);
-    sqlite3_reset(stmt_InspectID_ptr);
-    sqlite3_reset( stmt_NewRecord_ptr);
-    sqlite3_reset(stmt_GetIndex_ptr);
-    sqlite3_reset(stmt_GetFailIndex_ptr);
+    sqlite3_reset(stmt_newRecord_ptr);
+    sqlite3_reset(read_missing_slices_from_db_subordinate_file_stmt_ptr);
 }
 
 
 void ConnectionWrapper::close_db_file()
 {
-    if(stmt_content_ptr != nullptr ||stmt_InspectID_ptr != nullptr
-    || stmt_NewRecord_ptr != nullptr || stmt_GetIndex_ptr != nullptr)
+    if(stmt_newRecord_ptr != nullptr )
     {
-        sqlite3_finalize(stmt_content_ptr);
-        sqlite3_finalize(stmt_InspectID_ptr);
-        sqlite3_finalize(stmt_NewRecord_ptr);
-        sqlite3_finalize(stmt_GetIndex_ptr);
-        sqlite3_finalize(stmt_GetFailIndex_ptr);
-        stmt_NewRecord_ptr = nullptr;
-        stmt_InspectID_ptr = nullptr;
-        stmt_content_ptr = nullptr;
-        stmt_GetIndex_ptr = nullptr;
-        stmt_GetFailIndex_ptr = nullptr;
+        sqlite3_finalize(stmt_newRecord_ptr);
+        stmt_newRecord_ptr = nullptr;
+    }
+    if(read_missing_slices_from_db_subordinate_file_stmt_ptr != nullptr)
+    {
+        sqlite3_finalize(read_missing_slices_from_db_subordinate_file_stmt_ptr);
+        read_missing_slices_from_db_subordinate_file_stmt_ptr = nullptr;
     }
 
     if (db_ptr != nullptr)
@@ -183,13 +162,13 @@ int ConnectionWrapper::open_db_file(std::string& db_file_path)
         return false;
     }
 
-    this->db_name = db_file_path;
+    this->db_file_path = db_file_path;
     return rc;
 }
 
-void ConnectionWrapper::set_db_name(std::string db_file_name)
+void ConnectionWrapper::set_db_file_path(std::string db_file_name)
 {
-    this->db_name = db_file_name;
+    this->db_file_path = db_file_name;
 }
 
 int ConnectionWrapper::initialize_connection_wrapper(std::string db_file_path)
@@ -274,9 +253,9 @@ bool ConnectionWrapper::check_table_exists()
     return table_exist_flag;
 }
 
-std::string ConnectionWrapper::return_db_name()
+std::string ConnectionWrapper::return_db_file_path()
 {
-    return this->db_name; 
+    return this->db_file_path; 
 }
 
 sqlite3_stmt *ConnectionWrapper::return_stmt_ptr(DB_Type type)
@@ -284,15 +263,9 @@ sqlite3_stmt *ConnectionWrapper::return_stmt_ptr(DB_Type type)
     switch (type)
     {
     case DB_Type::CONTENT: 
-        return this->stmt_content_ptr;
-    case DB_Type::INSPECT_ID:
-        return this->stmt_InspectID_ptr;
-    case DB_Type::NEW_RECORD:
-        return this->stmt_NewRecord_ptr;
-    case DB_Type::GETINDEX:
-        return this->stmt_GetIndex_ptr;
-    case DB_Type::GETFAILINDEX:
-        return this->stmt_GetFailIndex_ptr;
+        return this->stmt_newRecord_ptr;
+    case DB_Type::GET_FAIL_INDEX: 
+        return this->read_missing_slices_from_db_subordinate_file_stmt_ptr;
     default:
         std::cerr<<"return_stmt_ptr: input error type"<<std::endl;
         return nullptr;
@@ -301,34 +274,19 @@ sqlite3_stmt *ConnectionWrapper::return_stmt_ptr(DB_Type type)
 
 ConnectionWrapper::ConnectionWrapper(std::string db_file_name)
 {
-    this->db_name = db_file_name;
+    this->db_file_path = db_file_name;
 }
 
 ConnectionWrapper::~ConnectionWrapper()
 {
-    if(stmt_content_ptr != nullptr)
+    if(stmt_newRecord_ptr != nullptr)
     {
-        sqlite3_finalize(stmt_content_ptr);
-        stmt_content_ptr = nullptr;
+        sqlite3_finalize(stmt_newRecord_ptr);
+        stmt_newRecord_ptr = nullptr;
     }
-    if(stmt_InspectID_ptr != nullptr)
+    if(read_missing_slices_from_db_subordinate_file_stmt_ptr != nullptr)
     {
-        sqlite3_finalize(stmt_InspectID_ptr);
-        stmt_InspectID_ptr = nullptr;
-    }
-    if(stmt_NewRecord_ptr != nullptr)
-    {
-        sqlite3_finalize(stmt_NewRecord_ptr);
-        stmt_NewRecord_ptr = nullptr;
-    }
-    if(stmt_GetIndex_ptr != nullptr)
-    {
-        sqlite3_finalize(stmt_GetIndex_ptr);
-        stmt_GetIndex_ptr = nullptr;
-    }
-    if (stmt_GetFailIndex_ptr != nullptr) {
-        sqlite3_finalize(stmt_GetFailIndex_ptr);
-        stmt_GetFailIndex_ptr = nullptr;
+        sqlite3_finalize(read_missing_slices_from_db_subordinate_file_stmt_ptr);
     }
 
     if (db_ptr != nullptr)
@@ -346,4 +304,37 @@ ConnectionWrapper::~ConnectionWrapper()
         db_ptr = nullptr;
     }
     std::cout<<"ConnectionWrapper destructor function called!"<<std::endl;
+}
+
+std::shared_ptr<request_message> memory_pool::return_ptr(){
+    return  std::make_shared<request_message>();
+}
+
+void memory_pool::push(std::shared_ptr<request_message>&& db_info){
+    m_queue.push(std::move(db_info));
+}
+
+std::shared_ptr<request_message> memory_pool::return_pre_ptr(){
+    std::shared_ptr<request_message> pre_ptr = m_queue.front();
+    m_queue.pop();
+    return pre_ptr;
+}
+
+void memory_pool::clear_memory_pool(){
+    while(!m_queue.empty())
+    {
+        m_queue.pop();
+    }
+}
+
+int memory_pool::size(){
+    return m_queue.size();
+}
+
+memory_pool::~memory_pool(){
+    while(!m_queue.empty())
+    {
+        m_queue.pop();
+    }
+    std::cout<<"memory_pool::~memory_pool()"<<std::endl;
 }

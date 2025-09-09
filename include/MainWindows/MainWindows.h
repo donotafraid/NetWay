@@ -30,25 +30,29 @@
 //forward declare
 class Sqlite_DB;
 class Sqlite_DB_Manager;
+class memory_pool;
+class Sqlite_information;
+class taskExecution;
+class MqttClient;
 
 //class declare
 class FileProgressItem : public QWidget
 {
     Q_OBJECT
 public:
-    explicit FileProgressItem(QWidget *parent,MainWindows_Intermediate_Struct&& file_info);
+    explicit FileProgressItem(QWidget *parent,const std::string& file_name);
     ~FileProgressItem();
-    void setFileName(const std::string& file_name);
+    void setFilePath(const std::string& file_name);
     int setProgress(int progress);
     void set_status_indicator(const bool status);
     int return_countSize(const std::string& file_path);
-    std::string returnFileName() const;
-    QString fileName() const;
-    MainWindows_Intermediate_Struct fileInfo();
+    std::string returnFilePath() const;
+    bool is_download_complete() const;
 private:
-    int m_current ;
+    int m_missing_index_number ;
     int m_total ;
-    MainWindows_Intermediate_Struct m_fileInfo;
+    std::string m_file_name;
+
     QLabel *m_fileNameLabel;
     QLabel *m_progressTextLabel;
     QWidget *m_statusIndicator;
@@ -59,46 +63,30 @@ class DownloadTasks : public QObject , public QRunnable
     Q_OBJECT
     public:
     //构造/析构函数********************************************
-        explicit DownloadTasks(Sqlite_DB_Manager* sqlite_DB):
-            m_sqlite_DB_Manager(sqlite_DB),m_threadPool(QThreadPool::globalInstance())
-        {
-        }
+    explicit  DownloadTasks(Sqlite_information& sqlite_information,MqttClient& mqtt_client_ptr);
 
-        ~DownloadTasks() = default;
+    ~DownloadTasks() ;
 
     //外部调用接口******************************************
     //核心功能API（线程安全）
-    bool isNewDownTask(QString file_path);
     bool is_exist_targetFolder(std::string target_folder_path);
     bool addItem_cache(FileProgressItem* file_info);
     bool deleteItem_cache(FileProgressItem* file_info);
-    bool cleaer_cache();
-    void clear_run_status();
-    int return_scheduled_tasks(const std::string& folder_path);
     void set_isPause(bool isPause);
     bool return_isPause();
-    //状态查询接口
-    
-    //异常安全接口
-    
-    //状态变更通知
-    signals:
-    void update_statusFinished();
-    
-    public slots:
-    //异步操作接口
+    void update_fileProgress();
+    int intetface_read_missing_slices_from_db_information_file(const std::string& file_path); 
+    int interface_create_new_file_on_db_information(const std::string& file_path);
+    bool is_download_complete();
 
-    //同步操作接口
-
+    //资源清理
+    bool clear_progreeMap_cache();
+    
     //内部接口********************************************
     protected:
-        //核心处理逻辑
-        bool internalProgressUpdate();
-        void run() override;
-
-        //资源清理
-
-        //线程安全操作
+    //核心处理逻辑
+    bool internalProgressUpdate();
+    void run() override;
 
     private:
     //容器对象*******************************************
@@ -109,37 +97,37 @@ class DownloadTasks : public QObject , public QRunnable
         QScopedPointer<FileProgressItem> m_tempData;
 
         //基本类型成员变量
-        std::atomic_bool m_isFinished = false;
-        std::unordered_map<std::string,MainWindows_Intermediate_Struct> m_fileInfoMap;
+        int m_isFinished = 0;
         std::unordered_map<std::string,FileProgressItem*> m_fileProgressMap;
-        std::unordered_map<std::string,bool> m_tasks_done_status;
+        Sqlite_information& m_sqlite_information_ref;
+        taskExecution* m_taskExecution_ptr;
         bool m_isPause = false;
 
-        //其余类对象指针/引用 
-        Sqlite_DB_Manager*  m_sqlite_DB_Manager;
-
     //辅助工具*******************************************
-        std::mutex m_mutex;
         QThreadPool* m_threadPool;
 };
 
 class mergeSQLData
 {
     public:
-
+    const char* request_sql_select_from_record = "SELECT file_id , missing_slices_json , input_file_path , output_file_path FROM slice_records";
     const char *sql_select_from_record = "SELECT file_id , output_file_path FROM slice_records";
-    const char *sql_select_from_slice_content = "SELECT file_id , slice_index , plaintext FROM slice_contents WHERE file_id = ? ORDER BY slice_index ASC";
+    const char *sql_select_from_slice_content = "SELECT file_id , slice_index , plaintext  FROM slice_contents WHERE file_id = ? ORDER BY slice_index ASC";
     sqlite3* m_db_ptr = nullptr;
+    std::queue<std::string> m_protobuf_queue;
     sqlite3_stmt* m_stmt_select_from_record = nullptr;
     sqlite3_stmt* m_stmt_select_from_slice_content = nullptr;
+    sqlite3_stmt* m_request_stmt_select_from_record = nullptr;
 
+    void presetting();
+    void task_publish();
     QDir loop_dbFile_in_path();
     void initialize_db_ptr();
     void merge_file();
     void clear_struct_setting();
 };
 
-class MainWindows : public QMainWindow
+class MainWindows : public QMainWindow 
 {
     Q_OBJECT
 
@@ -166,8 +154,6 @@ class MainWindows : public QMainWindow
     private:
     void initUI();
 
-    // 加载
-
     // 显示
     QListWidget *m_fileListWidget;
     // 加载
@@ -178,6 +164,7 @@ class MainWindows : public QMainWindow
     QPushButton *m_pauseButton;
     QPushButton *m_loadDownTaskButton;
     QPushButton *m_mergeSQLiteDateButton;
+
     // 储存
     QDialog *m_DownLoadedListDialog;
     QStringList m_fileList;

@@ -16,136 +16,17 @@ std::unique_ptr<Sqlite_DB> Sqlite_DB_Create::create()
     return std::unique_ptr<Sqlite_DB>(new Sqlite_DB());
 }
 
-
-int Sqlite_DB_store::get_DBfile_parameters(std::shared_ptr<DB_Info> db_info)
+void Sqlite_DB_process_transmission_and_write_to_file::ready_for_transmission_data(
+    std::string& msg,
+    std::vector<uint8_t> &file_data_vector, 
+    std::vector<int> &slice_index_vector,
+    std::condition_variable& responding_condition_var
+    )
 {
-    const char *resumable_sql = R"(
-        select 
-            sr.file_id,
-            sr.input_file_path,
-            sr.output_folder_path,
-            COALESCE(MAX(sc.slice_index),0) AS last_slice_index
-        FROM slice_records sr
-        LEFT JOIN slice_contents sc ON sr.file_id = sc.file_id
-        GROUP BY sr.file_id,sr.input_file_path
-    )";
-
-    auto m_connection_wrapped = this->m_connection_pool_ptr->return_connectionWrapper_ptr(db_info->db_file_path);
-    if(m_connection_wrapped== nullptr)
-    {
-        std::cerr<<"get_DBfile_parameters : return_connectionWrapper_ptr is nullptr !"<<std::endl;
-        return false;
-    }
-
-    sqlite3_stmt *stmt = nullptr;
-
-    int rc = sqlite3_prepare_v2( m_connection_wrapped->db_ptr, resumable_sql, -1, &stmt, nullptr);
-    if (rc != SQLITE_OK)
-    {
-        std::cerr<<"get_DBfile_parameters : prepare resumable_sql failed and error is:"<<
-        sqlite3_errmsg(m_connection_wrapped->db_ptr)<<std::endl;
-        return rc;
-    }
-
-    while(( rc = sqlite3_step(stmt) )== SQLITE_ROW)
-    {
-        // get file path
-        const unsigned char* path_text = sqlite3_column_text(stmt,1);
-        db_info->input_file_path = std::string((char*)path_text);
-
-        // get output file path
-        const unsigned char* path_text2 = sqlite3_column_text(stmt,2);
-        db_info->output_file_name = std::string((char*)path_text2);
-    }
-
-    sqlite3_finalize(stmt);
-    this->m_connection_pool_ptr->release_connectionWrapper_ptr(std::move(m_connection_wrapped));
-
-    if( rc != SQLITE_DONE)
-    {
-        std::cerr<<"Query execution error :"
-                 <<sqlite3_errmsg(m_connection_wrapped->db_ptr)<<std::endl;
-    }
-    return rc;
-}
-
-Sqlite_DB_store::Sqlite_DB_store(ConnectionPool* connection_pool_ptr,
-    Sqlite_DB_process_slice_info* process_slice_ptr):
-    m_connection_pool_ptr(connection_pool_ptr),
-    m_slice_info(process_slice_ptr)
-{
-    
-}
-
-int Sqlite_DB_store::interface_DB_store(std::vector<MainWindows_Intermediate_Struct>& file_info_vector)
-{
-        for(auto& file_info : file_info_vector)
-    {
-        auto db_info = std::make_shared<DB_Info>();
-        db_info->input_file_path = file_info.source_file_path;
-        db_info->output_file_name = file_info.output_file_path;
-        db_info->db_file_path = file_info.db_file_path;
-        db_info->header_info.total_slices = (file_info.file_size + SLICE_SIZE - 1) / SLICE_SIZE ;
-        db_info->file_size = file_info.file_size;
-        db_info->header_info.magic = magic;
-        if(db_info->header_info.file_id == std::array<uint8_t,16>{})
-        {
-            random_generator Generated_uuid;
-            uuid uuid_ptr= Generated_uuid();
-            std::copy(uuid_ptr.begin(), uuid_ptr.end(), db_info->header_info.file_id.begin());
-        }
-
-        if(db_info->input_file_path == ""&&
-        db_info->output_file_name == ""&&
-        db_info->db_file_path == "")
-        {
-            std::cerr<<"DB_store : input_file_path or output_file_name or db_file_path is empty !"<<std::endl;
-            return false;
-        }
-
-        int rc = this->check_exist_dbFile_record(db_info);
-        if(rc != SQLITE_DONE)
-        {
-            return rc;
-        }
-
-        auto fileData = this->get_file_data_vector(db_info);
-        auto failIndex = this->get_failIndex_vector(db_info);
-        rc =this->m_slice_info->interface_process_slice_info(
-            db_info,
-            std::move(fileData),
-            std::move(failIndex),
-            file_info
-        ); 
-    }
-    return 0;
-}
-
-Sqlite_DB_process_slice_info::Sqlite_DB_process_slice_info(Thread_pool* thread_pool_ptr,
-    Sqlite_DB_process_transmission_and_write_to_file* transmssion_info_ptr):
-    m_thread_pool_ptr(thread_pool_ptr),
-    m_transmission_ptr(transmssion_info_ptr)
-    {
-
-    }
-
-int Sqlite_DB_process_slice_info::interface_process_slice_info(
-    std::shared_ptr<DB_Info> db_info, 
-    std::vector<uint8_t> &&file_data_vector,
-    std::vector<int> &&fail_slice_index_vector,
-    MainWindows_Intermediate_Struct& file_info )
-{
-    this->initialize_m_transmission_info(db_info);
-    int rc = ready_for_transmission_data(db_info, std::move(file_data_vector), std::move(fail_slice_index_vector),file_info);
-    return 0;
-}
-
-int Sqlite_DB_process_slice_info::ready_for_transmission_data(
-    std::shared_ptr<DB_Info> db_info, 
-    std::vector<uint8_t> &&file_data_vector, 
-    std::vector<int> &&slice_index_vector,
-    MainWindows_Intermediate_Struct& file_info)
-{
+    request_message tmp_msg;
+    tmp_msg.ParseFromString(msg);
+    std::array<uint8_t,16> file_id;
+    std::copy(tmp_msg.file_id().begin(),tmp_msg.file_id().end(),file_id.begin());
     for(auto slice_index = slice_index_vector.begin(); slice_index != slice_index_vector.end()&& 1; ++slice_index)
     {
         // payload_protocolheader_ciphertext
@@ -154,25 +35,21 @@ int Sqlite_DB_process_slice_info::ready_for_transmission_data(
     
         std::vector<uint8_t> slice(file_data_vector.begin() + sliceStart , file_data_vector.begin() + file_offset ) ;
 
-        //judget if the slice is a terminate symbol
-        if (is_control(slice.back()))
-        {
-            file_info.terminate_symbol_to_file_map.insert({file_info.output_file_path,{(*slice_index),true} });
-        }
-        else
-        {
-            file_info.terminate_symbol_to_file_map.insert({file_info.output_file_path,{(*slice_index),false} });
-        }
-
         auto encrypt_task = m_thread_pool_ptr->enqueue(
-            [m_transmission_ptr = &this->m_transmission_ptr,
+            [
+             this,
+             &responding_condition_var,
+             file_id = file_id,
              slice = std::move(slice),
-             shared_db_ptr = db_info,
              slice_index = (*slice_index)]() mutable
             {
                 // construct ProtocolHeader
                 ProtocolHeader header;
 
+                header.magic = (MAGIC);
+                header.slice_index = (slice_index);
+
+                std::copy(file_id.begin(),file_id.end(),header.file_id.begin());
                 // Generate AES_KEY randomly
                 int rc = RAND_bytes(header.AES_KEY.data(), sizeof(header.AES_KEY));
                 if (rc != 1)
@@ -180,13 +57,7 @@ int Sqlite_DB_process_slice_info::ready_for_transmission_data(
                     std::cerr<<"Error: Failed to generate AES_KEY\n";
                     return -1;
                 }
-
-                header.magic = (MAGIC);
-                header.slice_index = (slice_index);
-                header.total_slices = (shared_db_ptr->header_info.total_slices);
-                header.plaintext_size = (slice.size());
-                std::copy(shared_db_ptr->header_info.file_id.begin(), shared_db_ptr->header_info.file_id.end(), header.file_id.begin());
-    
+                
                 // Encrypt slice by AES , need record AES , Ciphertext
                 std::vector<uint8_t> CipherText;
                 if (!encryptData(slice, CipherText, header.iv.data(), header))
@@ -199,317 +70,56 @@ int Sqlite_DB_process_slice_info::ready_for_transmission_data(
                 std::string msg_string;
                 msg.SerializeToString(&msg_string);
 
-                // Multi-threading enabled
-                (*m_transmission_ptr)->interface_process_transmission_and_write_to_file(
-                    msg_string,
-                    shared_db_ptr);
-                return 1;
+                {
+                    #if DEBUG_TEST == true
+                        std::cout<<"[DEBUG]  async task push success! "<<std::endl;   
+                    #endif
+                    std::lock_guard<std::mutex> lock(m_responding_mutex);                    
+                    m_responding_queue.push(msg_string);
+                    responding_condition_var.notify_one();
+                }
+                return 0;
             });
     }
-    return 0;
 }
 
-bool Sqlite_DB_process_slice_info::is_control(uint8_t c)
+Sqlite_DB_process_transmission_and_write_to_file::Sqlite_DB_process_transmission_and_write_to_file
+(std::shared_ptr<spdlog::logger> logger, std::queue<std::string>& m_responding_queue):
+    m_thread_pool_ptr(new Thread_pool()),
+    m_spdlogger(logger),
+    m_responding_queue(m_responding_queue)
+    {
+        m_thread_pool_ptr->start();
+    }
+
+Sqlite_DB_process_transmission_and_write_to_file::~Sqlite_DB_process_transmission_and_write_to_file()
+{
+    delete m_thread_pool_ptr;
+    std::cout<<"Sqlite_DB_process_transmission_and_write_to_file::~Sqlite_DB_process_transmission_and_write_to_file()"<<std::endl;
+}
+
+// int Sqlite_DB_process_transmission_and_write_to_file::write_message_to_lockFreeQueue(const std::string &proto_msg,std::shared_ptr<DB_Info> file_path_info)
+// {
+//     DB_Info_raw_ptr db_info_ptr ;
+//     db_info_ptr.header_info = new ProtocolHeader ((header));
+//     db_info_ptr.slice_data_info = new std::vector<uint8_t> ((plaintext_data));
+//     db_info_ptr.db_file_path = new std::string (file_path_info->db_file_path);
+//     db_info_ptr.input_file_path = new std::string (file_path_info->input_file_path);   
+//     db_info_ptr.output_file_path = new std::string (file_path_info->output_file_name); 
+// }
+
+bool Sqlite_DB_process_transmission_and_write_to_file::is_control(uint8_t c)
 {
     return c == '\r' || c == '\n';
 }
 
-int Sqlite_DB_process_slice_info::initialize_m_transmission_info(std::shared_ptr<DB_Info> db_info)
-{
-    this->m_transmission_ptr->set_file_data_map(db_info->input_file_path);
-    return 0;
-}
-
-std::vector<uint8_t> Sqlite_DB_store::get_file_data_vector( std::shared_ptr<DB_Info> db_info)
-{
-    //open data file
-    std::ifstream file(db_info->input_file_path,std::ios::binary);
-    if (!file)
-    {
-        std::cerr<<"get_file_data : open file failed! and the error infromation :"<<
-        strerror(errno)<<std::endl;
-        return {};
-    }
-
-    return{
-        std::istreambuf_iterator<char>(file),
-        std::istreambuf_iterator<char>()
-    };
-    /*
-    1. 完全安全 - 所有资源生命周期正确管理
-
-    2. 更高效 - 最大化利用编译器的返回值优化
-
-    3. 更简洁 - 减少不必要的中间变量和操作
-
-    4. 符合现代 C++ 最佳实践 - 核心准则是"不要为编译器能自动优化的东西写额外代码"
-
-    当返回函数内构造的对象时，优先使用直接返回临时对象的写法，让编译器选择最高效的实现方式。
-    */
-}
-
-std::vector<int> Sqlite_DB_store::get_failIndex_vector(std::shared_ptr<DB_Info> db_info)
-{
-    auto connectionWrapped_ptr = this->m_connection_pool_ptr->return_connectionWrapper_ptr(db_info->db_file_path); 
-    int rc = sqlite3_bind_int(
-    connectionWrapped_ptr->return_stmt_ptr(DB_Type::GETINDEX),
-    1,
-    db_info->header_info.total_slices - 1);
-
-    rc = sqlite3_bind_blob(
-        connectionWrapped_ptr->return_stmt_ptr(DB_Type::GETINDEX),
-        2,
-        db_info->header_info.file_id.data(),
-        db_info->header_info.file_id.size(),
-        SQLITE_STATIC
-    );
-
-    if (rc != SQLITE_OK)
-    {
-        std::cerr<<"get_failIndex_vector : rc != SQLITE_OK and error infromation : "<<sqlite3_errmsg(connectionWrapped_ptr->db_ptr)<<std::endl;
-        this->m_connection_pool_ptr->release_connectionWrapper_ptr(std::move(connectionWrapped_ptr));
-        return {};
-    }
-
-    std::vector<int> missing_index_vector;
-    while( (rc = sqlite3_step(connectionWrapped_ptr->return_stmt_ptr(DB_Type::GETINDEX)) ) == SQLITE_ROW)
-    {
-        int missing_index = sqlite3_column_int((connectionWrapped_ptr->return_stmt_ptr(DB_Type::GETINDEX)), 0);
-        missing_index_vector.push_back(missing_index);
-    }
-
-    if ( rc != SQLITE_DONE)
-    {
-        std::cerr<<"get_failIndex_vector : rc != SQLITE_DONE and error infromation : "<<sqlite3_errmsg(connectionWrapped_ptr->db_ptr)<<std::endl;
-        this->m_connection_pool_ptr->release_connectionWrapper_ptr(std::move(connectionWrapped_ptr));
-        return {};
-    }
-
-    std::string vector_string;
-    vector_string = nlohmann::json(missing_index_vector).dump();
-
-    rc = sqlite3_bind_text(
-    connectionWrapped_ptr->return_stmt_ptr(DB_Type::GETFAILINDEX),
-    1,
-    vector_string.c_str(),
-    vector_string.size(),
-    SQLITE_STATIC
-    );
-
-    rc = sqlite3_bind_blob(
-        connectionWrapped_ptr->return_stmt_ptr(DB_Type::GETFAILINDEX),
-        2,
-        db_info->header_info.file_id.data(),
-        db_info->header_info.file_id.size(),
-        SQLITE_STATIC
-    );
-
-    if (rc != SQLITE_OK)
-    {
-        std::cerr<<"get_failIndex_vector : rc != SQLITE_OK and error infromation : "<<sqlite3_errmsg(connectionWrapped_ptr->db_ptr)<<std::endl;
-        this->m_connection_pool_ptr->release_connectionWrapper_ptr(std::move(connectionWrapped_ptr));
-        return {};
-    }
-
-    rc = sqlite3_step(connectionWrapped_ptr->return_stmt_ptr(DB_Type::GETFAILINDEX));
-
-    if ( rc != SQLITE_DONE)
-    {
-        std::cerr<<"get_failIndex_vector : rc != SQLITE_DONE and error infromation : "<<sqlite3_errmsg(connectionWrapped_ptr->db_ptr)<<std::endl;
-        this->m_connection_pool_ptr->release_connectionWrapper_ptr(std::move(connectionWrapped_ptr));
-        return {};
-    }
-
-    // sqlite3_reset(connectionWrapped_ptr->return_stmt_ptr(DB_Type::GETINDEX));
-    this->m_connection_pool_ptr->release_connectionWrapper_ptr(std::move(connectionWrapped_ptr));
-    //record missing index to header_info
-    db_info->header_info.total_slices = missing_index_vector.size();
-    return missing_index_vector;
-}
-
-int Sqlite_DB_store::check_exist_dbFile_record(std::shared_ptr<DB_Info> db_info)
-{
-    auto ConnectionWrapped_ptr = this->m_connection_pool_ptr->return_connectionWrapper_ptr(db_info->db_file_path); 
-    sqlite3_exec(ConnectionWrapped_ptr->db_ptr,"BEGIN TRANSACTION",nullptr,nullptr,nullptr);
-    if (ConnectionWrapped_ptr == nullptr || ConnectionWrapped_ptr->return_stmt_ptr(DB_Type::CONTENT)== nullptr)
-    {
-        std::cerr << "get_DBfile_parameters : return_connectionWrapper_ptr is nullptr ! and connectino_wrapped_ptr.get() is "
-        <<ConnectionWrapped_ptr.get() << std::endl;
-        return false;
-    }
-
-    {
-        // 如果 db_info.slice_data_info.file_id  在 slice_records 中不存在， 则插入一条记录
-        int rc = sqlite3_bind_blob(ConnectionWrapped_ptr->return_stmt_ptr(DB_Type::INSPECT_ID), 1,
-                                db_info->header_info.file_id.data(),
-                                db_info->header_info.file_id.size(),
-                                SQLITE_STATIC);
-        bool record_exists = ( sqlite3_step(ConnectionWrapped_ptr->return_stmt_ptr(DB_Type::INSPECT_ID)) == SQLITE_ROW ) ;
-        sqlite3_reset(ConnectionWrapped_ptr->return_stmt_ptr(DB_Type::INSPECT_ID));
-
-        if (!record_exists)
-        {
-            rc = sqlite3_bind_blob(ConnectionWrapped_ptr->return_stmt_ptr(DB_Type::NEW_RECORD), 1,
-                                db_info->header_info.file_id.data(),
-                                db_info->header_info.file_id.size(),
-                                SQLITE_STATIC);
-            rc = sqlite3_bind_int(ConnectionWrapped_ptr->return_stmt_ptr(DB_Type::NEW_RECORD), 4,
-                                db_info->header_info.total_slices);
-            rc = sqlite3_bind_int64(ConnectionWrapped_ptr->return_stmt_ptr(DB_Type::NEW_RECORD), 3,
-                                    static_cast<int64_t>(db_info->header_info.magic));
-            rc = sqlite3_bind_text(ConnectionWrapped_ptr->return_stmt_ptr(DB_Type::NEW_RECORD), 2,
-                                db_info->input_file_path.c_str(),
-                                -1,
-                                SQLITE_STATIC);
-            rc = sqlite3_bind_text(ConnectionWrapped_ptr->return_stmt_ptr(DB_Type::NEW_RECORD), 5,
-                                db_info->output_file_name.c_str(),
-                                -1,
-                                SQLITE_STATIC);
-
-            rc = sqlite3_step(ConnectionWrapped_ptr->return_stmt_ptr(DB_Type::NEW_RECORD));
-            if(rc != SQLITE_DONE)
-            {
-                std::cerr<<"NewRecorconnection_wrapper_ptr->db_ptruild failed and error is : "<<sqlite3_errmsg(ConnectionWrapped_ptr->db_ptr)<<std::endl;
-                sqlite3_exec(ConnectionWrapped_ptr->db_ptr,"ROLLBACK",nullptr,nullptr,nullptr);
-                this->m_connection_pool_ptr->release_connectionWrapper_ptr(std::move(ConnectionWrapped_ptr));
-                return false;
-            }
-        }
-    }
-    sqlite3_reset((ConnectionWrapped_ptr->return_stmt_ptr(DB_Type::NEW_RECORD)));
-    sqlite3_exec(ConnectionWrapped_ptr->db_ptr,"COMMIT",nullptr,nullptr,nullptr);
-    sqlite3_reset((ConnectionWrapped_ptr->return_stmt_ptr(DB_Type::NEW_RECORD)));
-    return SQLITE_DONE;
-}
-
-Sqlite_DB_process_transmission_and_write_to_file::Sqlite_DB_process_transmission_and_write_to_file
-(Thread_pool* thread_pool_ptr,MqttClient* mqtt_client_ptr,ConnectionPool* connection_pool_ptr,std::shared_ptr<spdlog::logger> logger):
-    m_thread_pool_ptr(thread_pool_ptr),
-    m_mqtt_client_ptr(mqtt_client_ptr),
-    m_connection_pool_ptr(connection_pool_ptr),
-    m_spdlogger(logger)
-    {
-        m_DB_Info_vector.reserve(1000000);
-        m_swap_DB_Info_vector.reserve(1000000);
-    }
-
-int Sqlite_DB_process_transmission_and_write_to_file::interface_process_transmission_and_write_to_file(
-    const std::string &payload,
-    std::shared_ptr<DB_Info> db_info)
-{
-        {
-            int ret = m_mqtt_client_ptr->SendSliceData(payload); 
-            if(ret == -1)
-            {
-                std::cerr << "Send Slice Data Failed" << std::endl;
-                return static_cast<ssize_t>(-1);
-            }
-            else
-            {
-                int rc = write_message_to_lockFreeQueue(payload,db_info);
-                if (rc != SQLITE_DONE)
-                {
-                    std::cerr<<"operate_raw_DBfiles : write message to file failed!"<<std::endl;
-                    return static_cast<ssize_t>(-1);
-                }
-                return static_cast<ssize_t>(1);
-            }
-        };
-}
-
-int Sqlite_DB_process_transmission_and_write_to_file::write_message_to_lockFreeQueue(const std::string &proto_msg,std::shared_ptr<DB_Info> file_path_info)
-{
-    TestMsg msg;
-    ProtocolHeader header;
-    msg.ParseFromString(proto_msg);
-
-    header.magic = (msg.magic());
-    header.slice_index = (msg.slice_index());
-    header.total_slices = (msg.total_slices());
-    header.plaintext_size = (msg.plaintext_size());    
-
-    std::copy(msg.file_id().begin(),msg.file_id().end(),header.file_id.begin());
-    std::copy(msg.iv().begin(),msg.iv().end(),header.iv.begin());
-    std::copy(msg.aes_key().begin(),msg.aes_key().end(),header.AES_KEY.begin());
-    std::vector<uint8_t> ciphertext_data(msg.ciphertext().begin(),msg.ciphertext().end());
-    
-    std::vector<uint8_t> plaintext_data;
-    int rc =DecryptSharedData(ciphertext_data,plaintext_data,header);  
-    if (rc != true)
-    {
-        std::cerr<<"write_message_to_lockFreeQueue : Decrypt Shared Data Failed" << std::endl;
-        return false;
-    }
-    
-    DB_Info_raw_ptr db_info_ptr ;
-    db_info_ptr.header_info = new ProtocolHeader ((header));
-    db_info_ptr.slice_data_info = new std::vector<uint8_t> ((plaintext_data));
-    db_info_ptr.db_file_path = new std::string (file_path_info->db_file_path);
-    db_info_ptr.input_file_path = new std::string (file_path_info->input_file_path);   
-    db_info_ptr.output_file_path = new std::string (file_path_info->output_file_name); 
-    db_info_ptr.file_size =(file_path_info->file_size);
-
-    rc = verify_ptr_valid(db_info_ptr); 
-    if(rc !=1)
-    {
-        std::cerr<<"db_info_ptr is not valid\n";
-        return -1;
-    }
-
-    bool status =m_lockfree_queue.enqueue(std::move(db_info_ptr));
-    if(!status)
-    {
-        m_spdlogger->info("push_message_to_lockfreequeue_fail:file_name : {} , slice_index : {}",
-        *(db_info_ptr.input_file_path), db_info_ptr.header_info->slice_index);
-    }
-     m_spdlogger->info("send_to_lockfreequeue :file_name : {}",
-    *(db_info_ptr.input_file_path));
-    return SQLITE_DONE;
-}
-
-int Sqlite_DB_process_transmission_and_write_to_file::verify_ptr_valid(const DB_Info_raw_ptr db_info_raw_ptr)
-{
-    return db_info_raw_ptr.db_file_path!=nullptr&&
-    db_info_raw_ptr.file_size!=0 &&
-    db_info_raw_ptr.header_info!=nullptr&&
-    db_info_raw_ptr.input_file_path!=nullptr&&
-    db_info_raw_ptr.output_file_path!=nullptr&&
-    db_info_raw_ptr.slice_data_info!=nullptr;
-}
-
-
-const std::unordered_map<std::string,std::shared_ptr< std::atomic<int>> >& Sqlite_DB_process_transmission_and_write_to_file::return_file_data_map()
-{
-    return this->file_data_map;
-}
-
-void Sqlite_DB_process_transmission_and_write_to_file::set_file_data_map(const std::string &input_file_path)
-{
-    this->file_data_map[input_file_path] = std::make_shared<std::atomic<int>>(0);
-}
 
 void Sqlite_DB_process_transmission_and_write_to_file::delete_done_tasks_in_process_map()
 {
-    //clear file_progress map
-    this->file_data_map.clear(); 
-
-    //reset count to doned tasks
-    this->m_worked_tasks = 0;   
-
     DB_Info_raw_ptr db_info;
     //clear lockfree_queue , m_DB_Info_vector , m_swap_DB_Info_vector
     while(m_lockfree_queue.try_dequeue(db_info))
     {
-        db_info.clear();
-    }
-    while(!m_DB_Info_vector.empty())
-    {
-        db_info = m_DB_Info_vector.back();
-        db_info.clear();
-    }
-    while(!m_swap_DB_Info_vector.empty())
-    {
-        db_info = m_swap_DB_Info_vector.back();
         db_info.clear();
     }
 
@@ -517,113 +127,6 @@ void Sqlite_DB_process_transmission_and_write_to_file::delete_done_tasks_in_proc
     this->m_thread_pool_ptr->clear_scheduled_tasks();
 }
 
-void Sqlite_DB_process_transmission_and_write_to_file::delete_done_tasks_periodicly(const std::unordered_map<std::string, bool> &file_data_map)
-{
-    if (!file_data_map.empty())
-    {
-        for (auto &it : file_data_map)
-        {
-            if (it.second == true)
-            {
-                this->file_data_map.erase(it.first);
-            }
-        }
-    }
-}
-
-void Sqlite_DB_process_transmission_and_write_to_file::load_work_from_lockFreeQueue()
-{
-    DB_Info_raw_ptr db_info;
-    while(m_DB_Info_vector.size() <1000&&m_lockfree_queue.try_dequeue(db_info))
-    {
-        // add tasks from queue to vector( empty() return true if queue is empty) )
-        m_DB_Info_vector.push_back(db_info);
-    }
-    
-    // call function to process the tasks in vector 
-    std::swap(m_DB_Info_vector,m_swap_DB_Info_vector);
-    if(m_swap_DB_Info_vector.empty())
-    {
-        std::cerr<<"swap_vector is empty\n";
-        return;
-    }
-
-    batch_deal_with_db_info(m_swap_DB_Info_vector);
-    m_swap_DB_Info_vector.clear();
-}
-
-int Sqlite_DB_process_transmission_and_write_to_file::batch_deal_with_db_info(const std::vector<DB_Info_raw_ptr>& data_vector)
-{
-    std::string db_path(data_vector.begin()->db_file_path->data());
-    auto connection_wrapped_ptr = this->m_connection_pool_ptr->return_connectionWrapper_ptr(db_path);
-    sqlite3_exec(connection_wrapped_ptr->db_ptr,"BEGIN TRANSACTION",nullptr,nullptr,nullptr);
-    if (connection_wrapped_ptr == nullptr || connection_wrapped_ptr->return_stmt_ptr(DB_Type::CONTENT)== nullptr)
-    {
-        std::cerr << "get_DBfile_parameters : return_connectionWrapper_ptr is nullptr ! and connectino_wrapped_ptr.get() is "
-        <<connection_wrapped_ptr.get() << std::endl;
-        return false;
-    }
-
-    for (auto& db_info : data_vector)
-    {
-        // blind parameters with slice_contents
-        int rc = sqlite3_bind_blob(connection_wrapped_ptr->return_stmt_ptr(DB_Type::CONTENT), 1,
-                                   db_info.header_info->file_id.data(), 
-                                   db_info.header_info->file_id.size(), 
-                                   SQLITE_STATIC);
-        rc = sqlite3_bind_int(connection_wrapped_ptr->return_stmt_ptr(DB_Type::CONTENT), 2,
-                              db_info.header_info->slice_index);
-        rc = sqlite3_bind_blob(connection_wrapped_ptr->return_stmt_ptr(DB_Type::CONTENT), 3,
-                               &db_info.header_info->AES_KEY,
-                               sizeof(db_info.header_info->AES_KEY),
-                               SQLITE_TRANSIENT);
-        rc = sqlite3_bind_blob(connection_wrapped_ptr->return_stmt_ptr(DB_Type::CONTENT), 4,
-                               db_info.header_info->iv.data(),
-                               sizeof(db_info.header_info->iv),
-                               SQLITE_STATIC);
-        rc = sqlite3_bind_blob(connection_wrapped_ptr->return_stmt_ptr(DB_Type::CONTENT), 5,
-                               db_info.slice_data_info->data(),
-                               db_info.slice_data_info->size(),
-                               SQLITE_STATIC);
-    
-        // ready to insert slice_contents 
-        rc = sqlite3_step(connection_wrapped_ptr->return_stmt_ptr(DB_Type::CONTENT));
-        if (rc != SQLITE_DONE || connection_wrapped_ptr->return_stmt_ptr(DB_Type::CONTENT) == nullptr)
-        {
-            std::cerr<< "Insert slice_contents failed and error :"<<sqlite3_errmsg(connection_wrapped_ptr->db_ptr)<<std::endl;
-            sqlite3_exec(connection_wrapped_ptr->db_ptr,"ROLLBACK",nullptr,nullptr,nullptr);
-            this->m_connection_pool_ptr->release_connectionWrapper_ptr(std::move(connection_wrapped_ptr));
-            return false;
-        }
-    
-        //reset last bind data,because in this loop , we have not release the connectionWrapped_ptr
-        sqlite3_reset(connection_wrapped_ptr->return_stmt_ptr(DB_Type::CONTENT));
-        {
-            //update file_progress_map
-            this->file_data_map[db_info.input_file_path->data()]->fetch_add(db_info.header_info->plaintext_size, std::memory_order_relaxed);
-            //update tasks_worked_count  
-            this->m_worked_tasks.fetch_add(1, std::memory_order_relaxed);
-
-            // connection_wrapped_ptr->is_done = this->file_data_map[db_info.input_file_path->data()]->load(std::memory_order_relaxed) == db_info.file_size;
-        }
-    }
-    sqlite3_exec(connection_wrapped_ptr->db_ptr,"COMMIT",nullptr,nullptr,nullptr);
-    this->m_connection_pool_ptr->release_connectionWrapper_ptr(std::move(connection_wrapped_ptr));
-    return SQLITE_DONE;
-}
-
-/**
- * @brief Decrypts shared data using AES-256-CBC encryption.
- *
- * @param ciphertext Input encrypted data to be decrypted
- * @param plaintext Output buffer for decrypted data (will be resized)
- * @param header Protocol header containing AES key and IV
- * @return true if decryption succeeded, false otherwise
- *
- * @note Uses OpenSSL EVP functions for decryption. The plaintext buffer
- *       will be automatically resized to fit the decrypted data.
- * @warning Proper error handling is implemented - returns false on any OpenSSL operation failure.
- */
 int Sqlite_DB_process_transmission_and_write_to_file::DecryptSharedData(const std::vector<uint8_t> &ciphertext, std::vector<uint8_t> &plaintext, ProtocolHeader &header)
 {
     EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
@@ -664,44 +167,18 @@ int Sqlite_DB_process_transmission_and_write_to_file::DecryptSharedData(const st
     return true;
 }
 
-const int Sqlite_DB_process_transmission_and_write_to_file::return_worked_tasks()
-{
-    return this->m_worked_tasks.load();
-}
-
-Sqlite_DB_Manager::Sqlite_DB_Manager(MqttClient* mqtt_client_ptr,std::shared_ptr<spdlog::logger> spdlogger):
-    m_connection_pool_ptr(new ConnectionPool()),
-    m_thread_pool_ptr(new Thread_pool()),
-    m_mqtt_client_ptr(mqtt_client_ptr),
-    m_transmission_info(new Sqlite_DB_process_transmission_and_write_to_file (m_thread_pool_ptr,m_mqtt_client_ptr,m_connection_pool_ptr,spdlogger)), 
-    m_slice_info(new Sqlite_DB_process_slice_info(m_thread_pool_ptr,m_transmission_info)),
-    m_store(new Sqlite_DB_store(m_connection_pool_ptr,m_slice_info)),
-    m_spdlogger(spdlogger)
-{
+int Sqlite_DB_Manager::send_request_to_server(std::string& request)
+{ 
+    m_mqtt_client_ref->SendSliceData(request);
+    return true;
 }
 
 Sqlite_DB_Manager::~Sqlite_DB_Manager()
 {
-    delete m_store;
-    delete m_slice_info;
+    // delete m_store;
     delete m_transmission_info;
     delete m_thread_pool_ptr;
     delete m_connection_pool_ptr;
-}
-
-void Sqlite_DB_Manager::Assign_tasks_to_sqlite_SB_Store(std::vector<MainWindows_Intermediate_Struct>& db_info)
-{
-    this->m_store->interface_DB_store(db_info);
-}
-
-const std::unordered_map<std::string, std::shared_ptr< std::atomic<int> > > &Sqlite_DB_Manager::return_file_data_map()
-{
-    return this->m_transmission_info->return_file_data_map();
-}
-
-int Sqlite_DB_Manager::return_worked_tasks()
-{
-    return this->m_transmission_info->return_worked_tasks();
 }
 
 int Sqlite_DB_Manager::return_scheduled_tasks()
@@ -806,9 +283,391 @@ void Sqlite_DB_Manager::concatenate_file(std::vector<std::string> &file_path_vec
     return;
 }
 
+Sqlite_DB_function::~Sqlite_DB_function(){
+    sqlite3_finalize(read_sourcefile_from_db_information_file_stmt_ptr);
+    sqlite3_finalize(check_table_exist_stmt_ptr);
+    sqlite3_finalize(create_new_db_information_record_stmt_ptr);
+    sqlite3_finalize(create_new_subordinate_db_record_stmt_ptr);
+    sqlite3_finalize(update_db_information_stmt_ptr);
 
-int Sqlite_DB_Manager::load_work_from_lockfree_queue()
+    sqlite3_close(db_information_ptr);
+    sqlite3_close(db_subordinate_ptr);
+
+    delete m_connection_pool_ptr;
+    std::cout<<"Sqlite_DB_function::~Sqlite_DB_function() called!\n";
+}
+
+void Sqlite_DB_function::presetting()
 {
-    m_transmission_info->load_work_from_lockFreeQueue();
-    return 0;
+    //  open db_information_file
+    if(sqlite3_open_v2(db_file_name.c_str(),&db_information_ptr,SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE|SQLITE_OPEN_NOMUTEX,nullptr) != SQLITE_OK)
+    {
+        std::cerr<<"Sqlite_information::presetting: "<<db_file_name<<" open failed\n";
+        return;
+    }
+
+    // if table not exist, create table in db_information_file 
+    if(sqlite3_prepare_v2(db_information_ptr,check_table_exist_sql,strlen(check_table_exist_sql),&check_table_exist_stmt_ptr,nullptr) != SQLITE_OK)
+    {   
+        std::cerr<<"Sqlite_information::presetting: "<<db_file_name<<" prepare check_sql failed\n";
+        return;
+    }
+    else{
+        bool table_exist = (sqlite3_step(check_table_exist_stmt_ptr) == SQLITE_ROW);
+        if(!table_exist)
+        {
+            for(auto& sql:Create_Table)
+            {
+                if(sqlite3_exec(db_information_ptr,sql,nullptr,nullptr,nullptr) != SQLITE_OK)
+                {
+                    std::cerr<<"Sqlite_information::presetting: "<<db_file_name<<" create table failed\n";
+                    return;
+                }
+            }
+        }
+    }    
+
+    //  read sourcefile information in db_information 
+    if(sqlite3_prepare_v2(db_information_ptr,read_sourcefile_from_db_information_sql,strlen(read_sourcefile_from_db_information_sql),&read_sourcefile_from_db_information_file_stmt_ptr,nullptr) != SQLITE_OK)
+    {
+        std::cerr<<"Sqlite_information::presetting: "<<db_file_name<<" prepare read_sql failed\n";
+        return;
+    }
+
+    //  create new record in db_information
+    if (sqlite3_prepare_v2(db_information_ptr,create_new_db_information_record_sql,strlen(create_new_db_information_record_sql),&create_new_db_information_record_stmt_ptr,nullptr) != SQLITE_OK) {
+        std::cerr<<"Sqlite_information::presetting: "<<db_file_name<<" prepare update_db_information_stmt_ptr failed\n";
+        return;
+    }
+
+    //  update db_information file
+    if(sqlite3_prepare_v2(db_information_ptr,update_db_information_sql,strlen(update_db_information_sql),&update_db_information_stmt_ptr,nullptr) != SQLITE_OK)
+    {
+        std::cerr<<"Sqlite_information::presetting: "<<db_file_name<<" prepare update_db_information_sql failed\n";
+        return;
+    }
+}
+
+bool Sqlite_DB_function::read_missing_slices_from_db_information_file(const std::string& file_path)
+{
+    // judge whether file_path is empty
+    bool find_record_in_db_information_file_result = false;
+    if (file_path.empty())
+    {
+        return find_record_in_db_information_file_result;
+    }
+
+    // bind file_path to sql,try read corresponding file information in db_information file
+    int rc =sqlite3_bind_text(read_sourcefile_from_db_information_file_stmt_ptr, 1 , file_path.data(), file_path.size(),SQLITE_STATIC);
+    if (rc != SQLITE_OK)
+    {
+        std::cerr<<"Sqlite_information::read_missing_slices_from_db_information_file: "<<" prepare read failed\n";
+        return find_record_in_db_information_file_result;
+    }
+    // read corresponding file whether exist in db_information file
+    while( (rc = sqlite3_step(read_sourcefile_from_db_information_file_stmt_ptr)) == SQLITE_ROW)
+    {
+        int missing_slice_index_length = sqlite3_column_bytes(read_sourcefile_from_db_information_file_stmt_ptr,2);
+        if(missing_slice_index_length == 0)
+        {
+            continue;
+        }
+        int file_id_length = sqlite3_column_bytes(read_sourcefile_from_db_information_file_stmt_ptr,1);
+        int input_file_path_length = sqlite3_column_bytes(read_sourcefile_from_db_information_file_stmt_ptr,2);
+        int missing_slices_index_length = sqlite3_column_bytes(read_sourcefile_from_db_information_file_stmt_ptr,3);
+        std::string file_id  (reinterpret_cast<const char*>(sqlite3_column_blob(read_sourcefile_from_db_information_file_stmt_ptr,1)),file_id_length);
+        std::cout<<"read: file_id:"<<file_id<<"\n";
+        std::string input_file_path  (reinterpret_cast<const char*>(sqlite3_column_text(read_sourcefile_from_db_information_file_stmt_ptr,2)));      
+        std::string missing_slices_index_string (reinterpret_cast<const char*>(sqlite3_column_blob(read_sourcefile_from_db_information_file_stmt_ptr,3))); 
+
+        {
+            auto request_message_ptr = m_memory_pool_ref.return_ptr();
+            request_message_ptr->set_is_download(false);
+            request_message_ptr->set_file_id(file_id); 
+            request_message_ptr->set_input_file_path(input_file_path); 
+            std::string json_text (missing_slices_index_string) ;
+            request_message_ptr->set_missing_slices_index_json( json_text);
+
+            m_memory_pool_ref.push(std::move(request_message_ptr));
+            find_record_in_db_information_file_result = true;
+        }
+    }
+    sqlite3_reset(read_sourcefile_from_db_information_file_stmt_ptr);
+    return find_record_in_db_information_file_result;
+}
+
+std::string Sqlite_DB_function::return_current_date_string()
+{
+    auto now = std::chrono::system_clock::now();
+    auto time = std::chrono::system_clock::to_time_t(now);
+    std::tm tm = *std::localtime(&time);
+
+    std::ostringstream oss;
+    oss << std::put_time(&tm, "%Y%m%d"); // 格式化为 "20240520"
+    return oss.str();
+}
+
+std::vector<int> Sqlite_DB_function::return_continous_sequence(int file_size){
+    std::vector<int> missing_index_vector;
+
+    missing_index_vector.reserve(file_size );
+
+    for(int i = 0; i < file_size; i++)
+    {
+        missing_index_vector.push_back(i);
+    }
+
+    return missing_index_vector;
+}
+
+int Sqlite_DB_function::create_new_file_on_db_information(const std::string& sourcefile_path)
+{
+    int file_size = fs::file_size(sourcefile_path);
+    file_size = (file_size + SLICE_SIZE - 1)/SLICE_SIZE;
+    if(file_size <= 0)
+    {
+        std::cerr<<"Sqlite_information::return_continous_sequence: "<<" file_size <= 0\n";
+        return true;
+    }
+
+    std::array<uint8_t,16> file_id;
+    {
+        random_generator Generated_uuid;
+        uuid uuid_ptr= Generated_uuid();
+        std::copy(uuid_ptr.begin(), uuid_ptr.end(), file_id.begin());
+    }
+    std::cout<<"write file_id : "<<file_id.data()<<"\n";
+    std::vector<int> missing_index_vector = return_continous_sequence(file_size);
+    std::string json_string = "";
+    if(!missing_index_vector.empty())
+    {
+        json_string = nlohmann::json(missing_index_vector).dump();
+    }
+
+    int rc = sqlite3_bind_blob(create_new_db_information_record_stmt_ptr,1,file_id.data(),file_id.size(),SQLITE_STATIC);
+    rc = sqlite3_bind_text(create_new_db_information_record_stmt_ptr,2,sourcefile_path.c_str(),sourcefile_path.size(),SQLITE_STATIC);
+    rc = sqlite3_bind_text(create_new_db_information_record_stmt_ptr,3,json_string.c_str(),json_string.size(),SQLITE_STATIC);
+    if(rc != SQLITE_OK)
+    {
+        std::cerr<<"Sqlite_information::update_new_file_on_db: "<<" prepare create_new_db_information_record_stmt_ptr failed\n";
+        return -1;
+    }
+
+    rc = sqlite3_step(create_new_db_information_record_stmt_ptr);
+    if(rc != SQLITE_DONE)
+    {
+        std::cerr<<"Sqlite_information::update_new_file_on_db: "<<" create_new_db_information_record_stmt_ptr failed\n";
+        return -1;
+    }
+    sqlite3_reset(create_new_db_information_record_stmt_ptr);
+
+    return true;
+}
+
+std::string Sqlite_DB_function::verify_db_path_memorySize()
+{
+    std::string db_file_path = db_file_pre + return_current_date_string() + ".db";
+    if(fs::exists(db_file_path))
+    {
+        auto db_file_size = fs::file_size(db_file_path);
+        if( db_file_size > MAX_DB_FILE_LIMIT)
+        {
+            std::string stem = fs::path(db_file_path).stem().string() + "A";
+            std::string extention = fs::path(db_file_path).extension().string();
+            std::string new_db_file_path = fs::path(db_file_path).parent_path().string() + stem + extention;
+
+            return new_db_file_path;
+        }
+    }
+    return db_file_path;
+}
+
+int taskExecution::send_task()
+{ 
+    // construct ProtocolHeader
+    for(size_t i = 0; i < m_memory_pool_ref.size(); i++)
+    {
+        auto msg_ptr = m_memory_pool_ref.return_pre_ptr();
+        if (msg_ptr->is_download())
+        {
+            m_memory_pool_ref.push(std::move(msg_ptr));
+            continue;
+        }
+
+        msg_ptr->set_is_download(true);
+        std::string msg_string;
+        msg_ptr->SerializeToString(&msg_string);
+        m_memory_pool_ref.push(std::move(msg_ptr));
+    
+        m_mqtt_client_ref.SendSliceData(msg_string);
+    }
+    
+    #if DEBUG_TEST == true
+        std::cout << "send_task is success" << std::endl;
+    #endif
+
+    return 1;
+}
+
+std::string Sqlite_DB_process_transmission_and_write_to_file::return_task_from_queue()
+{
+    std::string msg = m_responding_queue.front();
+    m_responding_queue.pop();
+    return msg;
+}
+
+int Sqlite_DB_write_file::write_message_in_db_subordinate_file_in_batch(std::queue<mqtt::const_message_ptr>& m_tmp_received_messages_queue)
+{ 
+    auto connection_wrapped_ptr = m_sqlite_db_function_ref.m_connection_pool_ptr->return_connectionWrapper_ptr();
+    sqlite3_exec(connection_wrapped_ptr->db_ptr,"BEGIN TRANSACTION",nullptr,nullptr,nullptr);
+    if (connection_wrapped_ptr == nullptr || connection_wrapped_ptr->return_stmt_ptr(DB_Type::CONTENT)== nullptr)
+    {
+        std::cerr << "get_DBfile_parameters : return_connectionWrapper_ptr is nullptr ! and connectino_wrapped_ptr.get() is "
+        <<connection_wrapped_ptr.get() << std::endl;
+        return false;
+    }
+
+    for (size_t i=0; i< m_tmp_received_messages_queue.size(); i++)
+    {
+        TestMsg data_information;
+        auto msg = m_tmp_received_messages_queue.front()->to_string();
+        data_information.ParseFromString(msg);
+        m_tmp_received_messages_queue.pop();
+
+        int rc = blob_parameter_insert(connection_wrapped_ptr.get(),data_information);
+        if(rc != SQLITE_OK)
+        {
+            std::cerr<< "Insert slice_contents failed and error :"<<sqlite3_errmsg(connection_wrapped_ptr->db_ptr)<<std::endl;
+            sqlite3_exec(connection_wrapped_ptr->db_ptr,"ROLLBACK",nullptr,nullptr,nullptr);
+            m_sqlite_db_function_ref.m_connection_pool_ptr->release_connectionWrapper_ptr(std::move(connection_wrapped_ptr));
+            return false;
+        }
+    
+        //  insert slice_contents 
+        rc = sqlite3_step(connection_wrapped_ptr->return_stmt_ptr(DB_Type::CONTENT));
+        if (rc != SQLITE_DONE || connection_wrapped_ptr->return_stmt_ptr(DB_Type::CONTENT) == nullptr)
+        {
+            std::cerr<< "Insert slice_contents failed and error :"<<sqlite3_errmsg(connection_wrapped_ptr->db_ptr)<<std::endl;
+            sqlite3_exec(connection_wrapped_ptr->db_ptr,"ROLLBACK",nullptr,nullptr,nullptr);
+            m_sqlite_db_function_ref.m_connection_pool_ptr->release_connectionWrapper_ptr(std::move(connection_wrapped_ptr));
+            return false;
+        }
+        
+        sqlite3_reset(connection_wrapped_ptr->return_stmt_ptr(DB_Type::CONTENT));
+    }
+    sqlite3_exec(connection_wrapped_ptr->db_ptr,"COMMIT",nullptr,nullptr,nullptr);
+
+    //  update memory pool
+    m_sqlite_db_function_ref.update_memory_pool(connection_wrapped_ptr->return_db_file_path());
+
+    //  release connection   
+    m_sqlite_db_function_ref.m_connection_pool_ptr->release_connectionWrapper_ptr(std::move(connection_wrapped_ptr));
+
+    #if DEBUG_TEST == true
+        std::cout << "write_message_in_db_subordinate_file_in_batch is success" << std::endl;
+    #endif
+
+    return SQLITE_DONE;
+}
+
+void Sqlite_DB_function::update_memory_pool(const std::string& file_path)
+{
+    for(size_t i = 0; i < m_memory_pool_ref.size(); i++)
+    {
+        auto request_message_ptr = m_memory_pool_ref.return_pre_ptr();
+        std::vector<int> tmp_vector = read_missing_slices_from_db_subordinate_file(*request_message_ptr,file_path);
+        if(tmp_vector.size()!=0)
+        {
+            request_message_ptr->set_missing_slices_index_json(nlohmann::json(tmp_vector).dump());
+        }
+        else
+        {
+            request_message_ptr->set_missing_slices_index_json("");
+        }
+        m_memory_pool_ref.push(std::move(request_message_ptr));
+    }
+}
+
+int Sqlite_DB_write_file::blob_parameter_insert(ConnectionWrapper* connection_wrapped_ptr,TestMsg& data_information)
+{
+    // blind parameters with slice_contents
+    int rc = sqlite3_bind_blob(connection_wrapped_ptr->return_stmt_ptr(DB_Type::CONTENT), 1,
+                                data_information.file_id().data(), 
+                                data_information.file_id().size(), 
+                                SQLITE_STATIC);
+    rc = sqlite3_bind_int(connection_wrapped_ptr->return_stmt_ptr(DB_Type::CONTENT), 2,
+                            data_information.slice_index());
+    rc = sqlite3_bind_blob(connection_wrapped_ptr->return_stmt_ptr(DB_Type::CONTENT), 3,
+                            data_information.aes_key().data(),
+                            data_information.aes_key().size(),
+                            SQLITE_TRANSIENT);
+    rc = sqlite3_bind_blob(connection_wrapped_ptr->return_stmt_ptr(DB_Type::CONTENT), 4,
+                            data_information.iv().data(),
+                            data_information.iv().size(),
+                            SQLITE_STATIC);
+    rc = sqlite3_bind_blob(connection_wrapped_ptr->return_stmt_ptr(DB_Type::CONTENT), 5,
+                            data_information.ciphertext().data(),
+                            data_information.ciphertext().size(),
+                            SQLITE_STATIC);
+    return rc;
+}
+
+Sqlite_DB_function::Sqlite_DB_function(memory_pool& memory_pool_ref)
+: m_memory_pool_ref(memory_pool_ref)
+,m_connection_pool_ptr(new ConnectionPool())
+{
+
+}
+
+std::vector<int> Sqlite_DB_function::read_missing_slices_from_db_subordinate_file(request_message& request_message_ptr,const std::string& last_update_db_subordinate_file_path)
+{
+    std::vector<int> missing_slices_index_vector;
+    auto connection_wrapped_ptr = m_connection_pool_ptr->check_use_ptr_in_connection_pool(last_update_db_subordinate_file_path);
+    
+    int rc =sqlite3_bind_blob(connection_wrapped_ptr->return_stmt_ptr
+        (DB_Type::GET_FAIL_INDEX),1,request_message_ptr.missing_slices_index_json().data(),request_message_ptr.missing_slices_index_json().size(),SQLITE_STATIC);
+    if(rc != SQLITE_OK)
+    {
+        std::cerr<<"Error binding parameter: "<<sqlite3_errmsg(db_subordinate_ptr)<<std::endl;
+        return std::vector<int>{};
+    }
+    rc = sqlite3_bind_blob(connection_wrapped_ptr->return_stmt_ptr(DB_Type::GET_FAIL_INDEX),2,request_message_ptr.file_id().data(),request_message_ptr.file_id().size(),SQLITE_STATIC);
+    if(rc != SQLITE_OK)
+    {
+        std::cerr<<"Error binding parameter: "<<sqlite3_errmsg(db_subordinate_ptr)<<std::endl;
+        return std::vector<int>{};
+    }
+
+    while((rc = sqlite3_step(connection_wrapped_ptr->return_stmt_ptr(DB_Type::GET_FAIL_INDEX))) == SQLITE_ROW )
+    {
+        missing_slices_index_vector.push_back(sqlite3_column_int(connection_wrapped_ptr->return_stmt_ptr(DB_Type::GET_FAIL_INDEX),0));
+    }
+
+    m_connection_pool_ptr->release_connectionWrapper_ptr(std::move(connection_wrapped_ptr));
+    return missing_slices_index_vector;
+}
+
+void Sqlite_information::presetting_db_information()
+{
+    m_sqlite_db_function_ref.presetting();
+}
+
+
+void taskExecution::write_task_to_db_suborinate_file()
+{
+    this->m_mqtt_client_ref.transmit_message_to_sqlite();
+}
+
+void taskExecution::delete_task_from_memory_pool(const std::string& input_file_path)
+{
+    for(size_t i = 0; i < m_memory_pool_ref.size(); i++)
+    {
+        auto tmp_object = m_memory_pool_ref.return_pre_ptr();
+        if(tmp_object->input_file_path()==input_file_path)
+        {
+            std::cout<<"task:"<<input_file_path<<" is deleted"<<std::endl;
+            return;
+        }
+        m_memory_pool_ref.push(std::move(tmp_object));
+    }
 }

@@ -66,9 +66,7 @@ void ProtocolHeader_To_Proto(const ProtocolHeader &protocolheader,const std::vec
     msg.set_file_id(protocolheader.file_id.data(),protocolheader.file_id.size());
     msg.set_magic(protocolheader.magic);
     msg.set_slice_index(protocolheader.slice_index);
-    msg.set_total_slices(protocolheader.total_slices);
     msg.set_iv(protocolheader.iv.data(),protocolheader.iv.size());
     msg.set_aes_key(protocolheader.AES_KEY.data(),protocolheader.AES_KEY.size());
     msg.set_ciphertext(ciphertext.data(),ciphertext.size());
-    msg.set_plaintext_size(protocolheader.plaintext_size);
 }

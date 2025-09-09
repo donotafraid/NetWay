@@ -15,12 +15,10 @@ MainWindows::MainWindows(QWidget *parent,DownloadTasks* downloadTasks)
         emit m_DownloadButton->clicked();
     }
     #endif
-
 }
 
 MainWindows::~MainWindows()
 {
-    delete m_fileListWidget ;
 }
 
 void MainWindows::check_DownLoadFolder_initalize()
@@ -53,40 +51,40 @@ void MainWindows::check_DownLoadFolder_initalize()
 
 void MainWindows::addFileToList(const QString & file_path)
 {
-    
-    if(!QFile::exists(file_path)||
-    !m_downloadTasks->isNewDownTask(file_path)||
-    0) 
+    if(!QFile::exists(file_path)||0) 
     {
         std::cout<<"File not found or File has exist! "<<std::endl;
         return;
     }
 
-    QFileInfo file(file_path);
+    //  检查提供的文件路径是否存在于已有db_information文件里，不存在则为该文件路径在db_information中创建新的条目
+    //  其次，添加该文件路径进入list,视作任务之一
+    int rc = false;
+    while(!rc)
+    {
+        rc = this->m_downloadTasks->intetface_read_missing_slices_from_db_information_file(file_path.toStdString());
+        if (rc == false)
+        {
+            int create_new_record_result = this->m_downloadTasks->interface_create_new_file_on_db_information(file_path.toStdString()); 
+            if(create_new_record_result == false)
+            {
+                std::cout<<"addFileToList:update new file on db failed"<<std::endl;
+                return;
+            }
+        }
+    }
 
-    // 检测文件是否存在对应的文件夹
-    QString currentDir = QDir::currentPath();
-    QString folder_path = currentDir + "/" + "DownloadFileManagement";
-
-    QString file_folder_name = file.fileName();
-
-    MainWindows_Intermediate_Struct intermediate_struct;
-    intermediate_struct.source_file_path = file_path.toStdString();
-    intermediate_struct.output_file_path = file.fileName().toStdString();
-    intermediate_struct.stored_DB_folder_path =  folder_path.toStdString() ;
-    intermediate_struct.db_file_path = folder_path.toStdString() + "/" + get_current_date_string() + ".db";
-    intermediate_struct.file_size = file.size();
-
-    FileProgressItem *progressItem = new FileProgressItem(this->m_fileListWidget,std::move(intermediate_struct));
+    FileProgressItem *progressItem = new FileProgressItem(this->m_fileListWidget,file_path.toStdString());
     QListWidgetItem* listItem = new QListWidgetItem(this->m_fileListWidget);
-
-    progressItem->setFileName(file_path.toStdString());
-    progressItem->return_countSize(file_path.toStdString());
-    progressItem->setProgress(0);
-
+    
     listItem->setSizeHint(progressItem->sizeHint());
+    progressItem->setFilePath(file_path.toStdString());
+    progressItem->return_countSize(file_path.toStdString());
+
+    //  添加文件进度部件
     m_fileListWidget->setItemWidget(listItem,progressItem);
 
+    //  添加文件进度部件到缓存里的map里
     m_downloadTasks->addItem_cache(progressItem);
 }
 
@@ -192,17 +190,12 @@ void MainWindows::on_DeleteButton_clicked()
 
 void MainWindows::on_ClearButton_clicked()
 {
-    // 清除所有的run（），之后再清空文件列表
     {
         m_fileListWidget->clear();
-        m_downloadTasks->cleaer_cache();
-    }
-
-    // //清除 DB_Manager 相关的对象
-    {
-        this->m_downloadTasks->clear_run_status();
+        m_downloadTasks->clear_progreeMap_cache();
     }
 }
+
 
 void MainWindows::on_information_downloadList_clicked()
 {
@@ -262,6 +255,7 @@ void MainWindows::on_information_downloadList_clicked()
 
 void MainWindows::on_pauseButton_clicked()
 {
+    //  get current pause status
     bool currentPaused = m_downloadTasks->return_isPause();
 
     // exchange the pause status
@@ -302,6 +296,7 @@ void MainWindows::on_loadTaskButton_clicked()
     for(const auto& file_path: subDirs)
         {
             QString full_path = downloadDir.filePath(file_path);
+            std::cout<<"full_path: "<<full_path.toStdString()<<std::endl;
             this->addFileToList(full_path);
         }
 }
@@ -350,8 +345,8 @@ void MainWindows::dropEvent(QDropEvent * event)
     event->acceptProposedAction();
 }
 
-FileProgressItem::FileProgressItem(QWidget *parent,MainWindows_Intermediate_Struct&& file_info):
-m_fileInfo(file_info)
+FileProgressItem::FileProgressItem(QWidget *parent,const std::string& file_name):
+m_file_name(file_name)
 {
     QHBoxLayout *layout = new QHBoxLayout(this);
     layout->setSpacing(50);
@@ -372,24 +367,24 @@ m_fileInfo(file_info)
     layout->addWidget(m_progressTextLabel);
 }
 
-void FileProgressItem::setFileName(const std::string& file_name)
+void FileProgressItem::setFilePath(const std::string& file_name)
 {
     auto file_path = QString::fromStdString(file_name); 
     m_fileNameLabel->setText(file_path);
 }
 
-std::string FileProgressItem::returnFileName() const
+std::string FileProgressItem::returnFilePath() const
 {
-    return this->m_fileInfo.source_file_path;
+    return this->m_file_name;
 }
 
 int FileProgressItem::setProgress(int progress)
 {
-    m_current = progress;
-    m_progressTextLabel->setText(QString::number(m_current) + "/" + QString::number(m_total));
-    if (m_current == m_total)
+    m_missing_index_number = progress;
+    m_progressTextLabel->setText(QString::number(m_total-m_missing_index_number) + "/" + QString::number(m_total));
+    if ( m_missing_index_number == 0 )
     {
-        set_status_indicator(m_current == m_total);
+        set_status_indicator(m_missing_index_number);
     }
 
     return 0;
@@ -400,84 +395,97 @@ void FileProgressItem::set_status_indicator(const bool status)
     m_statusIndicator->setStyleSheet(
         QString( 
         "background-color: %1 ;border-radius: 25px;")
-        .arg(status ? "green" : "red"));
+        .arg(status ? "red" : "green"));
 
+}
+
+bool FileProgressItem::is_download_complete() const
+{
+    return m_missing_index_number == 0;
 }
 
 int FileProgressItem::return_countSize(const std::string& file_path)
 {
-    auto source_file_path = QString::fromStdString(file_path); 
-    QFile file(source_file_path);
+    auto input_file_path = QString::fromStdString(file_path); 
+    QFile file(input_file_path);
     if(!file.open(QIODevice::ReadOnly))
     {
         std::cerr<<"return_countSize failed and error is : "<<file.errorString().toStdString();    
         return false;
     }
 
-    m_total = file.size();
-    this->m_fileInfo.file_size = m_total;
+    m_total = ( file.size() + SLICE_SIZE - 1)/SLICE_SIZE;
 
     file.close();
     return m_total;
 }
 
-QString FileProgressItem::fileName() const{
-    return m_fileNameLabel->text();
-}
-
-MainWindows_Intermediate_Struct FileProgressItem::fileInfo () 
-{
-    return m_fileInfo;
-}
 
 FileProgressItem::~FileProgressItem()
 {
     std::cout<<"~FileProgressItem called ! \n";
 }
+DownloadTasks::DownloadTasks(Sqlite_information& sqlite_information_ref,MqttClient& mqtt_client_ptr):
+m_sqlite_information_ref(sqlite_information_ref),
+m_taskExecution_ptr( new taskExecution(mqtt_client_ptr,memory_pool::getInstance())),
+m_threadPool(QThreadPool::globalInstance())
+{
+}
 
+DownloadTasks::~DownloadTasks()
+{
+    delete m_taskExecution_ptr;
+    std::cout<<"~DownloadTasks called ! \n";
+}
+
+bool DownloadTasks::is_download_complete()
+{ 
+    bool is_download_complete = true;
+    for(size_t i = 0; i < m_taskExecution_ptr->m_memory_pool_ref.size(); i++) 
+    {
+        //  get the missing_index_number of each task from memory_pool 
+        auto task_info_Ptr = m_taskExecution_ptr->m_memory_pool_ref.return_pre_ptr();
+
+        is_download_complete = m_fileProgressMap[task_info_Ptr->input_file_path()]->is_download_complete() && is_download_complete;
+
+        // push task to task pool
+        m_taskExecution_ptr->m_memory_pool_ref.push(std::move(task_info_Ptr));
+    }
+    return is_download_complete;
+}
 void DownloadTasks::run()
 {
-    std::vector<MainWindows_Intermediate_Struct> tem_vector;
-    int schduled_tasks  = 0;
-    
+    bool m_download_complete = false;
     try
     {
-        int cycle_count = 0;
-        for(auto& item : m_fileInfoMap)
+        while(m_isFinished<=2000 && !m_download_complete )
         {
-            tem_vector.push_back(item.second);
-            schduled_tasks +=(item.second.file_size + SLICE_SIZE -1 )/SLICE_SIZE - return_scheduled_tasks(item.second.stored_DB_folder_path); 
-        }
+            this->m_taskExecution_ptr->send_task();
+            this->update_fileProgress();
+            m_download_complete = is_download_complete();
 
-        m_sqlite_DB_Manager->set_scheduled_tasks_to_ThreadPOol(schduled_tasks);
-        m_sqlite_DB_Manager->Assign_tasks_to_sqlite_SB_Store(tem_vector);
-
-        while(!m_isFinished)
-        {
-            m_isFinished = ( this->m_sqlite_DB_Manager->return_worked_tasks() == 
-            this->m_sqlite_DB_Manager->return_scheduled_tasks() )||
-            this->m_sqlite_DB_Manager->return_is_threadPool_active();
-            auto tem_map = m_sqlite_DB_Manager->return_file_data_map();
-            {
-                for(auto& item : tem_map)
-                {
-                    // file_progress compare with file_size to check if the file is done
-                    m_tasks_done_status[item.first] = item.second->load() && (m_fileProgressMap[item.first]->return_countSize(item.first));
-                    m_fileProgressMap[item.first]->setProgress(item.second->load());
-                }
-            }
-            m_sqlite_DB_Manager->load_work_from_lockfree_queue();
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
             while(return_isPause())
             {
                 std::this_thread::sleep_for(std::chrono::milliseconds(3000));
                 std::cout<<"the thread is paused !"<<std::endl;
-                m_isFinished = true;
+                m_isFinished = 1000000;
             }
+
+            m_isFinished++;
+            std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+            this->m_taskExecution_ptr->write_task_to_db_suborinate_file();
         }
-        std::cout<<"the run() is overed!\n";
-        this->m_sqlite_DB_Manager->delete_done_tasks_in_process_map();
-        this->clear_run_status();
+
+        if(m_isFinished<=20)
+        {
+            std::cout<<"the run() is overed,ready to clear some sources!\n";
+            std::cout<<"the clear_source() is overed!\n";
+        }
+        else {
+            std::cout<<"the download is time_out!\n";
+        }
+        m_isFinished = 0;
+
     }
     catch(const std::exception& e)
     {
@@ -489,60 +497,60 @@ void DownloadTasks::run()
     }
 }
 
+void DownloadTasks::update_fileProgress()
+{ 
+  for(size_t i = 0; i < m_taskExecution_ptr->m_memory_pool_ref.size(); i++) 
+  {
+    //  get the missing_index_number of each task from memory_pool 
+    auto task_info_Ptr = m_taskExecution_ptr->m_memory_pool_ref.return_pre_ptr();
+    //  judge task status between finish and unfinish
+    if(m_fileProgressMap.find(task_info_Ptr->input_file_path())!=m_fileProgressMap.end())
+    {
+        bool task_status = m_fileProgressMap[task_info_Ptr->input_file_path()]->is_download_complete();
+        if (task_status)
+        {
+            m_taskExecution_ptr->m_memory_pool_ref.push(std::move(task_info_Ptr));
+            return;
+        }
+    }
+    const std::string missing_string (task_info_Ptr->missing_slices_index_json(),task_info_Ptr->missing_slices_index_json().size());
+    nlohmann::json missing_slices_index_json ;
+    if(missing_string != "")
+    {
+        missing_slices_index_json = nlohmann::json::parse(missing_string);
+    }
+   
+    size_t missing_size = missing_slices_index_json.size();
+
+    //  update progress
+    {
+        m_fileProgressMap[task_info_Ptr->input_file_path()]->setProgress(missing_size);
+    }
+
+    //  push task to task pool
+    m_taskExecution_ptr->m_memory_pool_ref.push(std::move(task_info_Ptr));
+  }
+}
+
 bool DownloadTasks::addItem_cache(FileProgressItem* file_list_widget)
 {
-    m_fileInfoMap.emplace(file_list_widget->returnFileName(), file_list_widget->fileInfo());
-    m_fileProgressMap.emplace(file_list_widget->returnFileName(), file_list_widget);
+    m_fileProgressMap.emplace(file_list_widget->returnFilePath(), file_list_widget);
     return true;
 }
 
 bool DownloadTasks::deleteItem_cache(FileProgressItem* file_list_widget)
 {
-    m_fileInfoMap.erase(file_list_widget->returnFileName());
-    m_fileProgressMap.erase(file_list_widget->returnFileName());
+    m_fileProgressMap.erase(file_list_widget->returnFilePath());
+    m_taskExecution_ptr->delete_task_from_memory_pool(file_list_widget->returnFilePath());
     return true;
 }
 
-bool DownloadTasks::cleaer_cache()
+bool DownloadTasks::clear_progreeMap_cache()
 {
-    m_fileInfoMap.clear();
     m_fileProgressMap.clear();
-    return true;
-}
-
-void DownloadTasks::clear_run_status()
-{
+    m_taskExecution_ptr->m_memory_pool_ref.clear_memory_pool();
     m_isFinished = false;
-    this->m_sqlite_DB_Manager->delete_done_tasks_in_process_map();
-}
-
-int DownloadTasks::return_scheduled_tasks(const std::string& folder_path)
-{
-    int count = 0;
-    //the actual completed task count
-    int rc = is_exist_targetFolder(folder_path);  
-    if (rc == true)
-    {
-
-        for(const auto& it : fs::directory_iterator(folder_path))
-        {
-            if(it.is_regular_file())
-            {
-                std::string file_name = it.path().filename().string();
-    
-                if(file_name.find("tmp_") != std::string::npos)
-                {
-                    ++count;
-                }
-            }
-        }
-        return count;
-    }
-    else
-    {
-        std::cerr<<"return_scheduled_tasks failed and error is : the folder is not exist !"<<std::endl;
-        return false;
-    }
+    return true;
 }
 
 void DownloadTasks::set_isPause(bool isPause)
@@ -574,19 +582,39 @@ bool DownloadTasks::is_exist_targetFolder(std::string target_folder_path)
     return true;
 }
 
-bool DownloadTasks::isNewDownTask(QString file_path)
-{
-    if (m_fileInfoMap.find(file_path.toStdString()) == m_fileInfoMap.end())
-    {
-        return true;
-    } 
-    return false;
-}
 
 bool DownloadTasks::internalProgressUpdate()
 {
     return false;
 }
+
+void mergeSQLData::presetting()
+{
+    int rc ;
+    while(sqlite3_step(m_request_stmt_select_from_record)==SQLITE_ROW)
+    {
+        const void* blob_missing_slices_json = sqlite3_column_text(m_request_stmt_select_from_record,1);
+        std::string json_string = std::string(static_cast<const char*>(blob_missing_slices_json));
+        if (json_string.size() != 0)
+        {
+            std::string tem_string;
+            request_message request_union ;
+            const void* blob_file_id = sqlite3_column_blob(m_request_stmt_select_from_record,0);
+            int file_id_size = sqlite3_column_bytes(m_request_stmt_select_from_record,0);
+            const void* blob_input_file_path = sqlite3_column_blob(m_request_stmt_select_from_record,2); 
+            int input_file_path_size = sqlite3_column_bytes(m_request_stmt_select_from_record,2);
+            const void* blob_output_file_path = sqlite3_column_blob(m_request_stmt_select_from_record,3);
+            int output_file_path_size = sqlite3_column_bytes(m_request_stmt_select_from_record,3);
+
+            request_union.set_missing_slices_index_json(blob_missing_slices_json , json_string.size());
+            request_union.set_file_id(blob_file_id,file_id_size);
+            request_union.set_input_file_path(blob_input_file_path,input_file_path_size);
+            request_union.SerializeToString(&tem_string);
+
+            m_protobuf_queue.push(tem_string);
+        }    
+    }
+} 
 
 QDir mergeSQLData::loop_dbFile_in_path()
 {
@@ -638,6 +666,15 @@ void mergeSQLData::initialize_db_ptr()
             return;
         }
 
+        rc = sqlite3_prepare_v2(this->m_db_ptr, request_sql_select_from_record,-1, &this->m_request_stmt_select_from_record, NULL);
+        if (rc!=SQLITE_OK)
+        {
+            std::cerr<<"mergeSQLData::stmt_select_from_record fail and error is : "<<sqlite3_errmsg(this->m_db_ptr)<<std::endl;
+            sqlite3_close(this->m_db_ptr);
+            return;
+        }
+
+        this->presetting();
         this->merge_file();
     }
 }
@@ -646,6 +683,7 @@ void mergeSQLData::merge_file()
 { 
     int rc ;
     // select file_id , input_file_path from record
+    // in loop , should not reset the condition stmt , because the loop based on stmt to get next row 
     while ( (rc = (sqlite3_step(m_stmt_select_from_record) == SQLITE_ROW)) ) {
         int blob_file_id_size = sqlite3_column_bytes(m_stmt_select_from_record,0);
         const void*  blob_file_id = sqlite3_column_blob(m_stmt_select_from_record,0);
@@ -665,8 +703,7 @@ void mergeSQLData::merge_file()
         // select slice_index , slice_content from slice_content where file_id = ?
         while((sqlite3_step(m_stmt_select_from_slice_content))==SQLITE_ROW)
         {
-            int slice_index = sqlite3_column_int(m_stmt_select_from_slice_content,1);
-            const void* slice_content = sqlite3_column_blob(m_stmt_select_from_slice_content,2);
+            const char* slice_content = reinterpret_cast<const char*>(sqlite3_column_blob(m_stmt_select_from_slice_content,2));
             int slice_content_size = sqlite3_column_bytes(m_stmt_select_from_slice_content,2);
 
            //write message to file 
@@ -676,8 +713,8 @@ void mergeSQLData::merge_file()
              std::cerr<<"mergerSQLData : open file error : "<<file_name_string<<std::endl;
              return;
            }
-
-           file_out.write(reinterpret_cast<const char*>(slice_content),slice_content_size);
+            
+           file_out.write((slice_content),slice_content_size);
         }
     }
 }
@@ -689,9 +726,20 @@ void mergeSQLData::clear_struct_setting()
     m_stmt_select_from_slice_content != nullptr
     )
     {
+        //before close() , should call finalize() 
         sqlite3_finalize(m_stmt_select_from_record);
         sqlite3_finalize(m_stmt_select_from_slice_content);
         sqlite3_close(m_db_ptr);
         std::cout<<"mergeSQLData::clear_struct_setting()"<<std::endl;
     }
+}
+
+int DownloadTasks::interface_create_new_file_on_db_information(const std::string& file_path)
+{
+    return m_sqlite_information_ref.m_sqlite_db_function_ref.create_new_file_on_db_information(file_path);
+}
+
+int DownloadTasks::intetface_read_missing_slices_from_db_information_file(const std::string& file_path)
+{
+    return m_sqlite_information_ref.m_sqlite_db_function_ref.read_missing_slices_from_db_information_file(file_path);
 }

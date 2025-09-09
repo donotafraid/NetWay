@@ -24,6 +24,38 @@ namespace _pb = ::google::protobuf;
 namespace _pbi = ::google::protobuf::internal;
 namespace _fl = ::google::protobuf::internal::field_layout;
 
+inline constexpr request_message::Impl_::Impl_(
+    ::_pbi::ConstantInitialized) noexcept
+      : file_id_(
+            &::google::protobuf::internal::fixed_address_empty_string,
+            ::_pbi::ConstantInitialized()),
+        missing_slices_index_json_(
+            &::google::protobuf::internal::fixed_address_empty_string,
+            ::_pbi::ConstantInitialized()),
+        input_file_path_(
+            &::google::protobuf::internal::fixed_address_empty_string,
+            ::_pbi::ConstantInitialized()),
+        slice_data_information_(
+            &::google::protobuf::internal::fixed_address_empty_string,
+            ::_pbi::ConstantInitialized()),
+        slice_index_{0u},
+        is_download_{false},
+        _cached_size_{0} {}
+
+template <typename>
+PROTOBUF_CONSTEXPR request_message::request_message(::_pbi::ConstantInitialized)
+    : _impl_(::_pbi::ConstantInitialized()) {}
+struct request_messageDefaultTypeInternal {
+  PROTOBUF_CONSTEXPR request_messageDefaultTypeInternal() : _instance(::_pbi::ConstantInitialized{}) {}
+  ~request_messageDefaultTypeInternal() {}
+  union {
+    request_message _instance;
+  };
+};
+
+PROTOBUF_ATTRIBUTE_NO_DESTROY PROTOBUF_CONSTINIT
+    PROTOBUF_ATTRIBUTE_INIT_PRIORITY1 request_messageDefaultTypeInternal _request_message_default_instance_;
+
 inline constexpr TestMsg::Impl_::Impl_(
     ::_pbi::ConstantInitialized) noexcept
       : file_id_(
@@ -42,6 +74,7 @@ inline constexpr TestMsg::Impl_::Impl_(
         slice_index_{0u},
         total_slices_{0u},
         plaintext_size_{0u},
+        is_control_{false},
         _cached_size_{0} {}
 
 template <typename>
@@ -74,40 +107,62 @@ const ::uint32_t
         ~0u,  // no sizeof(Split)
         PROTOBUF_FIELD_OFFSET(::TestMsg, _impl_.magic_),
         PROTOBUF_FIELD_OFFSET(::TestMsg, _impl_.slice_index_),
-        PROTOBUF_FIELD_OFFSET(::TestMsg, _impl_.total_slices_),
-        PROTOBUF_FIELD_OFFSET(::TestMsg, _impl_.plaintext_size_),
-        PROTOBUF_FIELD_OFFSET(::TestMsg, _impl_.aes_key_),
         PROTOBUF_FIELD_OFFSET(::TestMsg, _impl_.file_id_),
+        PROTOBUF_FIELD_OFFSET(::TestMsg, _impl_.aes_key_),
         PROTOBUF_FIELD_OFFSET(::TestMsg, _impl_.iv_),
         PROTOBUF_FIELD_OFFSET(::TestMsg, _impl_.ciphertext_),
+        PROTOBUF_FIELD_OFFSET(::TestMsg, _impl_.plaintext_size_),
+        PROTOBUF_FIELD_OFFSET(::TestMsg, _impl_.total_slices_),
+        PROTOBUF_FIELD_OFFSET(::TestMsg, _impl_.is_control_),
+        ~0u,  // no _has_bits_
+        PROTOBUF_FIELD_OFFSET(::request_message, _internal_metadata_),
+        ~0u,  // no _extensions_
+        ~0u,  // no _oneof_case_
+        ~0u,  // no _weak_field_map_
+        ~0u,  // no _inlined_string_donated_
+        ~0u,  // no _split_
+        ~0u,  // no sizeof(Split)
+        PROTOBUF_FIELD_OFFSET(::request_message, _impl_.file_id_),
+        PROTOBUF_FIELD_OFFSET(::request_message, _impl_.missing_slices_index_json_),
+        PROTOBUF_FIELD_OFFSET(::request_message, _impl_.input_file_path_),
+        PROTOBUF_FIELD_OFFSET(::request_message, _impl_.slice_data_information_),
+        PROTOBUF_FIELD_OFFSET(::request_message, _impl_.slice_index_),
+        PROTOBUF_FIELD_OFFSET(::request_message, _impl_.is_download_),
 };
 
 static const ::_pbi::MigrationSchema
     schemas[] ABSL_ATTRIBUTE_SECTION_VARIABLE(protodesc_cold) = {
         {0, -1, -1, sizeof(::TestMsg)},
+        {17, -1, -1, sizeof(::request_message)},
 };
 static const ::_pb::Message* const file_default_instances[] = {
     &::_TestMsg_default_instance_._instance,
+    &::_request_message_default_instance_._instance,
 };
 const char descriptor_table_protodef_message_5fstruct_2eproto[] ABSL_ATTRIBUTE_SECTION_VARIABLE(
     protodesc_cold) = {
-    "\n\024message_struct.proto\"\235\001\n\007TestMsg\022\r\n\005ma"
-    "gic\030\002 \001(\r\022\023\n\013slice_index\030\003 \001(\r\022\024\n\014total_"
-    "slices\030\004 \001(\r\022\026\n\016plaintext_size\030\010 \001(\r\022\017\n\007"
-    "aes_key\030\005 \001(\014\022\017\n\007file_id\030\001 \001(\014\022\n\n\002iv\030\006 \001"
-    "(\014\022\022\n\nciphertext\030\007 \001(\014b\006proto3"
+    "\n\024message_struct.proto\"\261\001\n\007TestMsg\022\r\n\005ma"
+    "gic\030\002 \001(\r\022\023\n\013slice_index\030\003 \001(\r\022\017\n\007file_i"
+    "d\030\001 \001(\014\022\017\n\007aes_key\030\005 \001(\014\022\n\n\002iv\030\006 \001(\014\022\022\n\n"
+    "ciphertext\030\007 \001(\014\022\026\n\016plaintext_size\030\010 \001(\r"
+    "\022\024\n\014total_slices\030\004 \001(\r\022\022\n\nis_control\030\t \001"
+    "(\010\"\250\001\n\017request_message\022\017\n\007file_id\030\001 \001(\014\022"
+    "!\n\031missing_slices_index_json\030\002 \001(\014\022\027\n\017in"
+    "put_file_path\030\003 \001(\014\022\036\n\026slice_data_inform"
+    "ation\030\004 \001(\014\022\023\n\013slice_index\030\005 \001(\r\022\023\n\013is_d"
+    "ownload\030\006 \001(\010b\006proto3"
 };
 static ::absl::once_flag descriptor_table_message_5fstruct_2eproto_once;
 PROTOBUF_CONSTINIT const ::_pbi::DescriptorTable descriptor_table_message_5fstruct_2eproto = {
     false,
     false,
-    190,
+    381,
     descriptor_table_protodef_message_5fstruct_2eproto,
     "message_struct.proto",
     &descriptor_table_message_5fstruct_2eproto_once,
     nullptr,
     0,
-    1,
+    2,
     schemas,
     file_default_instances,
     TableStruct_message_5fstruct_2eproto::offsets,
@@ -147,9 +202,9 @@ TestMsg::TestMsg(
                offsetof(Impl_, magic_),
            reinterpret_cast<const char *>(&from._impl_) +
                offsetof(Impl_, magic_),
-           offsetof(Impl_, plaintext_size_) -
+           offsetof(Impl_, is_control_) -
                offsetof(Impl_, magic_) +
-               sizeof(Impl_::plaintext_size_));
+               sizeof(Impl_::is_control_));
 
   // @@protoc_insertion_point(copy_constructor:TestMsg)
 }
@@ -167,9 +222,9 @@ inline void TestMsg::SharedCtor(::_pb::Arena* arena) {
   ::memset(reinterpret_cast<char *>(&_impl_) +
                offsetof(Impl_, magic_),
            0,
-           offsetof(Impl_, plaintext_size_) -
+           offsetof(Impl_, is_control_) -
                offsetof(Impl_, magic_) +
-               sizeof(Impl_::plaintext_size_));
+               sizeof(Impl_::is_control_));
 }
 TestMsg::~TestMsg() {
   // @@protoc_insertion_point(destructor:TestMsg)
@@ -206,15 +261,15 @@ TestMsg::GetClassData() const {
   return _data_.base();
 }
 PROTOBUF_CONSTINIT PROTOBUF_ATTRIBUTE_INIT_PRIORITY1
-const ::_pbi::TcParseTable<3, 8, 0, 0, 2> TestMsg::_table_ = {
+const ::_pbi::TcParseTable<4, 9, 0, 0, 2> TestMsg::_table_ = {
   {
     0,  // no _has_bits_
     0, // no _extensions_
-    8, 56,  // max_field_number, fast_idx_mask
+    9, 120,  // max_field_number, fast_idx_mask
     offsetof(decltype(_table_), field_lookup_table),
-    4294967040,  // skipmap
+    4294966784,  // skipmap
     offsetof(decltype(_table_), field_entries),
-    8,  // num_field_entries
+    9,  // num_field_entries
     0,  // num_aux_entries
     offsetof(decltype(_table_), field_names),  // no aux_entries
     &_TestMsg_default_instance_._instance,
@@ -224,9 +279,7 @@ const ::_pbi::TcParseTable<3, 8, 0, 0, 2> TestMsg::_table_ = {
     ::_pbi::TcParser::GetTable<::TestMsg>(),  // to_prefetch
     #endif  // PROTOBUF_PREFETCH_PARSE_TABLE
   }, {{
-    // uint32 plaintext_size = 8;
-    {::_pbi::TcParser::SingularVarintNoZag1<::uint32_t, offsetof(TestMsg, _impl_.plaintext_size_), 63>(),
-     {64, 63, 0, PROTOBUF_FIELD_OFFSET(TestMsg, _impl_.plaintext_size_)}},
+    {::_pbi::TcParser::MiniParse, {}},
     // bytes file_id = 1;
     {::_pbi::TcParser::FastBS1,
      {10, 63, 0, PROTOBUF_FIELD_OFFSET(TestMsg, _impl_.file_id_)}},
@@ -248,6 +301,18 @@ const ::_pbi::TcParseTable<3, 8, 0, 0, 2> TestMsg::_table_ = {
     // bytes ciphertext = 7;
     {::_pbi::TcParser::FastBS1,
      {58, 63, 0, PROTOBUF_FIELD_OFFSET(TestMsg, _impl_.ciphertext_)}},
+    // uint32 plaintext_size = 8;
+    {::_pbi::TcParser::SingularVarintNoZag1<::uint32_t, offsetof(TestMsg, _impl_.plaintext_size_), 63>(),
+     {64, 63, 0, PROTOBUF_FIELD_OFFSET(TestMsg, _impl_.plaintext_size_)}},
+    // bool is_control = 9;
+    {::_pbi::TcParser::SingularVarintNoZag1<bool, offsetof(TestMsg, _impl_.is_control_), 63>(),
+     {72, 63, 0, PROTOBUF_FIELD_OFFSET(TestMsg, _impl_.is_control_)}},
+    {::_pbi::TcParser::MiniParse, {}},
+    {::_pbi::TcParser::MiniParse, {}},
+    {::_pbi::TcParser::MiniParse, {}},
+    {::_pbi::TcParser::MiniParse, {}},
+    {::_pbi::TcParser::MiniParse, {}},
+    {::_pbi::TcParser::MiniParse, {}},
   }}, {{
     65535, 65535
   }}, {{
@@ -275,6 +340,9 @@ const ::_pbi::TcParseTable<3, 8, 0, 0, 2> TestMsg::_table_ = {
     // uint32 plaintext_size = 8;
     {PROTOBUF_FIELD_OFFSET(TestMsg, _impl_.plaintext_size_), 0, 0,
     (0 | ::_fl::kFcSingular | ::_fl::kUInt32)},
+    // bool is_control = 9;
+    {PROTOBUF_FIELD_OFFSET(TestMsg, _impl_.is_control_), 0, 0,
+    (0 | ::_fl::kFcSingular | ::_fl::kBool)},
   }},
   // no aux_entries
   {{
@@ -293,8 +361,8 @@ PROTOBUF_NOINLINE void TestMsg::Clear() {
   _impl_.iv_.ClearToEmpty();
   _impl_.ciphertext_.ClearToEmpty();
   ::memset(&_impl_.magic_, 0, static_cast<::size_t>(
-      reinterpret_cast<char*>(&_impl_.plaintext_size_) -
-      reinterpret_cast<char*>(&_impl_.magic_)) + sizeof(_impl_.plaintext_size_));
+      reinterpret_cast<char*>(&_impl_.is_control_) -
+      reinterpret_cast<char*>(&_impl_.magic_)) + sizeof(_impl_.is_control_));
   _internal_metadata_.Clear<::google::protobuf::UnknownFieldSet>();
 }
 
@@ -355,6 +423,13 @@ PROTOBUF_NOINLINE void TestMsg::Clear() {
     target = stream->EnsureSpace(target);
     target = ::_pbi::WireFormatLite::WriteUInt32ToArray(
         8, this->_internal_plaintext_size(), target);
+  }
+
+  // bool is_control = 9;
+  if (this->_internal_is_control() != 0) {
+    target = stream->EnsureSpace(target);
+    target = ::_pbi::WireFormatLite::WriteBoolToArray(
+        9, this->_internal_is_control(), target);
   }
 
   if (PROTOBUF_PREDICT_FALSE(_internal_metadata_.have_unknown_fields())) {
@@ -423,6 +498,11 @@ PROTOBUF_NOINLINE void TestMsg::Clear() {
         this->_internal_plaintext_size());
   }
 
+  // bool is_control = 9;
+  if (this->_internal_is_control() != 0) {
+    total_size += 2;
+  }
+
   return MaybeComputeUnknownFieldsSize(total_size, &_impl_._cached_size_);
 }
 
@@ -459,6 +539,9 @@ void TestMsg::MergeImpl(::google::protobuf::MessageLite& to_msg, const ::google:
   if (from._internal_plaintext_size() != 0) {
     _this->_impl_.plaintext_size_ = from._impl_.plaintext_size_;
   }
+  if (from._internal_is_control() != 0) {
+    _this->_impl_.is_control_ = from._impl_.is_control_;
+  }
   _this->_internal_metadata_.MergeFrom<::google::protobuf::UnknownFieldSet>(from._internal_metadata_);
 }
 
@@ -480,14 +563,347 @@ void TestMsg::InternalSwap(TestMsg* PROTOBUF_RESTRICT other) {
   ::_pbi::ArenaStringPtr::InternalSwap(&_impl_.iv_, &other->_impl_.iv_, arena);
   ::_pbi::ArenaStringPtr::InternalSwap(&_impl_.ciphertext_, &other->_impl_.ciphertext_, arena);
   ::google::protobuf::internal::memswap<
-      PROTOBUF_FIELD_OFFSET(TestMsg, _impl_.plaintext_size_)
-      + sizeof(TestMsg::_impl_.plaintext_size_)
+      PROTOBUF_FIELD_OFFSET(TestMsg, _impl_.is_control_)
+      + sizeof(TestMsg::_impl_.is_control_)
       - PROTOBUF_FIELD_OFFSET(TestMsg, _impl_.magic_)>(
           reinterpret_cast<char*>(&_impl_.magic_),
           reinterpret_cast<char*>(&other->_impl_.magic_));
 }
 
 ::google::protobuf::Metadata TestMsg::GetMetadata() const {
+  return ::google::protobuf::Message::GetMetadataImpl(GetClassData()->full());
+}
+// ===================================================================
+
+class request_message::_Internal {
+ public:
+};
+
+request_message::request_message(::google::protobuf::Arena* arena)
+    : ::google::protobuf::Message(arena) {
+  SharedCtor(arena);
+  // @@protoc_insertion_point(arena_constructor:request_message)
+}
+inline PROTOBUF_NDEBUG_INLINE request_message::Impl_::Impl_(
+    ::google::protobuf::internal::InternalVisibility visibility, ::google::protobuf::Arena* arena,
+    const Impl_& from, const ::request_message& from_msg)
+      : file_id_(arena, from.file_id_),
+        missing_slices_index_json_(arena, from.missing_slices_index_json_),
+        input_file_path_(arena, from.input_file_path_),
+        slice_data_information_(arena, from.slice_data_information_),
+        _cached_size_{0} {}
+
+request_message::request_message(
+    ::google::protobuf::Arena* arena,
+    const request_message& from)
+    : ::google::protobuf::Message(arena) {
+  request_message* const _this = this;
+  (void)_this;
+  _internal_metadata_.MergeFrom<::google::protobuf::UnknownFieldSet>(
+      from._internal_metadata_);
+  new (&_impl_) Impl_(internal_visibility(), arena, from._impl_, from);
+  ::memcpy(reinterpret_cast<char *>(&_impl_) +
+               offsetof(Impl_, slice_index_),
+           reinterpret_cast<const char *>(&from._impl_) +
+               offsetof(Impl_, slice_index_),
+           offsetof(Impl_, is_download_) -
+               offsetof(Impl_, slice_index_) +
+               sizeof(Impl_::is_download_));
+
+  // @@protoc_insertion_point(copy_constructor:request_message)
+}
+inline PROTOBUF_NDEBUG_INLINE request_message::Impl_::Impl_(
+    ::google::protobuf::internal::InternalVisibility visibility,
+    ::google::protobuf::Arena* arena)
+      : file_id_(arena),
+        missing_slices_index_json_(arena),
+        input_file_path_(arena),
+        slice_data_information_(arena),
+        _cached_size_{0} {}
+
+inline void request_message::SharedCtor(::_pb::Arena* arena) {
+  new (&_impl_) Impl_(internal_visibility(), arena);
+  ::memset(reinterpret_cast<char *>(&_impl_) +
+               offsetof(Impl_, slice_index_),
+           0,
+           offsetof(Impl_, is_download_) -
+               offsetof(Impl_, slice_index_) +
+               sizeof(Impl_::is_download_));
+}
+request_message::~request_message() {
+  // @@protoc_insertion_point(destructor:request_message)
+  _internal_metadata_.Delete<::google::protobuf::UnknownFieldSet>();
+  SharedDtor();
+}
+inline void request_message::SharedDtor() {
+  ABSL_DCHECK(GetArena() == nullptr);
+  _impl_.file_id_.Destroy();
+  _impl_.missing_slices_index_json_.Destroy();
+  _impl_.input_file_path_.Destroy();
+  _impl_.slice_data_information_.Destroy();
+  _impl_.~Impl_();
+}
+
+const ::google::protobuf::MessageLite::ClassData*
+request_message::GetClassData() const {
+  PROTOBUF_CONSTINIT static const ::google::protobuf::MessageLite::
+      ClassDataFull _data_ = {
+          {
+              &_table_.header,
+              nullptr,  // OnDemandRegisterArenaDtor
+              nullptr,  // IsInitialized
+              PROTOBUF_FIELD_OFFSET(request_message, _impl_._cached_size_),
+              false,
+          },
+          &request_message::MergeImpl,
+          &request_message::kDescriptorMethods,
+          &descriptor_table_message_5fstruct_2eproto,
+          nullptr,  // tracker
+      };
+  ::google::protobuf::internal::PrefetchToLocalCache(&_data_);
+  ::google::protobuf::internal::PrefetchToLocalCache(_data_.tc_table);
+  return _data_.base();
+}
+PROTOBUF_CONSTINIT PROTOBUF_ATTRIBUTE_INIT_PRIORITY1
+const ::_pbi::TcParseTable<3, 6, 0, 0, 2> request_message::_table_ = {
+  {
+    0,  // no _has_bits_
+    0, // no _extensions_
+    6, 56,  // max_field_number, fast_idx_mask
+    offsetof(decltype(_table_), field_lookup_table),
+    4294967232,  // skipmap
+    offsetof(decltype(_table_), field_entries),
+    6,  // num_field_entries
+    0,  // num_aux_entries
+    offsetof(decltype(_table_), field_names),  // no aux_entries
+    &_request_message_default_instance_._instance,
+    nullptr,  // post_loop_handler
+    ::_pbi::TcParser::GenericFallback,  // fallback
+    #ifdef PROTOBUF_PREFETCH_PARSE_TABLE
+    ::_pbi::TcParser::GetTable<::request_message>(),  // to_prefetch
+    #endif  // PROTOBUF_PREFETCH_PARSE_TABLE
+  }, {{
+    {::_pbi::TcParser::MiniParse, {}},
+    // bytes file_id = 1;
+    {::_pbi::TcParser::FastBS1,
+     {10, 63, 0, PROTOBUF_FIELD_OFFSET(request_message, _impl_.file_id_)}},
+    // bytes missing_slices_index_json = 2;
+    {::_pbi::TcParser::FastBS1,
+     {18, 63, 0, PROTOBUF_FIELD_OFFSET(request_message, _impl_.missing_slices_index_json_)}},
+    // bytes input_file_path = 3;
+    {::_pbi::TcParser::FastBS1,
+     {26, 63, 0, PROTOBUF_FIELD_OFFSET(request_message, _impl_.input_file_path_)}},
+    // bytes slice_data_information = 4;
+    {::_pbi::TcParser::FastBS1,
+     {34, 63, 0, PROTOBUF_FIELD_OFFSET(request_message, _impl_.slice_data_information_)}},
+    // uint32 slice_index = 5;
+    {::_pbi::TcParser::SingularVarintNoZag1<::uint32_t, offsetof(request_message, _impl_.slice_index_), 63>(),
+     {40, 63, 0, PROTOBUF_FIELD_OFFSET(request_message, _impl_.slice_index_)}},
+    // bool is_download = 6;
+    {::_pbi::TcParser::SingularVarintNoZag1<bool, offsetof(request_message, _impl_.is_download_), 63>(),
+     {48, 63, 0, PROTOBUF_FIELD_OFFSET(request_message, _impl_.is_download_)}},
+    {::_pbi::TcParser::MiniParse, {}},
+  }}, {{
+    65535, 65535
+  }}, {{
+    // bytes file_id = 1;
+    {PROTOBUF_FIELD_OFFSET(request_message, _impl_.file_id_), 0, 0,
+    (0 | ::_fl::kFcSingular | ::_fl::kBytes | ::_fl::kRepAString)},
+    // bytes missing_slices_index_json = 2;
+    {PROTOBUF_FIELD_OFFSET(request_message, _impl_.missing_slices_index_json_), 0, 0,
+    (0 | ::_fl::kFcSingular | ::_fl::kBytes | ::_fl::kRepAString)},
+    // bytes input_file_path = 3;
+    {PROTOBUF_FIELD_OFFSET(request_message, _impl_.input_file_path_), 0, 0,
+    (0 | ::_fl::kFcSingular | ::_fl::kBytes | ::_fl::kRepAString)},
+    // bytes slice_data_information = 4;
+    {PROTOBUF_FIELD_OFFSET(request_message, _impl_.slice_data_information_), 0, 0,
+    (0 | ::_fl::kFcSingular | ::_fl::kBytes | ::_fl::kRepAString)},
+    // uint32 slice_index = 5;
+    {PROTOBUF_FIELD_OFFSET(request_message, _impl_.slice_index_), 0, 0,
+    (0 | ::_fl::kFcSingular | ::_fl::kUInt32)},
+    // bool is_download = 6;
+    {PROTOBUF_FIELD_OFFSET(request_message, _impl_.is_download_), 0, 0,
+    (0 | ::_fl::kFcSingular | ::_fl::kBool)},
+  }},
+  // no aux_entries
+  {{
+  }},
+};
+
+PROTOBUF_NOINLINE void request_message::Clear() {
+// @@protoc_insertion_point(message_clear_start:request_message)
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  ::uint32_t cached_has_bits = 0;
+  // Prevent compiler warnings about cached_has_bits being unused
+  (void) cached_has_bits;
+
+  _impl_.file_id_.ClearToEmpty();
+  _impl_.missing_slices_index_json_.ClearToEmpty();
+  _impl_.input_file_path_.ClearToEmpty();
+  _impl_.slice_data_information_.ClearToEmpty();
+  ::memset(&_impl_.slice_index_, 0, static_cast<::size_t>(
+      reinterpret_cast<char*>(&_impl_.is_download_) -
+      reinterpret_cast<char*>(&_impl_.slice_index_)) + sizeof(_impl_.is_download_));
+  _internal_metadata_.Clear<::google::protobuf::UnknownFieldSet>();
+}
+
+::uint8_t* request_message::_InternalSerialize(
+    ::uint8_t* target,
+    ::google::protobuf::io::EpsCopyOutputStream* stream) const {
+  // @@protoc_insertion_point(serialize_to_array_start:request_message)
+  ::uint32_t cached_has_bits = 0;
+  (void)cached_has_bits;
+
+  // bytes file_id = 1;
+  if (!this->_internal_file_id().empty()) {
+    const std::string& _s = this->_internal_file_id();
+    target = stream->WriteBytesMaybeAliased(1, _s, target);
+  }
+
+  // bytes missing_slices_index_json = 2;
+  if (!this->_internal_missing_slices_index_json().empty()) {
+    const std::string& _s = this->_internal_missing_slices_index_json();
+    target = stream->WriteBytesMaybeAliased(2, _s, target);
+  }
+
+  // bytes input_file_path = 3;
+  if (!this->_internal_input_file_path().empty()) {
+    const std::string& _s = this->_internal_input_file_path();
+    target = stream->WriteBytesMaybeAliased(3, _s, target);
+  }
+
+  // bytes slice_data_information = 4;
+  if (!this->_internal_slice_data_information().empty()) {
+    const std::string& _s = this->_internal_slice_data_information();
+    target = stream->WriteBytesMaybeAliased(4, _s, target);
+  }
+
+  // uint32 slice_index = 5;
+  if (this->_internal_slice_index() != 0) {
+    target = stream->EnsureSpace(target);
+    target = ::_pbi::WireFormatLite::WriteUInt32ToArray(
+        5, this->_internal_slice_index(), target);
+  }
+
+  // bool is_download = 6;
+  if (this->_internal_is_download() != 0) {
+    target = stream->EnsureSpace(target);
+    target = ::_pbi::WireFormatLite::WriteBoolToArray(
+        6, this->_internal_is_download(), target);
+  }
+
+  if (PROTOBUF_PREDICT_FALSE(_internal_metadata_.have_unknown_fields())) {
+    target =
+        ::_pbi::WireFormat::InternalSerializeUnknownFieldsToArray(
+            _internal_metadata_.unknown_fields<::google::protobuf::UnknownFieldSet>(::google::protobuf::UnknownFieldSet::default_instance), target, stream);
+  }
+  // @@protoc_insertion_point(serialize_to_array_end:request_message)
+  return target;
+}
+
+::size_t request_message::ByteSizeLong() const {
+// @@protoc_insertion_point(message_byte_size_start:request_message)
+  ::size_t total_size = 0;
+
+  ::uint32_t cached_has_bits = 0;
+  // Prevent compiler warnings about cached_has_bits being unused
+  (void) cached_has_bits;
+
+  ::_pbi::Prefetch5LinesFrom7Lines(reinterpret_cast<const void*>(this));
+  // bytes file_id = 1;
+  if (!this->_internal_file_id().empty()) {
+    total_size += 1 + ::google::protobuf::internal::WireFormatLite::BytesSize(
+                                    this->_internal_file_id());
+  }
+
+  // bytes missing_slices_index_json = 2;
+  if (!this->_internal_missing_slices_index_json().empty()) {
+    total_size += 1 + ::google::protobuf::internal::WireFormatLite::BytesSize(
+                                    this->_internal_missing_slices_index_json());
+  }
+
+  // bytes input_file_path = 3;
+  if (!this->_internal_input_file_path().empty()) {
+    total_size += 1 + ::google::protobuf::internal::WireFormatLite::BytesSize(
+                                    this->_internal_input_file_path());
+  }
+
+  // bytes slice_data_information = 4;
+  if (!this->_internal_slice_data_information().empty()) {
+    total_size += 1 + ::google::protobuf::internal::WireFormatLite::BytesSize(
+                                    this->_internal_slice_data_information());
+  }
+
+  // uint32 slice_index = 5;
+  if (this->_internal_slice_index() != 0) {
+    total_size += ::_pbi::WireFormatLite::UInt32SizePlusOne(
+        this->_internal_slice_index());
+  }
+
+  // bool is_download = 6;
+  if (this->_internal_is_download() != 0) {
+    total_size += 2;
+  }
+
+  return MaybeComputeUnknownFieldsSize(total_size, &_impl_._cached_size_);
+}
+
+
+void request_message::MergeImpl(::google::protobuf::MessageLite& to_msg, const ::google::protobuf::MessageLite& from_msg) {
+  auto* const _this = static_cast<request_message*>(&to_msg);
+  auto& from = static_cast<const request_message&>(from_msg);
+  // @@protoc_insertion_point(class_specific_merge_from_start:request_message)
+  ABSL_DCHECK_NE(&from, _this);
+  ::uint32_t cached_has_bits = 0;
+  (void) cached_has_bits;
+
+  if (!from._internal_file_id().empty()) {
+    _this->_internal_set_file_id(from._internal_file_id());
+  }
+  if (!from._internal_missing_slices_index_json().empty()) {
+    _this->_internal_set_missing_slices_index_json(from._internal_missing_slices_index_json());
+  }
+  if (!from._internal_input_file_path().empty()) {
+    _this->_internal_set_input_file_path(from._internal_input_file_path());
+  }
+  if (!from._internal_slice_data_information().empty()) {
+    _this->_internal_set_slice_data_information(from._internal_slice_data_information());
+  }
+  if (from._internal_slice_index() != 0) {
+    _this->_impl_.slice_index_ = from._impl_.slice_index_;
+  }
+  if (from._internal_is_download() != 0) {
+    _this->_impl_.is_download_ = from._impl_.is_download_;
+  }
+  _this->_internal_metadata_.MergeFrom<::google::protobuf::UnknownFieldSet>(from._internal_metadata_);
+}
+
+void request_message::CopyFrom(const request_message& from) {
+// @@protoc_insertion_point(class_specific_copy_from_start:request_message)
+  if (&from == this) return;
+  Clear();
+  MergeFrom(from);
+}
+
+
+void request_message::InternalSwap(request_message* PROTOBUF_RESTRICT other) {
+  using std::swap;
+  auto* arena = GetArena();
+  ABSL_DCHECK_EQ(arena, other->GetArena());
+  _internal_metadata_.InternalSwap(&other->_internal_metadata_);
+  ::_pbi::ArenaStringPtr::InternalSwap(&_impl_.file_id_, &other->_impl_.file_id_, arena);
+  ::_pbi::ArenaStringPtr::InternalSwap(&_impl_.missing_slices_index_json_, &other->_impl_.missing_slices_index_json_, arena);
+  ::_pbi::ArenaStringPtr::InternalSwap(&_impl_.input_file_path_, &other->_impl_.input_file_path_, arena);
+  ::_pbi::ArenaStringPtr::InternalSwap(&_impl_.slice_data_information_, &other->_impl_.slice_data_information_, arena);
+  ::google::protobuf::internal::memswap<
+      PROTOBUF_FIELD_OFFSET(request_message, _impl_.is_download_)
+      + sizeof(request_message::_impl_.is_download_)
+      - PROTOBUF_FIELD_OFFSET(request_message, _impl_.slice_index_)>(
+          reinterpret_cast<char*>(&_impl_.slice_index_),
+          reinterpret_cast<char*>(&other->_impl_.slice_index_));
+}
+
+::google::protobuf::Metadata request_message::GetMetadata() const {
   return ::google::protobuf::Message::GetMetadataImpl(GetClassData()->full());
 }
 // @@protoc_insertion_point(namespace_scope)

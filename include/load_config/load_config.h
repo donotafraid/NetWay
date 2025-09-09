@@ -36,14 +36,15 @@
 #include "spdlog/spdlog.h"
 #include <cassert>
 #include "concurrentqueue.h"
+#include "proto/message_struct.pb.h"
 
 const uint32_t MAGIC = 0xDEADBEEF;
-constexpr size_t SLICE_SIZE = static_cast<size_t>(1024 *10*1);
+constexpr size_t SLICE_SIZE = static_cast<size_t>(1024 *1024*1);
 constexpr size_t MAXIMUM_SLICE_SIZE = static_cast<size_t>(1024 * 1024 * 1.5);
+constexpr size_t MAX_DB_FILE_LIMIT = 1*1024*1024*1024;
 constexpr size_t THREAD_NUM = 4; 
 constexpr int magic = 0xDEADBEEF;
-// #define DEBUG_TEST
-// #define VALGRIND_TEST
+constexpr bool DEBUG_TEST = true;
 
 namespace fs = std::filesystem;
 
@@ -56,6 +57,7 @@ struct ProtocolHeader {
     std::array<uint8_t,32> AES_KEY;    // AES_KEY（32字节）
     std::array<uint8_t, 16> iv;  // 16 字节的二进制数组
     uint32_t ciphertext_len=0;      // 加密后数据长度（4字节）
+    bool is_control = false;
 };
 
 struct ArrayHash {
@@ -84,11 +86,12 @@ struct FileInfo
 
 struct DB_Info
 {
-    std::string db_file_path;
+    bool used_status = false;
+    ProtocolHeader header_info;
     std::string input_file_path;
     std::string output_file_name;
-    int file_size = 0;
-    ProtocolHeader header_info;
+    std::string db_file_path;
+    std::vector<int> slice_index_list;
     std::vector<uint8_t> slice_data_info;
 };
 
@@ -114,7 +117,7 @@ struct DB_Info_raw_ptr
 struct MainWindows_Intermediate_Struct
 {
     std::string stored_DB_folder_path;
-    std::string source_file_path;
+    std::string input_file_path;
     std::string output_file_path;
     std::string db_file_path;
     int file_size = 0;

@@ -54,7 +54,6 @@ bool Thread_pool::is_active()
     return is_inactive_flag.load(); 
 }
 
-
 int Thread_pool::return_scheduled_tasks()
 {
     std::lock_guard<std::shared_mutex> lock(m_rwMutex);

@@ -1,5 +1,5 @@
 {
-    "broker_address": "172.28.80.94",
+    "broker_address": "127.0.0.1",
     "client_id": "Server_MQTT",
     "persistence_type": 1,
     "persistence_context": "NONE",

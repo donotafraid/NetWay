@@ -12,7 +12,6 @@
 #include <zlib.h>
 
 #include "load_config/load_config.h"
-#include "proto/message_struct.pb.h"
 
 bool encryptData(const std::vector<uint8_t> &plaintext, std::vector<uint8_t> &ciphertext,uint8_t *iv,ProtocolHeader &protocolheader);
 void ProtocolHeader_To_Proto(const ProtocolHeader &protocolheader,const std::vector<uint8_t>& ciphertext,TestMsg& msg);

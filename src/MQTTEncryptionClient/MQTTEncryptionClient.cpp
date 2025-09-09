@@ -1,4 +1,5 @@
 #include "MQTTEncryptionClient/MQTTEncryptionClient.h"
+#include "Sqlite_DB/Sqlite_DB.h"
 MqttClient::~MqttClient()
 {
     if (m_client->is_connected())
@@ -15,11 +16,12 @@ MqttClient::~MqttClient()
     m_client = nullptr;
 }
 
-int MqttClient::createinstance()
+int MqttClient::createinstance(Sqlite_DB_write_file* m_sqlite_DB_write_file)
 {
     m_client = new mqtt::async_client(m_broker, m_client_id);
     m_connOpts.set_clean_session(true);
     m_connOpts.set_keep_alive_interval(500);
+    m_sqlite_DB_write_file_ptr = m_sqlite_DB_write_file;
     return 0;
 }
 int MqttClient::connectinstance()
@@ -28,43 +30,41 @@ int MqttClient::connectinstance()
     m_token->wait();
     if(m_token->is_complete()&& !m_token->get_return_code())
     {
-        std::cout<<"connect success!"<<std::endl;
+        std::cout<<"client connect success!"<<std::endl;
     }
     else
     {
         std::cout<<"connect failed!"<<std::endl;
     }
+    m_client->set_callback(*this);
+    subscribe_respond_topic();
     return 0;
 }
 
-
-int MqttClient::loop()
+void MqttClient::subscribe_respond_topic()
 {
-    std::this_thread::sleep_for(std::chrono::seconds(5));
-    return 0;
-}
-int MqttClient::publish()
-{
-    m_msg  = mqtt::make_message(m_topicName, m_payload_message);
-    m_msg->set_qos(m_qos);
-    auto m_token = m_client->publish(m_msg);
+    auto m_token = m_client->subscribe("file/respond", m_qos);
     m_token->wait();
-    return 0;
+    if(m_token->is_complete()&& !m_token->get_return_code())
+    {
+        std::cout<<"client subscribe success!"<<std::endl;
+    }
+    else
+    {
+        std::cout<<"connect subscribe failed!"<<std::endl;
+    }
 }
 
-int MqttClient::ReadFileAndShard()
+void MqttClient::message_arrived(mqtt::const_message_ptr mqtt_msg)
 {
-    return 0;
-}
+    if(mqtt_msg->get_topic()!= m_topicName && mqtt_msg->get_topic().find("ack")== std::string::npos)
+    {
+        m_received_messages_queue.push(mqtt_msg);
+    }
 
-int MqttClient::constructProtocolHeader()
-{
-    return 0;
-}
-
-int MqttClient::EncryptSharedData()
-{
-    return 0;
+    #if DEBUG_TEST == true
+    std::cout<<"mqttserver respond message arrived!"<<std::endl;
+    #endif
 }
 
 int MqttClient::config_load()
@@ -134,15 +134,15 @@ int MqttClient::parse_json(std::ifstream &ifs)
     m_client_id=  client_id;
     m_port= port;
     m_topicName= topicName;
-    m_qos = 2;
+    m_qos = 1;
     m_retained = false;
     return 0;
 }
 
-int MqttClient::SendSliceData(const std::string& proto_msg)
+void MqttClient::SendSliceData(const std::string& proto_msg)
 {
-    auto result_promise = std::make_shared<std::promise<int>>();
-    auto result_future = result_promise->get_future();
+    // auto result_promise = std::make_shared<std::promise<int>>();
+    // auto result_future = result_promise->get_future();
 
     m_msg = mqtt::make_message(m_topicName, 
     proto_msg.data(), 
@@ -151,12 +151,20 @@ int MqttClient::SendSliceData(const std::string& proto_msg)
     m_retained);
 
     //build monitor
-    ActionListener listener(result_promise);
+    // ActionListener listener(result_promise);
     {
-    // std::lock_guard<std::mutex> lock(m_mutex);
     auto token = m_client->publish(m_msg);
-    token->set_action_callback(listener);
+    // token->set_action_callback(listener);
+    }
+}
+
+
+void MqttClient::transmit_message_to_sqlite()
+{
+    {
+        std::lock_guard<std::mutex> lock(m_received_queue_mutex);
+        m_received_messages_queue.swap(m_tmp_received_messages_queue);
     }
 
-    return result_future.get();
+    m_sqlite_DB_write_file_ptr->write_message_in_db_subordinate_file_in_batch(m_tmp_received_messages_queue);
 }

@@ -52,6 +52,9 @@ extern const ::google::protobuf::internal::DescriptorTable
 class TestMsg;
 struct TestMsgDefaultTypeInternal;
 extern TestMsgDefaultTypeInternal _TestMsg_default_instance_;
+class request_message;
+struct request_messageDefaultTypeInternal;
+extern request_messageDefaultTypeInternal _request_message_default_instance_;
 namespace google {
 namespace protobuf {
 }  // namespace protobuf
@@ -61,6 +64,261 @@ namespace protobuf {
 // ===================================================================
 
 
+// -------------------------------------------------------------------
+
+class request_message final : public ::google::protobuf::Message
+/* @@protoc_insertion_point(class_definition:request_message) */ {
+ public:
+  inline request_message() : request_message(nullptr) {}
+  ~request_message() override;
+  template <typename = void>
+  explicit PROTOBUF_CONSTEXPR request_message(
+      ::google::protobuf::internal::ConstantInitialized);
+
+  inline request_message(const request_message& from) : request_message(nullptr, from) {}
+  inline request_message(request_message&& from) noexcept
+      : request_message(nullptr, std::move(from)) {}
+  inline request_message& operator=(const request_message& from) {
+    CopyFrom(from);
+    return *this;
+  }
+  inline request_message& operator=(request_message&& from) noexcept {
+    if (this == &from) return *this;
+    if (GetArena() == from.GetArena()
+#ifdef PROTOBUF_FORCE_COPY_IN_MOVE
+        && GetArena() != nullptr
+#endif  // !PROTOBUF_FORCE_COPY_IN_MOVE
+    ) {
+      InternalSwap(&from);
+    } else {
+      CopyFrom(from);
+    }
+    return *this;
+  }
+
+  inline const ::google::protobuf::UnknownFieldSet& unknown_fields() const
+      ABSL_ATTRIBUTE_LIFETIME_BOUND {
+    return _internal_metadata_.unknown_fields<::google::protobuf::UnknownFieldSet>(::google::protobuf::UnknownFieldSet::default_instance);
+  }
+  inline ::google::protobuf::UnknownFieldSet* mutable_unknown_fields()
+      ABSL_ATTRIBUTE_LIFETIME_BOUND {
+    return _internal_metadata_.mutable_unknown_fields<::google::protobuf::UnknownFieldSet>();
+  }
+
+  static const ::google::protobuf::Descriptor* descriptor() {
+    return GetDescriptor();
+  }
+  static const ::google::protobuf::Descriptor* GetDescriptor() {
+    return default_instance().GetMetadata().descriptor;
+  }
+  static const ::google::protobuf::Reflection* GetReflection() {
+    return default_instance().GetMetadata().reflection;
+  }
+  static const request_message& default_instance() {
+    return *internal_default_instance();
+  }
+  static inline const request_message* internal_default_instance() {
+    return reinterpret_cast<const request_message*>(
+        &_request_message_default_instance_);
+  }
+  static constexpr int kIndexInFileMessages = 1;
+  friend void swap(request_message& a, request_message& b) { a.Swap(&b); }
+  inline void Swap(request_message* other) {
+    if (other == this) return;
+#ifdef PROTOBUF_FORCE_COPY_IN_SWAP
+    if (GetArena() != nullptr && GetArena() == other->GetArena()) {
+#else   // PROTOBUF_FORCE_COPY_IN_SWAP
+    if (GetArena() == other->GetArena()) {
+#endif  // !PROTOBUF_FORCE_COPY_IN_SWAP
+      InternalSwap(other);
+    } else {
+      ::google::protobuf::internal::GenericSwap(this, other);
+    }
+  }
+  void UnsafeArenaSwap(request_message* other) {
+    if (other == this) return;
+    ABSL_DCHECK(GetArena() == other->GetArena());
+    InternalSwap(other);
+  }
+
+  // implements Message ----------------------------------------------
+
+  request_message* New(::google::protobuf::Arena* arena = nullptr) const final {
+    return ::google::protobuf::Message::DefaultConstruct<request_message>(arena);
+  }
+  using ::google::protobuf::Message::CopyFrom;
+  void CopyFrom(const request_message& from);
+  using ::google::protobuf::Message::MergeFrom;
+  void MergeFrom(const request_message& from) { request_message::MergeImpl(*this, from); }
+
+  private:
+  static void MergeImpl(
+      ::google::protobuf::MessageLite& to_msg,
+      const ::google::protobuf::MessageLite& from_msg);
+
+  public:
+  bool IsInitialized() const {
+    return true;
+  }
+  ABSL_ATTRIBUTE_REINITIALIZES void Clear() final;
+  ::size_t ByteSizeLong() const final;
+  ::uint8_t* _InternalSerialize(
+      ::uint8_t* target,
+      ::google::protobuf::io::EpsCopyOutputStream* stream) const final;
+  int GetCachedSize() const { return _impl_._cached_size_.Get(); }
+
+  private:
+  void SharedCtor(::google::protobuf::Arena* arena);
+  void SharedDtor();
+  void InternalSwap(request_message* other);
+ private:
+  friend class ::google::protobuf::internal::AnyMetadata;
+  static ::absl::string_view FullMessageName() { return "request_message"; }
+
+ protected:
+  explicit request_message(::google::protobuf::Arena* arena);
+  request_message(::google::protobuf::Arena* arena, const request_message& from);
+  request_message(::google::protobuf::Arena* arena, request_message&& from) noexcept
+      : request_message(arena) {
+    *this = ::std::move(from);
+  }
+  const ::google::protobuf::Message::ClassData* GetClassData() const final;
+
+ public:
+  ::google::protobuf::Metadata GetMetadata() const;
+  // nested types ----------------------------------------------------
+
+  // accessors -------------------------------------------------------
+  enum : int {
+    kFileIdFieldNumber = 1,
+    kMissingSlicesIndexJsonFieldNumber = 2,
+    kInputFilePathFieldNumber = 3,
+    kSliceDataInformationFieldNumber = 4,
+    kSliceIndexFieldNumber = 5,
+    kIsDownloadFieldNumber = 6,
+  };
+  // bytes file_id = 1;
+  void clear_file_id() ;
+  const std::string& file_id() const;
+  template <typename Arg_ = const std::string&, typename... Args_>
+  void set_file_id(Arg_&& arg, Args_... args);
+  std::string* mutable_file_id();
+  PROTOBUF_NODISCARD std::string* release_file_id();
+  void set_allocated_file_id(std::string* value);
+
+  private:
+  const std::string& _internal_file_id() const;
+  inline PROTOBUF_ALWAYS_INLINE void _internal_set_file_id(
+      const std::string& value);
+  std::string* _internal_mutable_file_id();
+
+  public:
+  // bytes missing_slices_index_json = 2;
+  void clear_missing_slices_index_json() ;
+  const std::string& missing_slices_index_json() const;
+  template <typename Arg_ = const std::string&, typename... Args_>
+  void set_missing_slices_index_json(Arg_&& arg, Args_... args);
+  std::string* mutable_missing_slices_index_json();
+  PROTOBUF_NODISCARD std::string* release_missing_slices_index_json();
+  void set_allocated_missing_slices_index_json(std::string* value);
+
+  private:
+  const std::string& _internal_missing_slices_index_json() const;
+  inline PROTOBUF_ALWAYS_INLINE void _internal_set_missing_slices_index_json(
+      const std::string& value);
+  std::string* _internal_mutable_missing_slices_index_json();
+
+  public:
+  // bytes input_file_path = 3;
+  void clear_input_file_path() ;
+  const std::string& input_file_path() const;
+  template <typename Arg_ = const std::string&, typename... Args_>
+  void set_input_file_path(Arg_&& arg, Args_... args);
+  std::string* mutable_input_file_path();
+  PROTOBUF_NODISCARD std::string* release_input_file_path();
+  void set_allocated_input_file_path(std::string* value);
+
+  private:
+  const std::string& _internal_input_file_path() const;
+  inline PROTOBUF_ALWAYS_INLINE void _internal_set_input_file_path(
+      const std::string& value);
+  std::string* _internal_mutable_input_file_path();
+
+  public:
+  // bytes slice_data_information = 4;
+  void clear_slice_data_information() ;
+  const std::string& slice_data_information() const;
+  template <typename Arg_ = const std::string&, typename... Args_>
+  void set_slice_data_information(Arg_&& arg, Args_... args);
+  std::string* mutable_slice_data_information();
+  PROTOBUF_NODISCARD std::string* release_slice_data_information();
+  void set_allocated_slice_data_information(std::string* value);
+
+  private:
+  const std::string& _internal_slice_data_information() const;
+  inline PROTOBUF_ALWAYS_INLINE void _internal_set_slice_data_information(
+      const std::string& value);
+  std::string* _internal_mutable_slice_data_information();
+
+  public:
+  // uint32 slice_index = 5;
+  void clear_slice_index() ;
+  ::uint32_t slice_index() const;
+  void set_slice_index(::uint32_t value);
+
+  private:
+  ::uint32_t _internal_slice_index() const;
+  void _internal_set_slice_index(::uint32_t value);
+
+  public:
+  // bool is_download = 6;
+  void clear_is_download() ;
+  bool is_download() const;
+  void set_is_download(bool value);
+
+  private:
+  bool _internal_is_download() const;
+  void _internal_set_is_download(bool value);
+
+  public:
+  // @@protoc_insertion_point(class_scope:request_message)
+ private:
+  class _Internal;
+  friend class ::google::protobuf::internal::TcParser;
+  static const ::google::protobuf::internal::TcParseTable<
+      3, 6, 0,
+      0, 2>
+      _table_;
+
+  static constexpr const void* _raw_default_instance_ =
+      &_request_message_default_instance_;
+
+  friend class ::google::protobuf::MessageLite;
+  friend class ::google::protobuf::Arena;
+  template <typename T>
+  friend class ::google::protobuf::Arena::InternalHelper;
+  using InternalArenaConstructable_ = void;
+  using DestructorSkippable_ = void;
+  struct Impl_ {
+    inline explicit constexpr Impl_(
+        ::google::protobuf::internal::ConstantInitialized) noexcept;
+    inline explicit Impl_(::google::protobuf::internal::InternalVisibility visibility,
+                          ::google::protobuf::Arena* arena);
+    inline explicit Impl_(::google::protobuf::internal::InternalVisibility visibility,
+                          ::google::protobuf::Arena* arena, const Impl_& from,
+                          const request_message& from_msg);
+    ::google::protobuf::internal::ArenaStringPtr file_id_;
+    ::google::protobuf::internal::ArenaStringPtr missing_slices_index_json_;
+    ::google::protobuf::internal::ArenaStringPtr input_file_path_;
+    ::google::protobuf::internal::ArenaStringPtr slice_data_information_;
+    ::uint32_t slice_index_;
+    bool is_download_;
+    mutable ::google::protobuf::internal::CachedSize _cached_size_;
+    PROTOBUF_TSAN_DECLARE_MEMBER
+  };
+  union { Impl_ _impl_; };
+  friend struct ::TableStruct_message_5fstruct_2eproto;
+};
 // -------------------------------------------------------------------
 
 class TestMsg final : public ::google::protobuf::Message
@@ -195,6 +453,7 @@ class TestMsg final : public ::google::protobuf::Message
     kSliceIndexFieldNumber = 3,
     kTotalSlicesFieldNumber = 4,
     kPlaintextSizeFieldNumber = 8,
+    kIsControlFieldNumber = 9,
   };
   // bytes file_id = 1;
   void clear_file_id() ;
@@ -300,12 +559,22 @@ class TestMsg final : public ::google::protobuf::Message
   void _internal_set_plaintext_size(::uint32_t value);
 
   public:
+  // bool is_control = 9;
+  void clear_is_control() ;
+  bool is_control() const;
+  void set_is_control(bool value);
+
+  private:
+  bool _internal_is_control() const;
+  void _internal_set_is_control(bool value);
+
+  public:
   // @@protoc_insertion_point(class_scope:TestMsg)
  private:
   class _Internal;
   friend class ::google::protobuf::internal::TcParser;
   static const ::google::protobuf::internal::TcParseTable<
-      3, 8, 0,
+      4, 9, 0,
       0, 2>
       _table_;
 
@@ -334,6 +603,7 @@ class TestMsg final : public ::google::protobuf::Message
     ::uint32_t slice_index_;
     ::uint32_t total_slices_;
     ::uint32_t plaintext_size_;
+    bool is_control_;
     mutable ::google::protobuf::internal::CachedSize _cached_size_;
     PROTOBUF_TSAN_DECLARE_MEMBER
   };
@@ -401,48 +671,54 @@ inline void TestMsg::_internal_set_slice_index(::uint32_t value) {
   _impl_.slice_index_ = value;
 }
 
-// uint32 total_slices = 4;
-inline void TestMsg::clear_total_slices() {
+// bytes file_id = 1;
+inline void TestMsg::clear_file_id() {
   ::google::protobuf::internal::TSanWrite(&_impl_);
-  _impl_.total_slices_ = 0u;
+  _impl_.file_id_.ClearToEmpty();
 }
-inline ::uint32_t TestMsg::total_slices() const {
-  // @@protoc_insertion_point(field_get:TestMsg.total_slices)
-  return _internal_total_slices();
+inline const std::string& TestMsg::file_id() const
+    ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  // @@protoc_insertion_point(field_get:TestMsg.file_id)
+  return _internal_file_id();
 }
-inline void TestMsg::set_total_slices(::uint32_t value) {
-  _internal_set_total_slices(value);
-  // @@protoc_insertion_point(field_set:TestMsg.total_slices)
+template <typename Arg_, typename... Args_>
+inline PROTOBUF_ALWAYS_INLINE void TestMsg::set_file_id(Arg_&& arg,
+                                                     Args_... args) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.file_id_.SetBytes(static_cast<Arg_&&>(arg), args..., GetArena());
+  // @@protoc_insertion_point(field_set:TestMsg.file_id)
 }
-inline ::uint32_t TestMsg::_internal_total_slices() const {
+inline std::string* TestMsg::mutable_file_id() ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  std::string* _s = _internal_mutable_file_id();
+  // @@protoc_insertion_point(field_mutable:TestMsg.file_id)
+  return _s;
+}
+inline const std::string& TestMsg::_internal_file_id() const {
   ::google::protobuf::internal::TSanRead(&_impl_);
-  return _impl_.total_slices_;
+  return _impl_.file_id_.Get();
 }
-inline void TestMsg::_internal_set_total_slices(::uint32_t value) {
+inline void TestMsg::_internal_set_file_id(const std::string& value) {
   ::google::protobuf::internal::TSanWrite(&_impl_);
-  _impl_.total_slices_ = value;
+  _impl_.file_id_.Set(value, GetArena());
 }
-
-// uint32 plaintext_size = 8;
-inline void TestMsg::clear_plaintext_size() {
+inline std::string* TestMsg::_internal_mutable_file_id() {
   ::google::protobuf::internal::TSanWrite(&_impl_);
-  _impl_.plaintext_size_ = 0u;
+  return _impl_.file_id_.Mutable( GetArena());
 }
-inline ::uint32_t TestMsg::plaintext_size() const {
-  // @@protoc_insertion_point(field_get:TestMsg.plaintext_size)
-  return _internal_plaintext_size();
-}
-inline void TestMsg::set_plaintext_size(::uint32_t value) {
-  _internal_set_plaintext_size(value);
-  // @@protoc_insertion_point(field_set:TestMsg.plaintext_size)
-}
-inline ::uint32_t TestMsg::_internal_plaintext_size() const {
-  ::google::protobuf::internal::TSanRead(&_impl_);
-  return _impl_.plaintext_size_;
-}
-inline void TestMsg::_internal_set_plaintext_size(::uint32_t value) {
+inline std::string* TestMsg::release_file_id() {
   ::google::protobuf::internal::TSanWrite(&_impl_);
-  _impl_.plaintext_size_ = value;
+  // @@protoc_insertion_point(field_release:TestMsg.file_id)
+  return _impl_.file_id_.Release();
+}
+inline void TestMsg::set_allocated_file_id(std::string* value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.file_id_.SetAllocated(value, GetArena());
+  #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+        if (_impl_.file_id_.IsDefault()) {
+          _impl_.file_id_.Set("", GetArena());
+        }
+  #endif  // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  // @@protoc_insertion_point(field_set_allocated:TestMsg.file_id)
 }
 
 // bytes aes_key = 5;
@@ -493,56 +769,6 @@ inline void TestMsg::set_allocated_aes_key(std::string* value) {
         }
   #endif  // PROTOBUF_FORCE_COPY_DEFAULT_STRING
   // @@protoc_insertion_point(field_set_allocated:TestMsg.aes_key)
-}
-
-// bytes file_id = 1;
-inline void TestMsg::clear_file_id() {
-  ::google::protobuf::internal::TSanWrite(&_impl_);
-  _impl_.file_id_.ClearToEmpty();
-}
-inline const std::string& TestMsg::file_id() const
-    ABSL_ATTRIBUTE_LIFETIME_BOUND {
-  // @@protoc_insertion_point(field_get:TestMsg.file_id)
-  return _internal_file_id();
-}
-template <typename Arg_, typename... Args_>
-inline PROTOBUF_ALWAYS_INLINE void TestMsg::set_file_id(Arg_&& arg,
-                                                     Args_... args) {
-  ::google::protobuf::internal::TSanWrite(&_impl_);
-  _impl_.file_id_.SetBytes(static_cast<Arg_&&>(arg), args..., GetArena());
-  // @@protoc_insertion_point(field_set:TestMsg.file_id)
-}
-inline std::string* TestMsg::mutable_file_id() ABSL_ATTRIBUTE_LIFETIME_BOUND {
-  std::string* _s = _internal_mutable_file_id();
-  // @@protoc_insertion_point(field_mutable:TestMsg.file_id)
-  return _s;
-}
-inline const std::string& TestMsg::_internal_file_id() const {
-  ::google::protobuf::internal::TSanRead(&_impl_);
-  return _impl_.file_id_.Get();
-}
-inline void TestMsg::_internal_set_file_id(const std::string& value) {
-  ::google::protobuf::internal::TSanWrite(&_impl_);
-  _impl_.file_id_.Set(value, GetArena());
-}
-inline std::string* TestMsg::_internal_mutable_file_id() {
-  ::google::protobuf::internal::TSanWrite(&_impl_);
-  return _impl_.file_id_.Mutable( GetArena());
-}
-inline std::string* TestMsg::release_file_id() {
-  ::google::protobuf::internal::TSanWrite(&_impl_);
-  // @@protoc_insertion_point(field_release:TestMsg.file_id)
-  return _impl_.file_id_.Release();
-}
-inline void TestMsg::set_allocated_file_id(std::string* value) {
-  ::google::protobuf::internal::TSanWrite(&_impl_);
-  _impl_.file_id_.SetAllocated(value, GetArena());
-  #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
-        if (_impl_.file_id_.IsDefault()) {
-          _impl_.file_id_.Set("", GetArena());
-        }
-  #endif  // PROTOBUF_FORCE_COPY_DEFAULT_STRING
-  // @@protoc_insertion_point(field_set_allocated:TestMsg.file_id)
 }
 
 // bytes iv = 6;
@@ -643,6 +869,320 @@ inline void TestMsg::set_allocated_ciphertext(std::string* value) {
         }
   #endif  // PROTOBUF_FORCE_COPY_DEFAULT_STRING
   // @@protoc_insertion_point(field_set_allocated:TestMsg.ciphertext)
+}
+
+// uint32 plaintext_size = 8;
+inline void TestMsg::clear_plaintext_size() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.plaintext_size_ = 0u;
+}
+inline ::uint32_t TestMsg::plaintext_size() const {
+  // @@protoc_insertion_point(field_get:TestMsg.plaintext_size)
+  return _internal_plaintext_size();
+}
+inline void TestMsg::set_plaintext_size(::uint32_t value) {
+  _internal_set_plaintext_size(value);
+  // @@protoc_insertion_point(field_set:TestMsg.plaintext_size)
+}
+inline ::uint32_t TestMsg::_internal_plaintext_size() const {
+  ::google::protobuf::internal::TSanRead(&_impl_);
+  return _impl_.plaintext_size_;
+}
+inline void TestMsg::_internal_set_plaintext_size(::uint32_t value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.plaintext_size_ = value;
+}
+
+// uint32 total_slices = 4;
+inline void TestMsg::clear_total_slices() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.total_slices_ = 0u;
+}
+inline ::uint32_t TestMsg::total_slices() const {
+  // @@protoc_insertion_point(field_get:TestMsg.total_slices)
+  return _internal_total_slices();
+}
+inline void TestMsg::set_total_slices(::uint32_t value) {
+  _internal_set_total_slices(value);
+  // @@protoc_insertion_point(field_set:TestMsg.total_slices)
+}
+inline ::uint32_t TestMsg::_internal_total_slices() const {
+  ::google::protobuf::internal::TSanRead(&_impl_);
+  return _impl_.total_slices_;
+}
+inline void TestMsg::_internal_set_total_slices(::uint32_t value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.total_slices_ = value;
+}
+
+// bool is_control = 9;
+inline void TestMsg::clear_is_control() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.is_control_ = false;
+}
+inline bool TestMsg::is_control() const {
+  // @@protoc_insertion_point(field_get:TestMsg.is_control)
+  return _internal_is_control();
+}
+inline void TestMsg::set_is_control(bool value) {
+  _internal_set_is_control(value);
+  // @@protoc_insertion_point(field_set:TestMsg.is_control)
+}
+inline bool TestMsg::_internal_is_control() const {
+  ::google::protobuf::internal::TSanRead(&_impl_);
+  return _impl_.is_control_;
+}
+inline void TestMsg::_internal_set_is_control(bool value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.is_control_ = value;
+}
+
+// -------------------------------------------------------------------
+
+// request_message
+
+// bytes file_id = 1;
+inline void request_message::clear_file_id() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.file_id_.ClearToEmpty();
+}
+inline const std::string& request_message::file_id() const
+    ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  // @@protoc_insertion_point(field_get:request_message.file_id)
+  return _internal_file_id();
+}
+template <typename Arg_, typename... Args_>
+inline PROTOBUF_ALWAYS_INLINE void request_message::set_file_id(Arg_&& arg,
+                                                     Args_... args) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.file_id_.SetBytes(static_cast<Arg_&&>(arg), args..., GetArena());
+  // @@protoc_insertion_point(field_set:request_message.file_id)
+}
+inline std::string* request_message::mutable_file_id() ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  std::string* _s = _internal_mutable_file_id();
+  // @@protoc_insertion_point(field_mutable:request_message.file_id)
+  return _s;
+}
+inline const std::string& request_message::_internal_file_id() const {
+  ::google::protobuf::internal::TSanRead(&_impl_);
+  return _impl_.file_id_.Get();
+}
+inline void request_message::_internal_set_file_id(const std::string& value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.file_id_.Set(value, GetArena());
+}
+inline std::string* request_message::_internal_mutable_file_id() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  return _impl_.file_id_.Mutable( GetArena());
+}
+inline std::string* request_message::release_file_id() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  // @@protoc_insertion_point(field_release:request_message.file_id)
+  return _impl_.file_id_.Release();
+}
+inline void request_message::set_allocated_file_id(std::string* value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.file_id_.SetAllocated(value, GetArena());
+  #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+        if (_impl_.file_id_.IsDefault()) {
+          _impl_.file_id_.Set("", GetArena());
+        }
+  #endif  // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  // @@protoc_insertion_point(field_set_allocated:request_message.file_id)
+}
+
+// bytes missing_slices_index_json = 2;
+inline void request_message::clear_missing_slices_index_json() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.missing_slices_index_json_.ClearToEmpty();
+}
+inline const std::string& request_message::missing_slices_index_json() const
+    ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  // @@protoc_insertion_point(field_get:request_message.missing_slices_index_json)
+  return _internal_missing_slices_index_json();
+}
+template <typename Arg_, typename... Args_>
+inline PROTOBUF_ALWAYS_INLINE void request_message::set_missing_slices_index_json(Arg_&& arg,
+                                                     Args_... args) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.missing_slices_index_json_.SetBytes(static_cast<Arg_&&>(arg), args..., GetArena());
+  // @@protoc_insertion_point(field_set:request_message.missing_slices_index_json)
+}
+inline std::string* request_message::mutable_missing_slices_index_json() ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  std::string* _s = _internal_mutable_missing_slices_index_json();
+  // @@protoc_insertion_point(field_mutable:request_message.missing_slices_index_json)
+  return _s;
+}
+inline const std::string& request_message::_internal_missing_slices_index_json() const {
+  ::google::protobuf::internal::TSanRead(&_impl_);
+  return _impl_.missing_slices_index_json_.Get();
+}
+inline void request_message::_internal_set_missing_slices_index_json(const std::string& value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.missing_slices_index_json_.Set(value, GetArena());
+}
+inline std::string* request_message::_internal_mutable_missing_slices_index_json() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  return _impl_.missing_slices_index_json_.Mutable( GetArena());
+}
+inline std::string* request_message::release_missing_slices_index_json() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  // @@protoc_insertion_point(field_release:request_message.missing_slices_index_json)
+  return _impl_.missing_slices_index_json_.Release();
+}
+inline void request_message::set_allocated_missing_slices_index_json(std::string* value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.missing_slices_index_json_.SetAllocated(value, GetArena());
+  #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+        if (_impl_.missing_slices_index_json_.IsDefault()) {
+          _impl_.missing_slices_index_json_.Set("", GetArena());
+        }
+  #endif  // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  // @@protoc_insertion_point(field_set_allocated:request_message.missing_slices_index_json)
+}
+
+// bytes input_file_path = 3;
+inline void request_message::clear_input_file_path() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.input_file_path_.ClearToEmpty();
+}
+inline const std::string& request_message::input_file_path() const
+    ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  // @@protoc_insertion_point(field_get:request_message.input_file_path)
+  return _internal_input_file_path();
+}
+template <typename Arg_, typename... Args_>
+inline PROTOBUF_ALWAYS_INLINE void request_message::set_input_file_path(Arg_&& arg,
+                                                     Args_... args) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.input_file_path_.SetBytes(static_cast<Arg_&&>(arg), args..., GetArena());
+  // @@protoc_insertion_point(field_set:request_message.input_file_path)
+}
+inline std::string* request_message::mutable_input_file_path() ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  std::string* _s = _internal_mutable_input_file_path();
+  // @@protoc_insertion_point(field_mutable:request_message.input_file_path)
+  return _s;
+}
+inline const std::string& request_message::_internal_input_file_path() const {
+  ::google::protobuf::internal::TSanRead(&_impl_);
+  return _impl_.input_file_path_.Get();
+}
+inline void request_message::_internal_set_input_file_path(const std::string& value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.input_file_path_.Set(value, GetArena());
+}
+inline std::string* request_message::_internal_mutable_input_file_path() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  return _impl_.input_file_path_.Mutable( GetArena());
+}
+inline std::string* request_message::release_input_file_path() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  // @@protoc_insertion_point(field_release:request_message.input_file_path)
+  return _impl_.input_file_path_.Release();
+}
+inline void request_message::set_allocated_input_file_path(std::string* value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.input_file_path_.SetAllocated(value, GetArena());
+  #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+        if (_impl_.input_file_path_.IsDefault()) {
+          _impl_.input_file_path_.Set("", GetArena());
+        }
+  #endif  // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  // @@protoc_insertion_point(field_set_allocated:request_message.input_file_path)
+}
+
+// bytes slice_data_information = 4;
+inline void request_message::clear_slice_data_information() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.slice_data_information_.ClearToEmpty();
+}
+inline const std::string& request_message::slice_data_information() const
+    ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  // @@protoc_insertion_point(field_get:request_message.slice_data_information)
+  return _internal_slice_data_information();
+}
+template <typename Arg_, typename... Args_>
+inline PROTOBUF_ALWAYS_INLINE void request_message::set_slice_data_information(Arg_&& arg,
+                                                     Args_... args) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.slice_data_information_.SetBytes(static_cast<Arg_&&>(arg), args..., GetArena());
+  // @@protoc_insertion_point(field_set:request_message.slice_data_information)
+}
+inline std::string* request_message::mutable_slice_data_information() ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  std::string* _s = _internal_mutable_slice_data_information();
+  // @@protoc_insertion_point(field_mutable:request_message.slice_data_information)
+  return _s;
+}
+inline const std::string& request_message::_internal_slice_data_information() const {
+  ::google::protobuf::internal::TSanRead(&_impl_);
+  return _impl_.slice_data_information_.Get();
+}
+inline void request_message::_internal_set_slice_data_information(const std::string& value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.slice_data_information_.Set(value, GetArena());
+}
+inline std::string* request_message::_internal_mutable_slice_data_information() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  return _impl_.slice_data_information_.Mutable( GetArena());
+}
+inline std::string* request_message::release_slice_data_information() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  // @@protoc_insertion_point(field_release:request_message.slice_data_information)
+  return _impl_.slice_data_information_.Release();
+}
+inline void request_message::set_allocated_slice_data_information(std::string* value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.slice_data_information_.SetAllocated(value, GetArena());
+  #ifdef PROTOBUF_FORCE_COPY_DEFAULT_STRING
+        if (_impl_.slice_data_information_.IsDefault()) {
+          _impl_.slice_data_information_.Set("", GetArena());
+        }
+  #endif  // PROTOBUF_FORCE_COPY_DEFAULT_STRING
+  // @@protoc_insertion_point(field_set_allocated:request_message.slice_data_information)
+}
+
+// uint32 slice_index = 5;
+inline void request_message::clear_slice_index() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.slice_index_ = 0u;
+}
+inline ::uint32_t request_message::slice_index() const {
+  // @@protoc_insertion_point(field_get:request_message.slice_index)
+  return _internal_slice_index();
+}
+inline void request_message::set_slice_index(::uint32_t value) {
+  _internal_set_slice_index(value);
+  // @@protoc_insertion_point(field_set:request_message.slice_index)
+}
+inline ::uint32_t request_message::_internal_slice_index() const {
+  ::google::protobuf::internal::TSanRead(&_impl_);
+  return _impl_.slice_index_;
+}
+inline void request_message::_internal_set_slice_index(::uint32_t value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.slice_index_ = value;
+}
+
+// bool is_download = 6;
+inline void request_message::clear_is_download() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.is_download_ = false;
+}
+inline bool request_message::is_download() const {
+  // @@protoc_insertion_point(field_get:request_message.is_download)
+  return _internal_is_download();
+}
+inline void request_message::set_is_download(bool value) {
+  _internal_set_is_download(value);
+  // @@protoc_insertion_point(field_set:request_message.is_download)
+}
+inline bool request_message::_internal_is_download() const {
+  ::google::protobuf::internal::TSanRead(&_impl_);
+  return _impl_.is_download_;
+}
+inline void request_message::_internal_set_is_download(bool value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.is_download_ = value;
 }
 
 #ifdef __GNUC__

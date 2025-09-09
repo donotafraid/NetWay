@@ -7,18 +7,19 @@
 
 //forward declaration
 struct ProtocolHeader ;
+class Sqlite_DB_write_file;
 
-class MqttClient
+class MqttClient: public virtual mqtt::callback
 {
     public:
         MqttClient(){};
         ~MqttClient();
 
-        int createinstance();
+        int createinstance(Sqlite_DB_write_file* m_sqlite_DB_write_file_ptr);
         int connectinstance();
         int disconnectinstance();
-        int subscribe();
         int publish();
+        void subscribe_respond_topic();
         int loop();
         int config_load();
         int parse_json(std::ifstream &ifs);
@@ -27,7 +28,9 @@ class MqttClient
         int constructProtocolHeader();
         int EncryptSharedData();
 
-        int SendSliceData(const std::string& payload_protocolheader_ciphertext);
+        void SendSliceData(const std::string& payload_protocolheader_ciphertext);
+        void message_arrived(mqtt::const_message_ptr mqtt_msg) override;
+        void transmit_message_to_sqlite();
 
         int m_port;
         int m_qos;
@@ -43,7 +46,11 @@ class MqttClient
         mqtt::async_client* m_client; 
         mqtt::connect_options m_connOpts;
         mqtt::message_ptr m_msg;
+
+        std::queue<mqtt::const_message_ptr> m_received_messages_queue;
+        std::queue<mqtt::const_message_ptr> m_tmp_received_messages_queue;
+        std::mutex m_received_queue_mutex;
+        Sqlite_DB_write_file* m_sqlite_DB_write_file_ptr; 
     private:
-        std::mutex m_mutex;
 };
 #endif
