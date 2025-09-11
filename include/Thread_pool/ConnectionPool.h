@@ -4,23 +4,26 @@
 
 enum class DB_Type{
     CONTENT,
-    GET_FAIL_INDEX
+    GET_FAIL_INDEX,
+    MERGE_SELECT_FILE
 };
 
 class ConnectionWrapper{
     public:
     
     ~ConnectionWrapper();
-    ConnectionWrapper(std::string db_file_name)  ;
+    ConnectionWrapper(std::string&& db_file_name)  ;
     
     int prepareStatements () ;
     void reset () ;
     void close_db_file();
-    int open_db_file(std::string& db_file_name);
+    int open_db_file(std::string&& db_file_name);
     
-    void set_db_file_path(std::string db_file_name);
-    int initialize_connection_wrapper(std::string db_file_path);
+    void set_db_file_path(std::string&& db_file_name);
+    int initialize_connection_wrapper(std::string&& db_file_path);
     bool check_table_exists();
+    std::string return_db_file_path();
+    sqlite3_stmt* return_stmt_ptr(DB_Type type);
     
     const char* read_missing_slices_from_db_subordinate_file_sql = R"(
         WITH expected_indices AS(
@@ -41,13 +44,16 @@ class ConnectionWrapper{
     sqlite3_stmt* read_missing_slices_from_db_subordinate_file_stmt_ptr = nullptr;
 
     bool is_done = false;
-    std::string return_db_file_path();
-    sqlite3_stmt* return_stmt_ptr(DB_Type type);
+
+
+    const char* merge_select_db_subordinate_file_sql = "SELECT file_id , slice_index , plaintext  FROM slice_contents WHERE file_id = ? ORDER BY slice_index ASC";
+    sqlite3_stmt* merge_select_db_subordinate_file_stmt_ptr = nullptr;
+
     sqlite3* db_ptr = nullptr;
     private:
         sqlite3_stmt* stmt_newRecord_ptr = nullptr; 
         std::string db_file_path = ""; // distiction between different connection_wrapper
-    const char* Create_Table[4] = {
+        const char* Create_Table[4] = {
         R"(CREATE TABLE slice_contents (
         id INTEGER PRIMARY KEY AUTOINCREMENT, 
         file_id BLOB NOT NULL,

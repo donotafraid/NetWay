@@ -62,8 +62,9 @@ std::unique_ptr<ConnectionWrapper> ConnectionPool::check_use_ptr_in_connection_p
         //find the existed db_file_path
             for(auto it = m_connection_pool.begin(); it != m_connection_pool.end(); ++it)
             {
-                //check if the connection pool has idle connection
-                if((*it != nullptr)&&(*it)->return_db_file_path() == db_file_path)
+                //  check if the connection pool has idle connection
+                //  if the db_file_path is useable , return it
+                if((*it != nullptr)&& this->verify_db_path_memorySize() == db_file_path)
                 {
                     ptr = std::move(*it);
                     m_connection_pool.erase(it);
@@ -75,12 +76,20 @@ std::unique_ptr<ConnectionWrapper> ConnectionPool::check_use_ptr_in_connection_p
     // if do not find suitbale idle connection or db_file_path , create a new connection
     if(!ptr)
     {
-        ptr = (std::make_unique<ConnectionWrapper>(db_file_path));
+        ptr = (std::make_unique<ConnectionWrapper>(this->verify_db_path_memorySize()));
         //initialize the connection
-        ptr->open_db_file(db_file_path);
-        ptr->initialize_connection_wrapper(db_file_path);
+        ptr->open_db_file( this->verify_db_path_memorySize() );
+        ptr->initialize_connection_wrapper(this->verify_db_path_memorySize());
     }
-    return (ptr);
+
+    if((ptr->return_stmt_ptr(DB_Type::CONTENT))&&(ptr->return_stmt_ptr(DB_Type::MERGE_SELECT_FILE))&&(ptr->return_stmt_ptr(DB_Type::GET_FAIL_INDEX)) !=nullptr)
+    {
+        return (ptr);
+    }
+    else {
+        std::cout<<"ConnectionWrapper::initialize_connection_wrapper: initialize_connection_wrapper failed!\n";
+        return nullptr;
+    }
 }
 
 ConnectionPool::~ConnectionPool()
@@ -111,6 +120,13 @@ int ConnectionWrapper::prepareStatements()
         return rc ;
     }
 
+    //  merge select db_subordinate file
+    rc = (sqlite3_prepare_v2(db_ptr,merge_select_db_subordinate_file_sql,strlen(merge_select_db_subordinate_file_sql),&merge_select_db_subordinate_file_stmt_ptr,nullptr));
+    if (rc != SQLITE_OK)
+    {
+        std::cerr<<"Sqlite_information::presetting: prepare merge_select_db_subordinate_file_sql failed\n";
+        return rc ;
+    }
     return rc ;
 }
 
@@ -151,7 +167,7 @@ void ConnectionWrapper::close_db_file()
     std::cout<<"ConnectionWrapper stmt_ptr and db_ptr are all closed!"<<std::endl;
 }
 
-int ConnectionWrapper::open_db_file(std::string& db_file_path)
+int ConnectionWrapper::open_db_file(std::string&& db_file_path)
 {
     int rc =(sqlite3_open_v2(db_file_path.c_str(),&(this->db_ptr),
             SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE|SQLITE_OPEN_NOMUTEX , nullptr) ) ;
@@ -166,12 +182,12 @@ int ConnectionWrapper::open_db_file(std::string& db_file_path)
     return rc;
 }
 
-void ConnectionWrapper::set_db_file_path(std::string db_file_name)
+void ConnectionWrapper::set_db_file_path(std::string&& db_file_name)
 {
     this->db_file_path = db_file_name;
 }
 
-int ConnectionWrapper::initialize_connection_wrapper(std::string db_file_path)
+int ConnectionWrapper::initialize_connection_wrapper(std::string&& db_file_path)
 {
     //create slice_table
     int rc = check_table_exists();
@@ -266,13 +282,15 @@ sqlite3_stmt *ConnectionWrapper::return_stmt_ptr(DB_Type type)
         return this->stmt_newRecord_ptr;
     case DB_Type::GET_FAIL_INDEX: 
         return this->read_missing_slices_from_db_subordinate_file_stmt_ptr;
+    case DB_Type::MERGE_SELECT_FILE: 
+        return this->merge_select_db_subordinate_file_stmt_ptr;
     default:
         std::cerr<<"return_stmt_ptr: input error type"<<std::endl;
         return nullptr;
     }
 }
 
-ConnectionWrapper::ConnectionWrapper(std::string db_file_name)
+ConnectionWrapper::ConnectionWrapper(std::string&& db_file_name)
 {
     this->db_file_path = db_file_name;
 }
@@ -287,6 +305,12 @@ ConnectionWrapper::~ConnectionWrapper()
     if(read_missing_slices_from_db_subordinate_file_stmt_ptr != nullptr)
     {
         sqlite3_finalize(read_missing_slices_from_db_subordinate_file_stmt_ptr);
+        read_missing_slices_from_db_subordinate_file_stmt_ptr = nullptr;
+    }
+    if(merge_select_db_subordinate_file_stmt_ptr != nullptr)
+    {
+        sqlite3_finalize(merge_select_db_subordinate_file_stmt_ptr);
+        merge_select_db_subordinate_file_stmt_ptr = nullptr;
     }
 
     if (db_ptr != nullptr)

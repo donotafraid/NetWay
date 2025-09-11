@@ -78,9 +78,11 @@ class DownloadTasks : public QObject , public QRunnable
     int intetface_read_missing_slices_from_db_information_file(const std::string& file_path); 
     int interface_create_new_file_on_db_information(const std::string& file_path);
     bool is_download_complete();
+    void clear_corresponding_file_information();
+    void merge_done_task();
 
     //资源清理
-    bool clear_progreeMap_cache();
+    bool clear_corresponding_cache();
     
     //内部接口********************************************
     protected:

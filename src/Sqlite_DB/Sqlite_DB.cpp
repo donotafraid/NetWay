@@ -367,18 +367,17 @@ bool Sqlite_DB_function::read_missing_slices_from_db_information_file(const std:
     // read corresponding file whether exist in db_information file
     while( (rc = sqlite3_step(read_sourcefile_from_db_information_file_stmt_ptr)) == SQLITE_ROW)
     {
-        int missing_slice_index_length = sqlite3_column_bytes(read_sourcefile_from_db_information_file_stmt_ptr,2);
-        if(missing_slice_index_length == 0)
+        int missing_slices_index_length = sqlite3_column_bytes(read_sourcefile_from_db_information_file_stmt_ptr,3);
+        const std::string& missing_slices_index_string = std::string(reinterpret_cast<const char*>(sqlite3_column_blob(read_sourcefile_from_db_information_file_stmt_ptr,3)),missing_slices_index_length);
+        if(missing_slices_index_string == "")
         {
             continue;
         }
+
         int file_id_length = sqlite3_column_bytes(read_sourcefile_from_db_information_file_stmt_ptr,1);
         int input_file_path_length = sqlite3_column_bytes(read_sourcefile_from_db_information_file_stmt_ptr,2);
-        int missing_slices_index_length = sqlite3_column_bytes(read_sourcefile_from_db_information_file_stmt_ptr,3);
         std::string file_id  (reinterpret_cast<const char*>(sqlite3_column_blob(read_sourcefile_from_db_information_file_stmt_ptr,1)),file_id_length);
-        std::cout<<"read: file_id:"<<file_id<<"\n";
         std::string input_file_path  (reinterpret_cast<const char*>(sqlite3_column_text(read_sourcefile_from_db_information_file_stmt_ptr,2)));      
-        std::string missing_slices_index_string (reinterpret_cast<const char*>(sqlite3_column_blob(read_sourcefile_from_db_information_file_stmt_ptr,3))); 
 
         {
             auto request_message_ptr = m_memory_pool_ref.return_ptr();
@@ -436,7 +435,6 @@ int Sqlite_DB_function::create_new_file_on_db_information(const std::string& sou
         uuid uuid_ptr= Generated_uuid();
         std::copy(uuid_ptr.begin(), uuid_ptr.end(), file_id.begin());
     }
-    std::cout<<"write file_id : "<<file_id.data()<<"\n";
     std::vector<int> missing_index_vector = return_continous_sequence(file_size);
     std::string json_string = "";
     if(!missing_index_vector.empty())
@@ -464,23 +462,6 @@ int Sqlite_DB_function::create_new_file_on_db_information(const std::string& sou
     return true;
 }
 
-std::string Sqlite_DB_function::verify_db_path_memorySize()
-{
-    std::string db_file_path = db_file_pre + return_current_date_string() + ".db";
-    if(fs::exists(db_file_path))
-    {
-        auto db_file_size = fs::file_size(db_file_path);
-        if( db_file_size > MAX_DB_FILE_LIMIT)
-        {
-            std::string stem = fs::path(db_file_path).stem().string() + "A";
-            std::string extention = fs::path(db_file_path).extension().string();
-            std::string new_db_file_path = fs::path(db_file_path).parent_path().string() + stem + extention;
-
-            return new_db_file_path;
-        }
-    }
-    return db_file_path;
-}
 
 int taskExecution::send_task()
 { 
@@ -584,8 +565,37 @@ void Sqlite_DB_function::update_memory_pool(const std::string& file_path)
         {
             request_message_ptr->set_missing_slices_index_json("");
         }
+        int rc = update_db_information(request_message_ptr->file_id(),file_path,request_message_ptr->missing_slices_index_json());
+        if (rc != SQLITE_DONE)
+        {
+            std::cerr <<"the file: "<<request_message_ptr->input_file_path()<< " update_db_information failed and error :"<<sqlite3_errmsg(db_information_ptr)<<std::endl;
+        }
+
+
         m_memory_pool_ref.push(std::move(request_message_ptr));
     }
+}
+
+int Sqlite_DB_function::update_db_information(const std::string& file_id,const std::string& file_path,const std::string& missing_slices_index_json)
+{
+    int rc = sqlite3_bind_blob(update_db_information_stmt_ptr,3,file_id.data(),file_id.size(),SQLITE_STATIC);
+    rc = sqlite3_bind_text(update_db_information_stmt_ptr,2,file_path.c_str(),file_path.size(),SQLITE_TRANSIENT);
+    rc = sqlite3_bind_text(update_db_information_stmt_ptr,1,missing_slices_index_json.data(),missing_slices_index_json.size(),SQLITE_TRANSIENT);  
+    
+    if(rc != SQLITE_OK)
+    {
+        std::cerr<< "update_db_information failed and error :"<<sqlite3_errmsg(db_information_ptr)<<std::endl;
+        return -1;
+    }
+
+    rc = sqlite3_step(update_db_information_stmt_ptr);
+    if(rc != SQLITE_DONE)
+    {
+        std::cerr<< "update_db_information failed and error :"<<sqlite3_errmsg(db_information_ptr)<<std::endl;
+        return -1;
+    }
+    sqlite3_reset(update_db_information_stmt_ptr);
+    return rc;
 }
 
 int Sqlite_DB_write_file::blob_parameter_insert(ConnectionWrapper* connection_wrapped_ptr,TestMsg& data_information)
@@ -670,4 +680,41 @@ void taskExecution::delete_task_from_memory_pool(const std::string& input_file_p
         }
         m_memory_pool_ref.push(std::move(tmp_object));
     }
+}
+
+void Sqlite_DB_function::merge_select_file(request_message& request_message_ref)
+{ 
+    int rc ;
+    auto connection_wrapped_ptr = m_connection_pool_ptr->return_connectionWrapper_ptr();
+    std::string file_name_string = fs::path(request_message_ref.input_file_path()).filename().string();
+
+    // select file_id , input_file_path from record
+    // in loop , should not reset the condition stmt , because the loop based on stmt to get next row 
+    rc = sqlite3_bind_blob(connection_wrapped_ptr->return_stmt_ptr(DB_Type::MERGE_SELECT_FILE),1,request_message_ref.file_id().data(),request_message_ref.file_id().size(),SQLITE_STATIC);
+    if (rc != SQLITE_OK)
+    {
+        std::cerr<<"merge_select_file:sqlite3_bind_blob error : "<<sqlite3_errmsg(db_subordinate_ptr)<<std::endl;
+        return;
+    }
+
+    while ( (rc = (sqlite3_step(connection_wrapped_ptr->return_stmt_ptr(DB_Type::MERGE_SELECT_FILE)) == SQLITE_ROW)) ) {
+        // select slice_index , slice_content from slice_content where file_id = ?
+        //  select from 0~N , bind from 1~N
+        {
+            int slice_index = sqlite3_column_int(connection_wrapped_ptr->return_stmt_ptr(DB_Type::MERGE_SELECT_FILE),1);
+            const char* slice_content = reinterpret_cast<const char*>(sqlite3_column_blob(connection_wrapped_ptr->return_stmt_ptr(DB_Type::MERGE_SELECT_FILE),2));
+            int slice_content_size = sqlite3_column_bytes(connection_wrapped_ptr->return_stmt_ptr(DB_Type::MERGE_SELECT_FILE),2);
+
+           //write message to file 
+           std::ofstream file_out("./"+file_name_string,std::ios::app | std::ios::binary);
+           if(!file_out)
+           {
+             std::cerr<<"merge_select_file:mergerSQLData : open file error : "<<file_name_string<<std::endl;
+             return;
+           }
+            
+           file_out.write((slice_content),slice_content_size);
+        }
+    }
+    m_connection_pool_ptr->release_connectionWrapper_ptr(std::move(connection_wrapped_ptr));
 }

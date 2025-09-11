@@ -192,7 +192,7 @@ void MainWindows::on_ClearButton_clicked()
 {
     {
         m_fileListWidget->clear();
-        m_downloadTasks->clear_progreeMap_cache();
+        m_downloadTasks->clear_corresponding_cache();
     }
 }
 
@@ -453,6 +453,7 @@ bool DownloadTasks::is_download_complete()
     }
     return is_download_complete;
 }
+
 void DownloadTasks::run()
 {
     bool m_download_complete = false;
@@ -479,6 +480,8 @@ void DownloadTasks::run()
         if(m_isFinished<=20)
         {
             std::cout<<"the run() is overed,ready to clear some sources!\n";
+            merge_done_task();
+            clear_corresponding_cache();
             std::cout<<"the clear_source() is overed!\n";
         }
         else {
@@ -545,7 +548,7 @@ bool DownloadTasks::deleteItem_cache(FileProgressItem* file_list_widget)
     return true;
 }
 
-bool DownloadTasks::clear_progreeMap_cache()
+bool DownloadTasks::clear_corresponding_cache()
 {
     m_fileProgressMap.clear();
     m_taskExecution_ptr->m_memory_pool_ref.clear_memory_pool();
@@ -742,4 +745,15 @@ int DownloadTasks::interface_create_new_file_on_db_information(const std::string
 int DownloadTasks::intetface_read_missing_slices_from_db_information_file(const std::string& file_path)
 {
     return m_sqlite_information_ref.m_sqlite_db_function_ref.read_missing_slices_from_db_information_file(file_path);
+}
+
+void DownloadTasks::merge_done_task()
+{ 
+    for(size_t i = 0; i < m_taskExecution_ptr->m_memory_pool_ref.size(); i++) 
+    {
+        //  get the missing_index_number of each task from memory_pool 
+        auto task_info_Ptr = m_taskExecution_ptr->m_memory_pool_ref.return_pre_ptr();
+        m_sqlite_information_ref.m_sqlite_db_function_ref.merge_select_file(*(task_info_Ptr.get()));
+        m_taskExecution_ptr->m_memory_pool_ref.push(std::move(task_info_Ptr));
+    }
 }

@@ -129,12 +129,13 @@ class Sqlite_DB_function{
         void presetting(); 
         void update_memory_pool(const std::string& file_path);
         std::string return_current_date_string();
-        std::string verify_db_path_memorySize();
         int create_new_file_on_db_information(const std::string& file_path);
         int create_new_file_on_subordinate_db_record(const std::string& file_path);
         bool read_missing_slices_from_db_information_file(const std::string& file_path);
         std::vector<int> read_missing_slices_from_db_subordinate_file(request_message& request_message_ref,const std::string& last_update_db_subordinate_file_path);
         std::vector<int> return_continous_sequence(int file_size);
+        int update_db_information(const std::string&file_id,const std::string& file_path,const std::string& missing_slice_index_json);
+        void merge_select_file(request_message& request_message_ref);
 
         // Sqlite_available_subordinate_file* m_sqlite_available_subordinate_file_ptr;
         memory_pool& m_memory_pool_ref;
@@ -148,14 +149,14 @@ class Sqlite_DB_function{
         const char* check_table_exist_sql = "SELECT * FROM sqlite_master WHERE type='table' AND name='file_records'";
         const char* create_new_db_information_record_sql = "INSERT INTO file_records (file_id,input_file_path,missing_slices_json,subordinate_dbfile_path,last_modified_file) VALUES(?,?,?,?,?)";
         const char* create_new_subordinate_db_record_sql = "INSERT INTO slice_records (file_id,input_file_path,magic,total_slices,output_file_path,missing_slices_json) VALUES(?,?,?,?,?,?)";
-        const char* update_db_information_sql = "UPDATE file_records SET missing_slices_json = ? , subordinate_dbfile_path = ? , last_modified_file = ? WHERE file_id = ?";
+        const char* update_db_information_sql = "UPDATE file_records SET missing_slices_json = ?  , last_modified_file = ? WHERE file_id = ?";
 
         sqlite3_stmt* read_sourcefile_from_db_information_file_stmt_ptr = nullptr;
         sqlite3_stmt* check_table_exist_stmt_ptr = nullptr;
         sqlite3_stmt* create_new_db_information_record_stmt_ptr = nullptr;
         sqlite3_stmt* create_new_subordinate_db_record_stmt_ptr = nullptr;
         sqlite3_stmt* update_db_information_stmt_ptr = nullptr;
-    
+       
         const char* Create_Table[4] = {
         R"(CREATE TABLE IF NOT EXISTS file_records(
         id INTEGER PRIMARY KEY AUTOINCREMENT, 
