@@ -100,8 +100,7 @@ ConnectionPool::~ConnectionPool()
 int ConnectionWrapper::prepareStatements()
 {
     //  create new record in db_suborigate file
-    int rc = sqlite3_prepare_v2(db_ptr,"INSERT INTO slice_contents(file_id,slice_index,aes_key,iv,plaintext)"
-    "VALUES(?,?,?,?,?)",-1,&stmt_newRecord_ptr,nullptr);
+    int rc = sqlite3_prepare_v2(db_ptr,insert_newRecord_sql,-1,&stmt_newRecord_ptr,nullptr);
     if(rc != SQLITE_OK || stmt_newRecord_ptr == nullptr)
     {
         std::cerr<<"INSERT content failed and error is : "<<sqlite3_errmsg(db_ptr)<<std::endl;
@@ -127,6 +126,14 @@ int ConnectionWrapper::prepareStatements()
         std::cerr<<"Sqlite_information::presetting: prepare merge_select_db_subordinate_file_sql failed\n";
         return rc ;
     }
+
+    //  delete select file
+    rc = (sqlite3_prepare_v2(db_ptr,delete_select_file_sql,strlen(delete_select_file_sql),&delete_select_file_stmt_ptr,nullptr));
+    if (rc != SQLITE_OK)
+    {
+        std::cerr<<"Sqlite_information::presetting: prepare delete_select_file_sql failed\n";
+        return rc ;
+    }
     return rc ;
 }
 
@@ -134,37 +141,8 @@ void ConnectionWrapper::reset()
 {
     sqlite3_reset(stmt_newRecord_ptr);
     sqlite3_reset(read_missing_slices_from_db_subordinate_file_stmt_ptr);
-}
-
-
-void ConnectionWrapper::close_db_file()
-{
-    if(stmt_newRecord_ptr != nullptr )
-    {
-        sqlite3_finalize(stmt_newRecord_ptr);
-        stmt_newRecord_ptr = nullptr;
-    }
-    if(read_missing_slices_from_db_subordinate_file_stmt_ptr != nullptr)
-    {
-        sqlite3_finalize(read_missing_slices_from_db_subordinate_file_stmt_ptr);
-        read_missing_slices_from_db_subordinate_file_stmt_ptr = nullptr;
-    }
-
-    if (db_ptr != nullptr)
-    {
-        if(sqlite3_get_autocommit(db_ptr) == 0)
-        {
-            sqlite3_exec(db_ptr,"ROLLBACK;",0,0,0);
-        }
-
-        int rc = sqlite3_close(db_ptr);
-        if (rc != SQLITE_OK)
-        {
-            std::cerr<<"close db failed and error is : "<<sqlite3_errmsg(db_ptr)<<std::endl;    
-        }
-        db_ptr = nullptr;
-    }
-    std::cout<<"ConnectionWrapper stmt_ptr and db_ptr are all closed!"<<std::endl;
+    sqlite3_reset(delete_select_file_stmt_ptr);
+    sqlite3_reset(merge_select_db_subordinate_file_stmt_ptr);
 }
 
 int ConnectionWrapper::open_db_file(std::string&& db_file_path)
@@ -178,13 +156,8 @@ int ConnectionWrapper::open_db_file(std::string&& db_file_path)
         return false;
     }
 
-    this->db_file_path = db_file_path;
+    this->db_file_path =  std::move(db_file_path) ;
     return rc;
-}
-
-void ConnectionWrapper::set_db_file_path(std::string&& db_file_name)
-{
-    this->db_file_path = db_file_name;
 }
 
 int ConnectionWrapper::initialize_connection_wrapper(std::string&& db_file_path)
@@ -284,6 +257,8 @@ sqlite3_stmt *ConnectionWrapper::return_stmt_ptr(DB_Type type)
         return this->read_missing_slices_from_db_subordinate_file_stmt_ptr;
     case DB_Type::MERGE_SELECT_FILE: 
         return this->merge_select_db_subordinate_file_stmt_ptr;
+    case DB_Type::DELETE_SELECT_FILE: 
+        return this->delete_select_file_stmt_ptr;
     default:
         std::cerr<<"return_stmt_ptr: input error type"<<std::endl;
         return nullptr;
@@ -292,7 +267,6 @@ sqlite3_stmt *ConnectionWrapper::return_stmt_ptr(DB_Type type)
 
 ConnectionWrapper::ConnectionWrapper(std::string&& db_file_name)
 {
-    this->db_file_path = db_file_name;
 }
 
 ConnectionWrapper::~ConnectionWrapper()
@@ -311,6 +285,11 @@ ConnectionWrapper::~ConnectionWrapper()
     {
         sqlite3_finalize(merge_select_db_subordinate_file_stmt_ptr);
         merge_select_db_subordinate_file_stmt_ptr = nullptr;
+    }
+    if(delete_select_file_stmt_ptr != nullptr)
+    {
+        sqlite3_finalize(delete_select_file_stmt_ptr);
+        delete_select_file_stmt_ptr = nullptr;
     }
 
     if (db_ptr != nullptr)

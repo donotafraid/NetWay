@@ -5,7 +5,7 @@
 #include "load_config/load_config.h"
 #include "sqlite3.h"
 
-//forward declaration
+//  forward declaration
 struct ProtocolHeader ;
 class Sqlite_DB_write_file;
 
@@ -34,7 +34,8 @@ class MqttClient: public virtual mqtt::callback
 
         int m_port;
         int m_qos;
-        bool m_retained;
+        int m_retained;
+        int m_max_inflaght_number ;
 
         std::string m_broker;
         std::string m_client_id;

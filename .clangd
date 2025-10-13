@@ -19,6 +19,10 @@ CompileFlags:
     - /mnt/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/include/
     - -I
     - /mnt/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/
+    - -I
+    - /root/snap7/release/wrappers/c-cpp/
+    - -I
+    - /root/snap7/src/core/
   CompilationDatabase: compile_commands.json
 
 Index:

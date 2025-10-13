@@ -18,10 +18,12 @@ MqttClient::~MqttClient()
 
 int MqttClient::createinstance(Sqlite_DB_write_file* m_sqlite_DB_write_file)
 {
-    m_client = new mqtt::async_client(m_broker, m_client_id);
+    m_client = new mqtt::async_client(m_broker, m_client_id, 1, nullptr);
     m_connOpts.set_clean_session(true);
     m_connOpts.set_keep_alive_interval(500);
+    m_connOpts.set_max_inflight(m_max_inflaght_number);
     m_sqlite_DB_write_file_ptr = m_sqlite_DB_write_file;
+    
     return 0;
 }
 int MqttClient::connectinstance()
@@ -59,12 +61,9 @@ void MqttClient::message_arrived(mqtt::const_message_ptr mqtt_msg)
 {
     if(mqtt_msg->get_topic()!= m_topicName && mqtt_msg->get_topic().find("ack")== std::string::npos)
     {
+        std::lock_guard<std::mutex> lock(m_received_queue_mutex);
         m_received_messages_queue.push(mqtt_msg);
     }
-
-    #if DEBUG_TEST == true
-    std::cout<<"mqttserver respond message arrived!"<<std::endl;
-    #endif
 }
 
 int MqttClient::config_load()
@@ -130,12 +129,31 @@ int MqttClient::parse_json(std::ifstream &ifs)
         return -1;
     }
 
+    m_qos = config["qos_grade"];
+    if(m_qos < 0)
+    {
+        std::cout<<"qos_grade is empty!"<<std::endl;
+        return -1;
+    }
+
+    m_retained = config["retain_grade"];
+    if(m_retained < 0 )
+    {
+        std::cout<<"retain_grade is empty!"<<std::endl;
+        return -1;
+    }
+
+    m_max_inflaght_number = config["max_inflight_number"];
+    if(m_max_inflaght_number < 0)
+    {
+        std::cout<<"max_inflight_number is empty!"<<std::endl;
+        return -1;
+    }
+
     m_broker= broker_address;
     m_client_id=  client_id;
     m_port= port;
     m_topicName= topicName;
-    m_qos = 1;
-    m_retained = false;
     return 0;
 }
 
@@ -154,6 +172,15 @@ void MqttClient::SendSliceData(const std::string& proto_msg)
     // ActionListener listener(result_promise);
     {
     auto token = m_client->publish(m_msg);
+    token->wait();
+    
+    if(token->is_complete())
+    {
+        std::cout<<"send message success!"<<std::endl;
+    }
+    else {
+        std::cout<<"send message failed!"<<std::endl;
+    }
     // token->set_action_callback(listener);
     }
 }

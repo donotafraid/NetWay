@@ -5,7 +5,8 @@
 enum class DB_Type{
     CONTENT,
     GET_FAIL_INDEX,
-    MERGE_SELECT_FILE
+    MERGE_SELECT_FILE,
+    DELETE_SELECT_FILE
 };
 
 class ConnectionWrapper{
@@ -14,12 +15,12 @@ class ConnectionWrapper{
     ~ConnectionWrapper();
     ConnectionWrapper(std::string&& db_file_name)  ;
     
-    int prepareStatements () ;
-    void reset () ;
-    void close_db_file();
+    void reset();
+    bool is_done = false;
+    sqlite3* db_ptr = nullptr;
+    int prepareStatements ();
     int open_db_file(std::string&& db_file_name);
     
-    void set_db_file_path(std::string&& db_file_name);
     int initialize_connection_wrapper(std::string&& db_file_path);
     bool check_table_exists();
     std::string return_db_file_path();
@@ -43,15 +44,16 @@ class ConnectionWrapper{
         )";
     sqlite3_stmt* read_missing_slices_from_db_subordinate_file_stmt_ptr = nullptr;
 
-    bool is_done = false;
-
-
     const char* merge_select_db_subordinate_file_sql = "SELECT file_id , slice_index , plaintext  FROM slice_contents WHERE file_id = ? ORDER BY slice_index ASC";
     sqlite3_stmt* merge_select_db_subordinate_file_stmt_ptr = nullptr;
 
-    sqlite3* db_ptr = nullptr;
+    const char* insert_newRecord_sql = "INSERT INTO slice_contents (file_id, slice_index, aes_key, iv, plaintext) VALUES (?, ?, ?, ?, ?)";
+    sqlite3_stmt* stmt_newRecord_ptr = nullptr;  
+
+    const char* delete_select_file_sql = "DELETE FROM slice_contents WHERE file_id = ?";
+    sqlite3_stmt* delete_select_file_stmt_ptr = nullptr;
+
     private:
-        sqlite3_stmt* stmt_newRecord_ptr = nullptr; 
         std::string db_file_path = ""; // distiction between different connection_wrapper
         const char* Create_Table[4] = {
         R"(CREATE TABLE slice_contents (

@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <mutex>
 #include "load_config/load_config.h"
+// #include <curl/curl.h>
 
 #define DEBUG_SLICE_CONTENT 0 
 #define OUTPUT_TXT_NAME "output.txt"
@@ -17,12 +18,15 @@
 //forward declaration
 struct ProtocolHeader ;
 class Sqlite_DB_Manager;
-class Sqlite_DB_process_transmission_and_write_to_file;
+class source_data_parse;
 
+#define MAX_INFLIGHT_NUMBER = 5;
 class MqttServer : public virtual mqtt::callback 
 {
     public:
-        MqttServer(){};
+        MqttServer(buffer_administrator* buffer_ptr):
+        m_buffer_ptr(buffer_ptr) {
+        };
         ~MqttServer();
 
         int createinstance(std::shared_ptr<spdlog::logger> ptr);
@@ -34,6 +38,8 @@ class MqttServer : public virtual mqtt::callback
         int DecryptSharedData(const std::vector<uint8_t>& ciphertext , const uint8_t iv[16] , std::vector<uint8_t>& plaint, ProtocolHeader &protocolheader);
 
         void message_arrived(mqtt::const_message_ptr mqtt_msg) override;
+        void delivery_complete(mqtt::delivery_token_ptr mqtt_token) override; 
+
         std::vector<uint8_t> get_file_data_vector(const std::string& db_file_path); 
         int process_string_to_task();
         void start_process_string_to_task();
@@ -43,7 +49,9 @@ class MqttServer : public virtual mqtt::callback
         int m_port;
         int m_qos;
         int m_persistence;
-        bool m_retained;
+        int m_retained;
+        int m_max_inflaght_number = 1000;
+        int m_dynamic_max_inflight_number = 0;
 
         std::string m_broker;
         std::string m_client_id;
@@ -56,16 +64,38 @@ class MqttServer : public virtual mqtt::callback
         mqtt::connect_options m_connOpts;
         mqtt::token_ptr m_token;
         
-        Sqlite_DB_process_transmission_and_write_to_file* m_transmission_info;
+        source_data_parse* m_parse_info;
         std::queue<mqtt::const_message_ptr> m_message_queue;
         std::queue<std::string> m_responding_queue;
         std::mutex m_message_qeueu_mutex;
         std::mutex m_process_string_mutex;
         std::mutex m_sender_mutex;
+        std::mutex m_token_mutex;
+        std::mutex m_delivery_mutex;
         std::condition_variable m_process_string_condition;
         std::condition_variable m_sender_condition;
         std::atomic<bool> m_is_active = true;
-        
+        buffer_administrator* m_buffer_ptr;
+
+    public:
+        class builder {
+            public:
+            buffer_administrator* buffer_ptr;
+            static builder create_builder(){
+                return builder();
+            }
+
+            MqttServer instance_build()
+            {
+                return MqttServer(buffer_ptr);
+            }
+
+            builder set_inflight_pointer(buffer_administrator* pointer)
+            {
+                buffer_ptr = pointer;
+                return *this;
+            }
+        };
     private:
 };
 

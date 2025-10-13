@@ -36,6 +36,30 @@ class taskExecution;
 class MqttClient;
 
 //class declare
+class MQTT_buffer_monitor : public QWidget
+{
+    Q_OBJECT
+public:
+    explicit MQTT_buffer_monitor(QWidget *parent,buffer_administrator& buffer_administrator_ref);
+    ~MQTT_buffer_monitor() = default;
+  
+    void progressUpdate();
+    
+private:
+    buffer_administrator& m_buffer_administrator_ref;
+
+    QLabel *m_buffer_label;
+    QLabel *m_progress_buffer_label;
+    QWidget *m_buffer_indicator;
+
+    QLabel *m_inflight_label;
+    QLabel *m_progress_inflight_label;
+    QWidget *m_inflight_indicator;
+ 
+};
+
+
+//class declare
 class FileProgressItem : public QWidget
 {
     Q_OBJECT
@@ -64,7 +88,6 @@ class DownloadTasks : public QObject , public QRunnable
     public:
     //构造/析构函数********************************************
     explicit  DownloadTasks(Sqlite_information& sqlite_information,MqttClient& mqtt_client_ptr);
-
     ~DownloadTasks() ;
 
     //外部调用接口******************************************
@@ -72,7 +95,7 @@ class DownloadTasks : public QObject , public QRunnable
     bool is_exist_targetFolder(std::string target_folder_path);
     bool addItem_cache(FileProgressItem* file_info);
     bool deleteItem_cache(FileProgressItem* file_info);
-    void set_isPause(bool isPause);
+    void set_isPause(bool usPause);
     bool return_isPause();
     void update_fileProgress();
     int intetface_read_missing_slices_from_db_information_file(const std::string& file_path); 
@@ -80,9 +103,14 @@ class DownloadTasks : public QObject , public QRunnable
     bool is_download_complete();
     void clear_corresponding_file_information();
     void merge_done_task();
+    void start_update_message_buffer();
 
     //资源清理
     bool clear_corresponding_cache();
+
+    //信号量*******************************************
+    signals:
+        void update_progress_bar();
     
     //内部接口********************************************
     protected:
@@ -104,37 +132,19 @@ class DownloadTasks : public QObject , public QRunnable
         Sqlite_information& m_sqlite_information_ref;
         taskExecution* m_taskExecution_ptr;
         bool m_isPause = false;
+        bool m_delete_status = true;
 
     //辅助工具*******************************************
         QThreadPool* m_threadPool;
 };
 
-class mergeSQLData
-{
-    public:
-    const char* request_sql_select_from_record = "SELECT file_id , missing_slices_json , input_file_path , output_file_path FROM slice_records";
-    const char *sql_select_from_record = "SELECT file_id , output_file_path FROM slice_records";
-    const char *sql_select_from_slice_content = "SELECT file_id , slice_index , plaintext  FROM slice_contents WHERE file_id = ? ORDER BY slice_index ASC";
-    sqlite3* m_db_ptr = nullptr;
-    std::queue<std::string> m_protobuf_queue;
-    sqlite3_stmt* m_stmt_select_from_record = nullptr;
-    sqlite3_stmt* m_stmt_select_from_slice_content = nullptr;
-    sqlite3_stmt* m_request_stmt_select_from_record = nullptr;
-
-    void presetting();
-    void task_publish();
-    QDir loop_dbFile_in_path();
-    void initialize_db_ptr();
-    void merge_file();
-    void clear_struct_setting();
-};
 
 class MainWindows : public QMainWindow 
 {
     Q_OBJECT
 
     public:
-    MainWindows(QWidget *parent = nullptr,DownloadTasks* downloadTasks=nullptr);
+    MainWindows(QWidget *parent,DownloadTasks* downloadTasks,download_path_manager& download_path_manager,buffer_administrator& buffer_administrator);
     ~MainWindows();
     void process_file(const QString& file_path);
     void check_DownLoadFolder_initalize();
@@ -151,10 +161,13 @@ class MainWindows : public QMainWindow
     void on_pauseButton_clicked();
     void on_loadTaskButton_clicked();
     void on_mergeSQLiteDateButton_clicked();
+    void on_selectFolderPathButton_clicked();
+    void on_messageBufferButton_clicked();
+    void update_buffer_progress();
 
     // 显示
     private:
-    void initUI();
+    void initUI(buffer_administrator& buffer_administrator_ref);
 
     // 显示
     QListWidget *m_fileListWidget;
@@ -166,20 +179,26 @@ class MainWindows : public QMainWindow
     QPushButton *m_pauseButton;
     QPushButton *m_loadDownTaskButton;
     QPushButton *m_mergeSQLiteDateButton;
+    QPushButton *m_selectFolderPathButton;
+    QPushButton *m_messageBufferButton;
 
     // 储存
     QDialog *m_DownLoadedListDialog;
     QStringList m_fileList;
     QMap<QString,FileProgressItem*> m_fileProgressMap;
     QWidget* current_page = nullptr;
-
+    
     // 后台处理器
     QThread m_workerThread;
     DownloadTasks* m_downloadTasks;
-    mergeSQLData m_merger;
+    download_path_manager& m_download_path_manager;
+    MQTT_buffer_monitor*  m_mqtt_buffer_monitor = nullptr;
 
     protected:
     void dragEnterEvent(QDragEnterEvent *event)  override;
     void dropEvent(QDropEvent *event) override ;
 }; 
+
+
+
 #endif

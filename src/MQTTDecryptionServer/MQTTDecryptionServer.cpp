@@ -20,20 +20,28 @@
     std::this_thread::sleep_for(std::chrono::seconds(1));
 
     delete m_client;
-    delete m_transmission_info;
+    delete m_parse_info;
     std::cout<<"~MqttServer() called!"<<std::endl;
     m_client = nullptr;
-    m_transmission_info = nullptr;
+    m_parse_info = nullptr;
 }
 
 int MqttServer::createinstance(std::shared_ptr<spdlog::logger> ptr)
 {
-    m_client = new mqtt::async_client(m_broker, m_client_id, m_persistence, nullptr);
+   
+    mqtt::create_options m_connOpts_test;
+    m_connOpts_test.set_send_while_disconnected(false);
+    m_connOpts_test.set_max_buffered_messages(1000);
+    m_connOpts_test.set_delete_oldest_messages(true);
+    m_client = new mqtt::async_client(m_broker,m_client_id,m_connOpts_test,nullptr);
+
     m_connOpts.set_clean_session(true);
     m_connOpts.set_keep_alive_interval(500);
-    m_transmission_info = new Sqlite_DB_process_transmission_and_write_to_file(ptr,m_responding_queue);
+    m_connOpts.set_max_inflight(m_max_inflaght_number);
+    m_parse_info = new source_data_parse(ptr,m_responding_queue);
     return 0;
 }
+
 int MqttServer::connectinstance()
 {
     m_token = m_client->connect(m_connOpts);
@@ -113,24 +121,35 @@ int MqttServer::parse_json(std::ifstream &ifs)
         return -1;
     }
 
+    m_qos = config["qos_grade"];
+    if(m_qos < 0)
+    {
+        std::cout<<"qos_grade is empty!"<<std::endl;
+        return -1;
+    }
+
+    m_retained = config["retain_grade"];
+    if(m_retained <0)
+    {
+        std::cout<<"retain_grade is empty!"<<std::endl;
+        return -1;
+    }
+
+    m_max_inflaght_number = config["max_inflight_number"];
+    if(m_max_inflaght_number < 0)
+    {
+        std::cout<<"max_inflight_number is empty!"<<std::endl;
+        return -1;
+    }
+
     m_broker= broker_address;
     m_client_id=  client_id;
     m_port= port;
     m_topicName= topicName;
     m_persistence = persistence_type;
-    m_qos = 1;
     return 0;
 }
 
-/**
- * @brief Decrypts shared data using AES-256-CBC encryption.
- *
- * @param ciphertext The encrypted data to be decrypted.
- * @param iv Initialization vector for the decryption.
- * @param plaintext Output parameter for the decrypted data.
- * @param header Protocol header containing the AES key.
- * @return true if decryption succeeded, false otherwise.
- */
 int MqttServer::DecryptSharedData(const std::vector<uint8_t> &ciphertext, const uint8_t iv[16], std::vector<uint8_t> &plaintext, ProtocolHeader &header)
 {
     EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
@@ -171,17 +190,27 @@ int MqttServer::DecryptSharedData(const std::vector<uint8_t> &ciphertext, const 
     return true;
 }
 
+void MqttServer::delivery_complete(mqtt::delivery_token_ptr mqtt_token)
+{
+    m_buffer_ptr->m_buffer_size.fetch_add(-1,std::memory_order_release);
+    m_sender_condition.notify_one();
+    std::cout<<"delivery complete , there is many inflight_message : "<<m_client->get_pending_delivery_tokens().size()<<std::endl;
+}
+
 void MqttServer::message_arrived(mqtt::const_message_ptr mqtt_msg) 
 {
+    if(mqtt_msg->get_topic() != "file/respond" && mqtt_msg->get_topic().find("ack")== std::string::npos)
     {
-        std::lock_guard<std::mutex> lock(m_message_qeueu_mutex);        
+        std::lock_guard<std::mutex> lock(m_message_qeueu_mutex);
         m_message_queue.push(mqtt_msg);
     }
 
-    #if DEBUG_TEST == true
-        std::cout<<"from client to server message arrived "<<std::endl;
-    #endif
-    m_process_string_condition.notify_one();
+    // {
+    //     m_process_string_condition.notify_one();
+    // }
+    {
+        m_sender_condition.notify_one();
+    }
 } 
 
 int MqttServer::process_string_to_task()
@@ -212,7 +241,7 @@ int MqttServer::process_string_to_task()
         return -1;
     }
 
-    m_transmission_info->ready_for_transmission_data(msg,file_data_vector,missing_slices_index_vector,m_sender_condition);
+    m_parse_info->parse_source_data_from_request(msg,file_data_vector,missing_slices_index_vector,m_sender_condition);
 
     #if DEBUG_TEST == true
         std::cout<<"process_string_to_task success!"<<std::endl;
@@ -229,14 +258,27 @@ void MqttServer::start_send_reponse_to_client()
             {
                 std::unique_lock<std::mutex> lock(m_sender_mutex);
                 m_sender_condition.wait(lock,[this]{
-                    return  !m_is_active.load() || !m_responding_queue.empty();
+                    std::cout<<"thread ready send_reponse to client , and message_queue is empty ?  "<<m_message_queue.empty()<<" , inflight_size is exceed limitation ? "
+                    <<(m_buffer_ptr->m_inflight_size.load(std::memory_order_acquire)>=m_max_inflaght_number/2)<<std::endl;
+
+                    // {
+                    //     return  !m_is_active.load() || !m_responding_queue.empty()&&(m_buffer_ptr->m_inflight_size.load()<=m_max_inflaght_number/2);
+                    // }
+
+                    // 这句话不放在这里，会导致线程卡死（比如放在send_reponse_to_client）
+                    //  换句话说，决定线程是否继续运行，应该放在这里更新
+                    m_buffer_ptr->m_inflight_size.store(m_client->get_pending_delivery_tokens().size(),std::memory_order_release);
+                    {
+                        return  !m_is_active.load() || !m_message_queue.empty()&&(m_buffer_ptr->m_inflight_size.load(std::memory_order_acquire)<=m_max_inflaght_number/2);
+                    }
                 });
-            }
-            if(!m_is_active.load())
-            {
-                return;
+                if(!m_is_active.load())
+                {
+                    return;
+                }
             }
             send_reponse_to_client();
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
         }
     }).detach();
 }
@@ -263,19 +305,33 @@ void MqttServer::start_process_string_to_task()
 
 void MqttServer::send_reponse_to_client()
 {
-        std::string proto_msg = this->m_transmission_info->return_task_from_queue();
-    
+    {
+        auto message_ptr = m_message_queue.front();
+        m_message_queue.pop();
+        
         mqtt::message_ptr r_msg = mqtt::make_message(respond_topic, 
-            proto_msg.data(), 
-            proto_msg.size(),
+            message_ptr.get()->get_payload().data(),
+            message_ptr->get_payload().size(),
             m_qos, 
             m_retained);
-    
-        auto token = m_client->publish(r_msg);
 
-        #if DEBUG_TEST == true
-        std::cout<<"send_reponse_to_client success!"<<std::endl;
-        #endif
+        // std::string proto_msg = this->m_parse_info->return_task_from_queue();
+
+        // mqtt::message_ptr r_msg = mqtt::make_message(respond_topic, 
+        //     proto_msg.data(),
+        //     proto_msg.size(),
+        //     m_qos, 
+        //     m_retained);
+        
+        {
+            std::lock_guard<std::mutex> lock(m_token_mutex);
+            auto token = m_client->publish(r_msg);
+            std::cout<<"in waiting time, there is "<<m_client->get_pending_delivery_tokens().size()<<std::endl;
+        }
+        
+        m_buffer_ptr->m_buffer_size.fetch_add(1,std::memory_order_release);
+        std::cout<<"server publish message to client"<<std::endl;
+    }
 }
 
 std::vector<uint8_t> MqttServer::get_file_data_vector(const std::string& db_file_path)

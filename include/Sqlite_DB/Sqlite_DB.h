@@ -58,11 +58,11 @@ private:
 
 };
 
-class Sqlite_DB_process_transmission_and_write_to_file
+class source_data_parse
 {
 public:
-    ~Sqlite_DB_process_transmission_and_write_to_file() ;
-    Sqlite_DB_process_transmission_and_write_to_file(std::shared_ptr<spdlog::logger> spdlogger, std::queue<std::string>& m_responding_queue); 
+    ~source_data_parse() ;
+    source_data_parse(std::shared_ptr<spdlog::logger> spdlogger, std::queue<std::string>& m_responding_queue); 
 
     int write_message_to_lockFreeQueue(const std::string& proto_msg,std::shared_ptr<DB_Info> db_info);
 
@@ -72,7 +72,7 @@ public:
 
     void load_work_from_lockFreeQueue();
 
-    void ready_for_transmission_data(std::string& msg, std::vector<uint8_t> &file_data_vector,std::vector<int> &slice_index_vector, std::condition_variable& condition_variable );
+    void parse_source_data_from_request(std::string& msg, std::vector<uint8_t> &file_data_vector,std::vector<int> &slice_index_vector, std::condition_variable& condition_variable );
 
     bool is_control(uint8_t c);
 
@@ -116,14 +116,14 @@ class Sqlite_DB_Manager
         ConnectionPool* m_connection_pool_ptr;
         Thread_pool* m_thread_pool_ptr;
         MqttClient* m_mqtt_client_ref;
-        Sqlite_DB_process_transmission_and_write_to_file* m_transmission_info;
+        source_data_parse* m_parse_info;
         // Sqlite_DB_store* m_store;  
         std::shared_ptr<spdlog::logger> m_spdlogger; 
 };
 
 class Sqlite_DB_function{
     public:
-        Sqlite_DB_function(memory_pool& memory_pool_ref);
+        Sqlite_DB_function(memory_pool& memory_pool_ref,download_path_manager& download_path_manager_ref);
         ~Sqlite_DB_function();
 
         void presetting(); 
@@ -136,9 +136,11 @@ class Sqlite_DB_function{
         std::vector<int> return_continous_sequence(int file_size);
         int update_db_information(const std::string&file_id,const std::string& file_path,const std::string& missing_slice_index_json);
         void merge_select_file(request_message& request_message_ref);
+        void delete_select_file(request_message& request_message_ref);
 
         // Sqlite_available_subordinate_file* m_sqlite_available_subordinate_file_ptr;
         memory_pool& m_memory_pool_ref;
+        download_path_manager& m_download_path_manager_ref;
         ConnectionPool* m_connection_pool_ptr;
         sqlite3* db_information_ptr = nullptr;
         sqlite3* db_subordinate_ptr = nullptr;
@@ -150,6 +152,7 @@ class Sqlite_DB_function{
         const char* create_new_db_information_record_sql = "INSERT INTO file_records (file_id,input_file_path,missing_slices_json,subordinate_dbfile_path,last_modified_file) VALUES(?,?,?,?,?)";
         const char* create_new_subordinate_db_record_sql = "INSERT INTO slice_records (file_id,input_file_path,magic,total_slices,output_file_path,missing_slices_json) VALUES(?,?,?,?,?,?)";
         const char* update_db_information_sql = "UPDATE file_records SET missing_slices_json = ?  , last_modified_file = ? WHERE file_id = ?";
+
 
         sqlite3_stmt* read_sourcefile_from_db_information_file_stmt_ptr = nullptr;
         sqlite3_stmt* check_table_exist_stmt_ptr = nullptr;
@@ -168,6 +171,34 @@ class Sqlite_DB_function{
         UNIQUE(file_id,missing_slices_json)
         ))"
         }; 
+    public:
+        class builder{
+            private:
+            memory_pool* m_memory_pool_pointer;
+            download_path_manager m_download_path_manager_ref;
+
+            public:
+            builder() = default;
+            ~builder() = default;
+            builder& set_memory_pool_pointer(memory_pool* memory_pool_ref)
+            {
+                m_memory_pool_pointer = memory_pool_ref;
+                return *this;
+            }
+            builder& set_download_path_manager_ref(download_path_manager& download_path_manager_ref)
+            {
+                m_download_path_manager_ref = download_path_manager_ref;
+                return *this;
+            }
+            static builder create_builder()
+            {
+                return builder();
+            }
+            std::unique_ptr<Sqlite_DB_function> unique_ptr_build()
+            {
+                return std::make_unique<Sqlite_DB_function>(*m_memory_pool_pointer,m_download_path_manager_ref);
+            }
+        };
 };
 
 class Sqlite_DB_write_file{

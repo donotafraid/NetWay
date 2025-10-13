@@ -3,22 +3,21 @@
   "clangd.arguments": [
     "--background-index",
     "--compile-commands-dir=${workspaceFolder}/build",
-    "--query-driver=/usr/bin/clang++",  // 改为 clang++
-    "--clang-tidy",                    // 启用 clang-tidy
+    "--query-driver=/usr/bin/clang++",
+    "--clang-tidy",
     "--clang-tidy-checks=*",
     "--all-scopes-completion",
     "--header-insertion=never",
     "--completion-style=detailed",
-    "--pretty",                        // 美化诊断输出
+    "--pretty",
     "--offset-encoding=utf-16"
   ],
-  "debugger": "lldb",                  // 切换到 LLDB
+  "debugger": "lldb",
   "cmake.configureSettings": {
     "CMAKE_C_COMPILER": "clang",
     "CMAKE_CXX_COMPILER": "clang++",
-    "CMAKE_BUILD_TYPE": "RelWithDebInfo"  // 推荐开发配置
+    "CMAKE_BUILD_TYPE": "RelWithDebInfo"
   },
-  // 禁用 VS Code 原生 C++ 插件
   "C_Cpp.intelliSenseEngine": "disabled",
   "C_Cpp.errorSquiggles": "disabled"
 }

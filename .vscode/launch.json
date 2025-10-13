@@ -5,7 +5,7 @@
       "name": "LLDB Debug",
       "type": "lldb",
       "request": "launch",
-      "program": "${workspaceFolder}/bin/file_platform",  // 对齐 CMake 输出路径
+      "program": "${workspaceFolder}/bin/file_platform",
       "args": [],
       "cwd": "${workspaceFolder}",
       "environment": [
@@ -17,7 +17,7 @@
       "preLaunchTask": "cmake-build",
       "postDebugTask": "reset-sanitizers",
       "sourceMap": {
-        "/mnt": "${workspaceFolder}"  // WSL 路径映射
+        "/mnt": "${workspaceFolder}"
       }
     }
   ]

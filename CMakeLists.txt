@@ -55,6 +55,7 @@ find_package(Backward REQUIRED)
 find_package(Boost REQUIRED)
 find_package(nlohmann_json REQUIRED)
 find_package(protobuf REQUIRED)
+find_package(CURL REQUIRED)
 
 # 设置 Protocol Buffers 文件的路径 (需要在命令行先生成后，再执行 cmake, 保证在 build 中生成了 proto.h 文件)
 set(PROTO_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
@@ -65,10 +66,18 @@ add_library(proto_files STATIC ${PROTO_SRCS} ${PROTO_HDRS})
 target_include_directories(proto_files SYSTEM PUBLIC ${PROTO_DIR} ${CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES}) 
 target_link_libraries(proto_files PUBLIC protobuf::libprotobuf)
 
+# 打包 snap7 库
+add_library(snap7_lib SHARED IMPORTED)
+set_target_properties(snap7_lib PROPERTIES
+    IMPORTED_LOCATION "/usr/lib/libsnap7.so"
+    INTERFACE_INCLUDE_DIRECTORIES "/root/snap7/release/wrappers/c-cpp"
+)
+
 #设置第三方依赖项 
 add_library(third_party_deps INTERFACE)
 target_link_libraries(third_party_deps INTERFACE 
     proto_files
+    snap7_lib 
     nlohmann_json::nlohmann_json
     eclipse-paho-mqtt-c::paho-mqtt3as-static
     openssl::openssl
@@ -81,6 +90,7 @@ target_link_libraries(third_party_deps INTERFACE
     Qt5::Core
     Qt5::Widgets
     Qt5::Gui
+
 )
 
 set(CMAKE_AUTOMOC ON)
@@ -119,6 +129,10 @@ add_subdirectory(
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Thread_pool 
     ${CMAKE_BINARY_DIR}/Thread_pool-build
 )
+add_subdirectory(
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/PLC   
+    ${CMAKE_BINARY_DIR}/PLC-build
+)
 
 #设置头文件目录
 set(CurrentFolder "${CMAKE_CURRENT_SOURCE_DIR}")
@@ -132,7 +146,8 @@ include_directories(
 file(GLOB SRC_FILES  "${SRC_DIR}/main.cpp")
 
 #创建可执行文件 
-add_executable(file_platform ${SRC_FILES})
+add_executable(file_platform ${SRC_FILES}
+        src/main.cpp)
 
 #设置动态库/静态库目录,里面包括了 .lib ，.include 的消息
 target_link_libraries(file_platform PRIVATE 
@@ -141,9 +156,7 @@ target_link_libraries(file_platform PRIVATE
  Sqlite_DB::Sqlite_DB
  MainWindows::MainWindows
  Thread_pool_ptr::Thread_pool_ptr
- Qt5::Core
- Qt5::Widgets
- Qt5::Gui
+ PLC::PLC
  third_party_deps
  )
 

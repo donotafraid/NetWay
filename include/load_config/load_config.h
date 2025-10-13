@@ -39,14 +39,27 @@
 #include "proto/message_struct.pb.h"
 
 const uint32_t MAGIC = 0xDEADBEEF;
-constexpr size_t SLICE_SIZE = static_cast<size_t>(1024 *1024*1);
-constexpr size_t MAXIMUM_SLICE_SIZE = static_cast<size_t>(1024 * 1024 * 1.5);
+constexpr size_t SLICE_SIZE = static_cast<size_t>(1024*10);
+constexpr size_t MAXIMUM_SLICE_SIZE = static_cast<size_t>(1024* 1.5);
 constexpr size_t MAX_DB_FILE_LIMIT = 1*1024*1024*1024;
 constexpr size_t THREAD_NUM = 4; 
 constexpr int magic = 0xDEADBEEF;
 constexpr bool DEBUG_TEST = true;
 
 namespace fs = std::filesystem;
+
+struct download_path_manager
+{
+    std::string download_folder_path;
+};
+
+struct buffer_administrator
+{
+    std::atomic<int> m_buffer_size = 0;
+    std::atomic<int> m_inflight_size = 0;
+    int max_buffer_size = 1000;
+    int max_inflight_size = 1000;
+};
 
 struct ProtocolHeader {
     std::array<uint8_t, 16> file_id {} ;  // 文件唯一ID（UUID，16字节

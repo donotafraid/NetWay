@@ -16,7 +16,7 @@ std::unique_ptr<Sqlite_DB> Sqlite_DB_Create::create()
     return std::unique_ptr<Sqlite_DB>(new Sqlite_DB());
 }
 
-void Sqlite_DB_process_transmission_and_write_to_file::ready_for_transmission_data(
+void source_data_parse::parse_source_data_from_request(
     std::string& msg,
     std::vector<uint8_t> &file_data_vector, 
     std::vector<int> &slice_index_vector,
@@ -27,6 +27,7 @@ void Sqlite_DB_process_transmission_and_write_to_file::ready_for_transmission_da
     tmp_msg.ParseFromString(msg);
     std::array<uint8_t,16> file_id;
     std::copy(tmp_msg.file_id().begin(),tmp_msg.file_id().end(),file_id.begin());
+
     for(auto slice_index = slice_index_vector.begin(); slice_index != slice_index_vector.end()&& 1; ++slice_index)
     {
         // payload_protocolheader_ciphertext
@@ -66,24 +67,25 @@ void Sqlite_DB_process_transmission_and_write_to_file::ready_for_transmission_da
                 }
 
                 TestMsg msg ; 
-                ProtocolHeader_To_Proto(header, CipherText, msg);
+                // ProtocolHeader_To_Proto(header, CipherText, msg);
+                ProtocolHeader_To_Proto(header,slice, msg);
                 std::string msg_string;
                 msg.SerializeToString(&msg_string);
 
                 {
-                    #if DEBUG_TEST == true
-                        std::cout<<"[DEBUG]  async task push success! "<<std::endl;   
-                    #endif
                     std::lock_guard<std::mutex> lock(m_responding_mutex);                    
                     m_responding_queue.push(msg_string);
-                    responding_condition_var.notify_one();
                 }
+
                 return 0;
             });
     }
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    responding_condition_var.notify_one();
 }
 
-Sqlite_DB_process_transmission_and_write_to_file::Sqlite_DB_process_transmission_and_write_to_file
+source_data_parse::source_data_parse
 (std::shared_ptr<spdlog::logger> logger, std::queue<std::string>& m_responding_queue):
     m_thread_pool_ptr(new Thread_pool()),
     m_spdlogger(logger),
@@ -92,13 +94,13 @@ Sqlite_DB_process_transmission_and_write_to_file::Sqlite_DB_process_transmission
         m_thread_pool_ptr->start();
     }
 
-Sqlite_DB_process_transmission_and_write_to_file::~Sqlite_DB_process_transmission_and_write_to_file()
+source_data_parse::~source_data_parse()
 {
     delete m_thread_pool_ptr;
-    std::cout<<"Sqlite_DB_process_transmission_and_write_to_file::~Sqlite_DB_process_transmission_and_write_to_file()"<<std::endl;
+    std::cout<<"source_data_parse::~source_data_parse()"<<std::endl;
 }
 
-// int Sqlite_DB_process_transmission_and_write_to_file::write_message_to_lockFreeQueue(const std::string &proto_msg,std::shared_ptr<DB_Info> file_path_info)
+// int source_data_parse::write_message_to_lockFreeQueue(const std::string &proto_msg,std::shared_ptr<DB_Info> file_path_info)
 // {
 //     DB_Info_raw_ptr db_info_ptr ;
 //     db_info_ptr.header_info = new ProtocolHeader ((header));
@@ -108,13 +110,13 @@ Sqlite_DB_process_transmission_and_write_to_file::~Sqlite_DB_process_transmissio
 //     db_info_ptr.output_file_path = new std::string (file_path_info->output_file_name); 
 // }
 
-bool Sqlite_DB_process_transmission_and_write_to_file::is_control(uint8_t c)
+bool source_data_parse::is_control(uint8_t c)
 {
     return c == '\r' || c == '\n';
 }
 
 
-void Sqlite_DB_process_transmission_and_write_to_file::delete_done_tasks_in_process_map()
+void source_data_parse::delete_done_tasks_in_process_map()
 {
     DB_Info_raw_ptr db_info;
     //clear lockfree_queue , m_DB_Info_vector , m_swap_DB_Info_vector
@@ -127,7 +129,7 @@ void Sqlite_DB_process_transmission_and_write_to_file::delete_done_tasks_in_proc
     this->m_thread_pool_ptr->clear_scheduled_tasks();
 }
 
-int Sqlite_DB_process_transmission_and_write_to_file::DecryptSharedData(const std::vector<uint8_t> &ciphertext, std::vector<uint8_t> &plaintext, ProtocolHeader &header)
+int source_data_parse::DecryptSharedData(const std::vector<uint8_t> &ciphertext, std::vector<uint8_t> &plaintext, ProtocolHeader &header)
 {
     EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
     if(!ctx)
@@ -167,16 +169,10 @@ int Sqlite_DB_process_transmission_and_write_to_file::DecryptSharedData(const st
     return true;
 }
 
-int Sqlite_DB_Manager::send_request_to_server(std::string& request)
-{ 
-    m_mqtt_client_ref->SendSliceData(request);
-    return true;
-}
-
 Sqlite_DB_Manager::~Sqlite_DB_Manager()
 {
     // delete m_store;
-    delete m_transmission_info;
+    delete m_parse_info;
     delete m_thread_pool_ptr;
     delete m_connection_pool_ptr;
 }
@@ -204,7 +200,7 @@ bool Sqlite_DB_Manager::return_is_threadPool_active()
 void Sqlite_DB_Manager::delete_done_tasks_in_process_map()
 {
     //clear cooresponding project
-    this->m_transmission_info->delete_done_tasks_in_process_map();
+    this->m_parse_info->delete_done_tasks_in_process_map();
 }
 
 void Sqlite_DB_Manager::return_vector_file_path_merge(const std::string &folder_path,std::vector<std::string>& tem_vector)
@@ -490,7 +486,7 @@ int taskExecution::send_task()
     return 1;
 }
 
-std::string Sqlite_DB_process_transmission_and_write_to_file::return_task_from_queue()
+std::string source_data_parse::return_task_from_queue()
 {
     std::string msg = m_responding_queue.front();
     m_responding_queue.pop();
@@ -508,7 +504,7 @@ int Sqlite_DB_write_file::write_message_in_db_subordinate_file_in_batch(std::que
         return false;
     }
 
-    for (size_t i=0; i< m_tmp_received_messages_queue.size(); i++)
+    while(!m_tmp_received_messages_queue.empty())
     {
         TestMsg data_information;
         auto msg = m_tmp_received_messages_queue.front()->to_string();
@@ -622,8 +618,9 @@ int Sqlite_DB_write_file::blob_parameter_insert(ConnectionWrapper* connection_wr
     return rc;
 }
 
-Sqlite_DB_function::Sqlite_DB_function(memory_pool& memory_pool_ref)
+Sqlite_DB_function::Sqlite_DB_function(memory_pool& memory_pool_ref,download_path_manager& download_path_manager_ref)
 : m_memory_pool_ref(memory_pool_ref)
+,m_download_path_manager_ref(download_path_manager_ref)
 ,m_connection_pool_ptr(new ConnectionPool())
 {
 
@@ -685,8 +682,10 @@ void taskExecution::delete_task_from_memory_pool(const std::string& input_file_p
 void Sqlite_DB_function::merge_select_file(request_message& request_message_ref)
 { 
     int rc ;
+    bool transaction_success_falg=false;
     auto connection_wrapped_ptr = m_connection_pool_ptr->return_connectionWrapper_ptr();
     std::string file_name_string = fs::path(request_message_ref.input_file_path()).filename().string();
+    std::string tmp_file_path = m_download_path_manager_ref.download_folder_path + "/" + file_name_string +".tmp";
 
     // select file_id , input_file_path from record
     // in loop , should not reset the condition stmt , because the loop based on stmt to get next row 
@@ -694,27 +693,117 @@ void Sqlite_DB_function::merge_select_file(request_message& request_message_ref)
     if (rc != SQLITE_OK)
     {
         std::cerr<<"merge_select_file:sqlite3_bind_blob error : "<<sqlite3_errmsg(db_subordinate_ptr)<<std::endl;
+        m_connection_pool_ptr->release_connectionWrapper_ptr(std::move(connection_wrapped_ptr));
         return;
     }
 
+    rc = sqlite3_exec(connection_wrapped_ptr->db_ptr,"BEGIN TRANSACTION", nullptr, nullptr,nullptr);
+    if(rc != SQLITE_OK)
+    {
+        std::cerr<<"merge_select_file: BEGIN TRANSACTION : "<<sqlite3_errmsg(db_subordinate_ptr)<<std::endl;
+        m_connection_pool_ptr->release_connectionWrapper_ptr(std::move(connection_wrapped_ptr));
+        return;
+    }
+
+    //  write message to tmp_file 
+    std::ofstream file_out(tmp_file_path,std::ios::app | std::ios::binary);
+    if(!file_out)
+    {
+        std::cerr<<"merge_select_file:mergerSQLData : open file error : "<<file_name_string<<std::endl;
+        return;
+    }
+
+    //  read content from db_subordinate_file and write it in tmp_file
+    //  下面的循环等价于：rc = is_equal(step() == SQLITE_ROW)
+    //  step() 没有找到合适对象时，返回 SQLITE_DONE
     while ( (rc = (sqlite3_step(connection_wrapped_ptr->return_stmt_ptr(DB_Type::MERGE_SELECT_FILE)) == SQLITE_ROW)) ) {
-        // select slice_index , slice_content from slice_content where file_id = ?
         //  select from 0~N , bind from 1~N
         {
             int slice_index = sqlite3_column_int(connection_wrapped_ptr->return_stmt_ptr(DB_Type::MERGE_SELECT_FILE),1);
             const char* slice_content = reinterpret_cast<const char*>(sqlite3_column_blob(connection_wrapped_ptr->return_stmt_ptr(DB_Type::MERGE_SELECT_FILE),2));
             int slice_content_size = sqlite3_column_bytes(connection_wrapped_ptr->return_stmt_ptr(DB_Type::MERGE_SELECT_FILE),2);
 
-           //write message to file 
-           std::ofstream file_out("./"+file_name_string,std::ios::app | std::ios::binary);
-           if(!file_out)
-           {
-             std::cerr<<"merge_select_file:mergerSQLData : open file error : "<<file_name_string<<std::endl;
-             return;
-           }
-            
            file_out.write((slice_content),slice_content_size);
         }
     }
+    if(rc != SQLITE_OK)
+    {
+        std::cerr<<"merge_select_file: while loop : "<<sqlite3_errmsg(connection_wrapped_ptr->db_ptr)<<std::endl;
+        m_connection_pool_ptr->release_connectionWrapper_ptr(std::move(connection_wrapped_ptr));
+        return;
+    }
+
+    //  close tmp_file and rename tmp_file to actual file_name
+    file_out.close();
+    if( std::rename( (tmp_file_path).c_str(), ( m_download_path_manager_ref.download_folder_path + "/" + file_name_string).c_str() ) !=0)
+    {
+        std::cerr<<"merge_select_file: tmp_file deal with fail"<<std::endl;
+        m_connection_pool_ptr->release_connectionWrapper_ptr(std::move(connection_wrapped_ptr));
+        return;
+    }
+
+    //  assign write-file operation is successful
+    transaction_success_falg = true;
+    
+    //  judge transaction success or not
+    if(transaction_success_falg == true)
+    {
+        //  commit transaction
+        rc = sqlite3_exec(connection_wrapped_ptr->db_ptr, "COMMIT", nullptr,nullptr, nullptr);
+        if(rc != SQLITE_OK)
+        {
+            std::cerr<<"merge_select_file: commit fail"<<std::endl;
+            sqlite3_exec(connection_wrapped_ptr->db_ptr, "ROLLBACK", nullptr,nullptr, nullptr);
+        }
+       
+    }
+    else {
+        //  if transaction fail , rollback it transaction
+        sqlite3_exec(connection_wrapped_ptr->db_ptr, "ROLLBACK", nullptr,nullptr, nullptr);
+        std::remove(tmp_file_path.c_str());
+        std::cerr<<"merge_select_file: transaction fail"<<std::endl;
+    }
+
     m_connection_pool_ptr->release_connectionWrapper_ptr(std::move(connection_wrapped_ptr));
+}
+
+void Sqlite_DB_function::delete_select_file(request_message& request_message_ref)
+{
+    int rc ;
+    bool transaction_success_falg=false;
+    auto connection_wrapped_ptr = m_connection_pool_ptr->return_connectionWrapper_ptr();
+
+    // in loop , should not reset the condition stmt , because the loop based on stmt to get next row 
+    rc = sqlite3_bind_blob(connection_wrapped_ptr->return_stmt_ptr(DB_Type::DELETE_SELECT_FILE),1,request_message_ref.file_id().data(),request_message_ref.file_id().size(),SQLITE_STATIC);
+    if (rc != SQLITE_OK)
+    {
+        std::cerr<<"delete_select_file:sqlite3_bind_blob error : "<<sqlite3_errmsg(db_subordinate_ptr)<<std::endl;
+        m_connection_pool_ptr->release_connectionWrapper_ptr(std::move(connection_wrapped_ptr));
+        return;
+    }
+
+    rc = sqlite3_exec(connection_wrapped_ptr->db_ptr,"BEGIN TRANSACTION", nullptr, nullptr,nullptr);
+    if(rc != SQLITE_OK)
+    {
+        std::cerr<<"delete_select_file: BEGIN TRANSACTION : "<<sqlite3_errmsg(db_subordinate_ptr)<<std::endl;
+        m_connection_pool_ptr->release_connectionWrapper_ptr(std::move(connection_wrapped_ptr));
+        return;
+    }
+
+    rc = sqlite3_step(connection_wrapped_ptr->return_stmt_ptr(DB_Type::DELETE_SELECT_FILE));
+    if(rc != SQLITE_DONE)
+    {
+        std::cerr<<"delete_select_file: sqlite3_step : "<<sqlite3_errmsg(db_subordinate_ptr)<<std::endl;
+        m_connection_pool_ptr->release_connectionWrapper_ptr(std::move(connection_wrapped_ptr));
+        return;
+    }
+
+    rc = sqlite3_exec(connection_wrapped_ptr->db_ptr, "COMMIT;", nullptr, nullptr, nullptr);
+    if( rc != SQLITE_OK)
+    {
+        std::cerr<<"delete_select_file: sqlite3_exec : "<<sqlite3_errmsg(db_subordinate_ptr)<<std::endl;
+    }
+    std::cout<<"delete_select_file: delete file success\n";
+    m_connection_pool_ptr->release_connectionWrapper_ptr(std::move(connection_wrapped_ptr));
+
 }
