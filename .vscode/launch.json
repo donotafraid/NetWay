@@ -17,7 +17,7 @@
       "preLaunchTask": "cmake-build",
       "postDebugTask": "reset-sanitizers",
       "sourceMap": {
-        "/mnt": "${workspaceFolder}"
+        "/root": "${workspaceFolder}"
       }
     }
   ]

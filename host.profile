@@ -9,3 +9,8 @@ build_type=Debug
 
 [conf]
 tools.build:compiler_executables={"c": "/usr/bin/clang", "cpp": "/usr/bin/clang++"}
+
+# 👇 关键：禁用 LTO
+tools.build:cflags=["-fno-lto"]
+tools.build:cxxflags=["-fno-lto"]
+tools.build:linker_scripts=[]

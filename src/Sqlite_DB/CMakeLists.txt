@@ -9,12 +9,16 @@ set(appleName "Sqlite_DB")
 #获取特定文件夹下的.c  .cpp 源文件
 set(
     SOURCES
-    ${CMAKE_CURRENT_SOURCE_DIR}/Sqlite_DB.cpp
+    # ${CMAKE_CURRENT_SOURCE_DIR}/Sqlite_DB.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/DBDAO.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/DbService.cpp
 )
 
 #Moc文件的生成增加头文件信息
 set(MOC_HEADERS
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../include/Sqlite_DB/Sqlite_DB.h
+    # ${CMAKE_CURRENT_SOURCE_DIR}/../../include/Sqlite_DB/Sqlite_DB.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../include/Sqlite_DB/DBDAO.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../include/Sqlite_DB/DbService.h
 )
 
 #创建动态库/静态库文件名，将源文件添加到动态库/静态库文件里

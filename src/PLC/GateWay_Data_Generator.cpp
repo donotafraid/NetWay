@@ -1,6 +1,6 @@
 #include "PLC/GateWay_Data_Generator.h"
 
-Result<std::string,RichError> GatewayDataGenerator::generateData_cpp_class(const DataBlockDefinition& data_block_definition)
+Result<std::string,RichError> GatewayDataGenerator::generateData_cpp_class(const OPCUADataBlockDefinition& data_block_definition)
 { 
     std::ostringstream ss;
 
@@ -23,7 +23,7 @@ Result<std::string,RichError> GatewayDataGenerator::generateData_cpp_class(const
     return Result<std::string,RichError>(ss.str());
 }
 
-Result<bool,RichError> GatewayDataGenerator::generate_accessor(std::ostringstream& ss,const VariableDefinition& variable_definition,const std::string& prefix)
+Result<bool,RichError> GatewayDataGenerator::generate_accessor(std::ostringstream& ss,const S7XMLVariableDefinition& variable_definition,const std::string& prefix)
 { 
     std::string full_name = prefix.empty() ? variable_definition.variable_name : prefix + "." + variable_definition.variable_name;  //  distinguish between struct member and variable
 
@@ -63,7 +63,7 @@ Result<bool,RichError> GatewayDataGenerator::generate_accessor(std::ostringstrea
     return Result<bool,RichError>(true);
 }
 
-void GatewayDataGenerator::generate_bool_accessors(std::ostringstream& ss,const VariableDefinition& variable_definition,const std::string& full_name)
+void GatewayDataGenerator::generate_bool_accessors(std::ostringstream& ss,const S7XMLVariableDefinition& variable_definition,const std::string& full_name)
 { 
         ss<<"   bool get_"<<full_name<<"() {\n";
         ss<<"       byte buffer[1];\n";
@@ -77,7 +77,7 @@ void GatewayDataGenerator::generate_bool_accessors(std::ostringstream& ss,const 
         ss<<"   }\n\n";
 }
 
-void GatewayDataGenerator::generate_int_accessors(std::ostringstream& ss,const VariableDefinition& variable_definition,const std::string& full_name)
+void GatewayDataGenerator::generate_int_accessors(std::ostringstream& ss,const S7XMLVariableDefinition& variable_definition,const std::string& full_name)
 { 
     ss<<"   int get_"<<full_name<<"() {\n";
     ss<<"       byte buffer[2];\n";
@@ -94,7 +94,7 @@ void GatewayDataGenerator::generate_int_accessors(std::ostringstream& ss,const V
     ss<<"  }\n\n";
 }
 
-void GatewayDataGenerator::generate_dint_accessors(std::ostringstream& ss,const VariableDefinition& variable_definition,const std::string& full_name)
+void GatewayDataGenerator::generate_dint_accessors(std::ostringstream& ss,const S7XMLVariableDefinition& variable_definition,const std::string& full_name)
 { 
     ss<<"   int32_t get_"<<full_name<<"() {\n";
     ss<<"       byte buffer[4];\n";
@@ -113,12 +113,12 @@ void GatewayDataGenerator::generate_dint_accessors(std::ostringstream& ss,const 
     ss<<"  }\n\n";
 }
 
-void GatewayDataGenerator::generate_real_accessors(std::ostringstream& ss,const VariableDefinition& variable_definition,const std::string& full_name)
+void GatewayDataGenerator::generate_real_accessors(std::ostringstream& ss,const S7XMLVariableDefinition& variable_definition,const std::string& full_name)
 { 
     ss<<"   float get_"<<full_name<<"() {\n";
     ss<<"       byte buffer[4];\n";
     ss<<"       client_->DBRead (db_number_, "<<variable_definition.bytes_offset<< ", 4, buffer);\n";
-    ss<<"       return parse_s7_real(buffer).unwrap();\n";
+    ss<<"       return parse_s7_real(buffer).unwrap_returnLeftValue();\n";
     ss<<"  }\n\n";
 
     ss<<"  void set_"<<full_name<<"(float value) {\n";
@@ -128,7 +128,7 @@ void GatewayDataGenerator::generate_real_accessors(std::ostringstream& ss,const 
     ss<<"  }\n\n";
 }
 
-void GatewayDataGenerator::generate_string_accessors(std::ostringstream& ss,const VariableDefinition& variable_definition,const std::string& full_name)
+void GatewayDataGenerator::generate_string_accessors(std::ostringstream& ss,const S7XMLVariableDefinition& variable_definition,const std::string& full_name)
 { 
     ss<<"   std::string get_"<<full_name<<"() {\n";
     ss<<"       byte buffer["<<variable_definition.string_length + 2<<"];\n";
@@ -148,7 +148,7 @@ void GatewayDataGenerator::generate_string_accessors(std::ostringstream& ss,cons
     ss<<"  }\n\n";
 }
 
-void GatewayDataGenerator::generate_byte_accessors(std::ostringstream& ss,const VariableDefinition& variable_definition,const std::string& full_name)
+void GatewayDataGenerator::generate_byte_accessors(std::ostringstream& ss,const S7XMLVariableDefinition& variable_definition,const std::string& full_name)
 { 
     ss<<"   byte get_"<<full_name<<"() {\n";
     ss<<"       byte buffer[1];\n";
@@ -162,7 +162,7 @@ void GatewayDataGenerator::generate_byte_accessors(std::ostringstream& ss,const 
     ss<<"  }\n\n";
 }
 
-void GatewayDataGenerator::generate_array_accessors(std::ostringstream& ss,const VariableDefinition& variable_definition,const std::string& full_name)
+void GatewayDataGenerator::generate_array_accessors(std::ostringstream& ss,const S7XMLVariableDefinition& variable_definition,const std::string& full_name)
 { 
     ss<<"   //数组访问器 - "<< variable_definition.variable_name <<"["<<variable_definition.array_size<<"]\n";
     if (variable_definition.data_type_enum == S7DataType::REAL)
@@ -172,7 +172,7 @@ void GatewayDataGenerator::generate_array_accessors(std::ostringstream& ss,const
             ss<<"   float get_"<<full_name<<"() {\n";
             ss<<"       byte buffer[4];\n";
             ss<<"       client_->DBRead (db_number_, "<<variable_definition.bytes_offset + i*4 << ", 4, buffer);\n";
-            ss<<"       return parse_s7_real(buffer).unwrap();\n";
+            ss<<"       return parse_s7_real(buffer).unwrap_returnLeftValue();\n";
             ss<<"  }\n\n";
             
             ss<<"  void set_"<<full_name<<"(,float value) {\n";

@@ -15,6 +15,4 @@ class ActionListener : public mqtt::iaction_listener
 
         void on_success(const mqtt::token& tok) override;
         void on_failure(const mqtt::token& tok) override;
-
-
 };

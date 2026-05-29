@@ -1,10 +1,10 @@
 #include "MQTTDecryptionServer/MQTTDecryptionServer.h"
 #include "ProtocolHeader/ProtocolHeader.h"
-#include "Sqlite_DB/Sqlite_DB.h"
+// #include "Sqlite_DB/Sqlite_DB.h"
 
     MqttServer::~MqttServer()
 {
-    if (m_client->is_connected())
+    if (m_client != nullptr && m_client->is_connected())
     {
         auto dis_token = m_client->disconnect();
         auto status =dis_token->wait_for(std::chrono::seconds(5));
@@ -37,8 +37,8 @@ int MqttServer::createinstance(std::shared_ptr<spdlog::logger> ptr)
 
     m_connOpts.set_clean_session(true);
     m_connOpts.set_keep_alive_interval(500);
-    m_connOpts.set_max_inflight(m_max_inflaght_number);
-    m_parse_info = new source_data_parse(ptr,m_responding_queue);
+    m_connOpts.set_max_inflight(m_max_inflight_number);
+    // m_parse_info = new source_data_parse(ptr,m_responding_queue);
     return 0;
 }
 
@@ -135,8 +135,8 @@ int MqttServer::parse_json(std::ifstream &ifs)
         return -1;
     }
 
-    m_max_inflaght_number = config["max_inflight_number"];
-    if(m_max_inflaght_number < 0)
+    m_max_inflight_number = config["max_inflight_number"];
+    if(m_max_inflight_number < 0)
     {
         std::cout<<"max_inflight_number is empty!"<<std::endl;
         return -1;
@@ -213,6 +213,7 @@ void MqttServer::message_arrived(mqtt::const_message_ptr mqtt_msg)
     }
 } 
 
+//  处理字符串任务
 int MqttServer::process_string_to_task()
 {
     if(m_message_queue.empty())
@@ -241,7 +242,7 @@ int MqttServer::process_string_to_task()
         return -1;
     }
 
-    m_parse_info->parse_source_data_from_request(msg,file_data_vector,missing_slices_index_vector,m_sender_condition);
+    // m_parse_info->parse_source_data_from_request(msg,file_data_vector,missing_slices_index_vector,m_sender_condition);
 
     #if DEBUG_TEST == true
         std::cout<<"process_string_to_task success!"<<std::endl;
@@ -259,17 +260,17 @@ void MqttServer::start_send_reponse_to_client()
                 std::unique_lock<std::mutex> lock(m_sender_mutex);
                 m_sender_condition.wait(lock,[this]{
                     std::cout<<"thread ready send_reponse to client , and message_queue is empty ?  "<<m_message_queue.empty()<<" , inflight_size is exceed limitation ? "
-                    <<(m_buffer_ptr->m_inflight_size.load(std::memory_order_acquire)>=m_max_inflaght_number/2)<<std::endl;
+                    <<(m_buffer_ptr->m_inflight_size.load(std::memory_order_acquire)>=m_max_inflight_number/2)<<std::endl;
 
                     // {
-                    //     return  !m_is_active.load() || !m_responding_queue.empty()&&(m_buffer_ptr->m_inflight_size.load()<=m_max_inflaght_number/2);
+                    //     return  !m_is_active.load() || !m_responding_queue.empty()&&(m_buffer_ptr->m_inflight_size.load()<=m_max_inflight_number/2);
                     // }
 
                     // 这句话不放在这里，会导致线程卡死（比如放在send_reponse_to_client）
                     //  换句话说，决定线程是否继续运行，应该放在这里更新
                     m_buffer_ptr->m_inflight_size.store(m_client->get_pending_delivery_tokens().size(),std::memory_order_release);
                     {
-                        return  !m_is_active.load() || !m_message_queue.empty()&&(m_buffer_ptr->m_inflight_size.load(std::memory_order_acquire)<=m_max_inflaght_number/2);
+                        return  !m_is_active.load() || !m_message_queue.empty()&&(m_buffer_ptr->m_inflight_size.load(std::memory_order_acquire)<=m_max_inflight_number/2);
                     }
                 });
                 if(!m_is_active.load())
@@ -282,6 +283,8 @@ void MqttServer::start_send_reponse_to_client()
         }
     }).detach();
 }
+
+//  loop the task queue
 void MqttServer::start_process_string_to_task()
 {
     std::thread([this](){

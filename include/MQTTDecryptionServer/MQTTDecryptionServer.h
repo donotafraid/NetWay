@@ -50,7 +50,7 @@ class MqttServer : public virtual mqtt::callback
         int m_qos;
         int m_persistence;
         int m_retained;
-        int m_max_inflaght_number = 1000;
+        int m_max_inflight_number = 1000;
         int m_dynamic_max_inflight_number = 0;
 
         std::string m_broker;

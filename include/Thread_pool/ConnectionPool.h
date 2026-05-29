@@ -9,75 +9,63 @@ enum class DB_Type{
     DELETE_SELECT_FILE
 };
 
-class ConnectionWrapper{
-    public:
+class ConnectionWrapper {
+private:
+    sqlite3* db_ptr_ = nullptr;
+    std::string db_file_path_ = "";
+    bool in_transaction_ = false;
     
+public:
+    // === 构造/析构 ===
+    ConnectionWrapper() = default;
+    explicit ConnectionWrapper(const std::string& db_file_path);
     ~ConnectionWrapper();
-    ConnectionWrapper(std::string&& db_file_name)  ;
     
-    void reset();
-    bool is_done = false;
-    sqlite3* db_ptr = nullptr;
-    int prepareStatements ();
-    int open_db_file(std::string&& db_file_name);
+    // 禁止拷贝，允许移动
+    ConnectionWrapper(const ConnectionWrapper&) = delete;
+    ConnectionWrapper& operator=(const ConnectionWrapper&) = delete;
+    ConnectionWrapper(ConnectionWrapper&& other) noexcept;
+    ConnectionWrapper& operator=(ConnectionWrapper&& other) noexcept;
     
-    int initialize_connection_wrapper(std::string&& db_file_path);
-    bool check_table_exists();
-    std::string return_db_file_path();
-    sqlite3_stmt* return_stmt_ptr(DB_Type type);
+    // === 连接管理 ===
+    bool open(const std::string& db_file_path);
+    void close();
+    bool is_open() const { return db_ptr_ != nullptr; }
+    void reset(sqlite3_stmt *stmt); // 重置所有状态
+
+    // === 底层执行能力 ===
+    bool execute(const std::string& sql);
+    bool prepare(const std::string& sql, sqlite3_stmt** stmt);
+    int step(sqlite3_stmt* stmt);
+    void reset_stmt(sqlite3_stmt* stmt);
+    void finalize_stmt(sqlite3_stmt* stmt);
+    void clear_bindings(sqlite3_stmt* stmt);
     
-    const char* read_missing_slices_from_db_subordinate_file_sql = R"(
-        WITH expected_indices AS(
-            SELECT value AS expected_index
-            FROM json_each(?)
-        ),
-        existing_indices AS(
-            SELECT slice_index
-            FROM slice_contents 
-            WHERE file_id = ?
-        )
-        SELECT e.expected_index AS missing_index
-        FROM expected_indices e
-        LEFT JOIN existing_indices ex ON e.expected_index = ex.slice_index
-        WHERE ex.slice_index IS NULL    
-        ORDER BY e.expected_index;
-        )";
-    sqlite3_stmt* read_missing_slices_from_db_subordinate_file_stmt_ptr = nullptr;
-
-    const char* merge_select_db_subordinate_file_sql = "SELECT file_id , slice_index , plaintext  FROM slice_contents WHERE file_id = ? ORDER BY slice_index ASC";
-    sqlite3_stmt* merge_select_db_subordinate_file_stmt_ptr = nullptr;
-
-    const char* insert_newRecord_sql = "INSERT INTO slice_contents (file_id, slice_index, aes_key, iv, plaintext) VALUES (?, ?, ?, ?, ?)";
-    sqlite3_stmt* stmt_newRecord_ptr = nullptr;  
-
-    const char* delete_select_file_sql = "DELETE FROM slice_contents WHERE file_id = ?";
-    sqlite3_stmt* delete_select_file_stmt_ptr = nullptr;
-
-    private:
-        std::string db_file_path = ""; // distiction between different connection_wrapper
-        const char* Create_Table[4] = {
-        R"(CREATE TABLE slice_contents (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, 
-        file_id BLOB NOT NULL,
-        slice_index INTEGER NOT NULL CHECK(slice_index >= 0), 
-        aes_key BLOB NOT NULL CHECK(length(aes_key) = 32),    
-        iv BLOB NOT NULL CHECK(length(iv) = 16),    
-        plaintext BLOB NOT NULL,
-        UNIQUE(file_id, slice_index)  
-        ))"
-        }; 
-}; 
-
+    // === 事务管理 ===
+    bool begin_transaction();
+    bool commit_transaction();
+    bool rollback_transaction();
+    
+    // === 辅助方法 ===
+    std::string get_last_error() const;
+    int64_t get_last_insert_rowid() const;
+    int get_changes() const;
+    std::string get_db_file_path() const { return db_file_path_; }
+    
+    // 谨慎暴露：仅供需要直接sqlite3操作的场景
+    sqlite3* raw_DBhandle() { return db_ptr_; }
+};
 
 class ConnectionPool
 {
     public:
         ConnectionPool() = default;
         ~ConnectionPool();
-        std::unique_ptr<ConnectionWrapper> return_connectionWrapper_ptr();
+        std::unique_ptr<ConnectionWrapper> get_SubConnection();
+        std::unique_ptr<ConnectionWrapper> get_MainConnection(const std::string &mainFilePath);
         void release_connectionWrapper_ptr(std::unique_ptr<ConnectionWrapper> Wrapper_ptr);
         void close_db_file_opened();
-        std::unique_ptr<ConnectionWrapper> check_use_ptr_in_connection_pool(std::string db_file_name);
+        // 实现数据库连接的池化管理
         std::string verify_db_path_memorySize();
         std::string return_current_date_string();
         std::string db_file_pre = "./DownloadFileManagement/";

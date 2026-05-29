@@ -16,9 +16,13 @@
 #include "ProtocolHeader/ProtocolHeader.h"
 #include "Thread_pool/Thread_pool_define.h"
 
+#include "Sqlite_DB/DbService.h"
+
 using  namespace boost::uuids;
 
 class Sqlite_DB;
+class FileRecordDAO;
+class ISignalHandler;
 
 class Sqlite_DB_Create
 {
@@ -121,24 +125,96 @@ class Sqlite_DB_Manager
         std::shared_ptr<spdlog::logger> m_spdlogger; 
 };
 
+class SqliteDatabaseManager {
+  ConnectionPool *m_connection_pool_ptr;
+  memory_pool *m_memory_pool_ref;
+
+  std::unique_ptr<ConnectionWrapper> main_conn_;
+  std::unique_ptr<ConnectionWrapper> subordinate_conn_;
+  std::string db_file_pre;
+  std::string db_file_name;
+  const char *Create_Table[4];
+};
+
+// 5. 统一的初始化器（管理表创建）
+class DatabaseInitializer {
+public:
+    static bool initialize_all(ConnectionPool* pool) {
+        auto conn = pool->get_SubConnection();
+        
+        // 创建file_records表
+        const char* create_file_records = R"(
+            CREATE TABLE IF NOT EXISTS file_records (
+                file_id TEXT PRIMARY KEY,
+                input_file_path TEXT NOT NULL,
+                missing_slices_json TEXT,
+                subordinate_dbfile_path TEXT,
+                last_modified_file TEXT
+            )
+        )";
+        
+        // 创建slice_contents表
+        const char* create_slice_contents = R"(
+            CREATE TABLE IF NOT EXISTS slice_contents (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, 
+                file_id BLOB NOT NULL,
+                slice_index INTEGER NOT NULL,
+                aes_key BLOB NOT NULL,
+                iv BLOB NOT NULL,
+                plaintext BLOB NOT NULL,
+                UNIQUE(file_id, slice_index)
+            )
+        )";
+
+        //  检查table是否存在
+        const char *check_table_exist_sql =
+            "SELECT * FROM sqlite_master WHERE type='table' AND "
+            "name='file_records'";
+
+        return conn->execute(create_file_records) &&
+               conn->execute(create_slice_contents);
+    }
+};
+
+class ApplicationCore {
+private:
+    // === 基础设施层 ===
+    std::unique_ptr<ConnectionPool> main_pool_;
+    std::unique_ptr<ConnectionPool> subordinate_pool_;
+    memory_pool m_memory_pool_ref;
+
+    // === 功能响应层（业务逻辑） ===
+    std::unique_ptr<FileService> file_service_;
+    std::unique_ptr<SliceRecordService> slice_service_;
+    
+    // === 外部响应层（信号路由） ===
+    std::unique_ptr<SignalRouter> signal_router_;
+    
+public:
+    bool initialize(); 
+   
+};
+
 class Sqlite_DB_function{
     public:
         Sqlite_DB_function(memory_pool& memory_pool_ref,download_path_manager& download_path_manager_ref);
         ~Sqlite_DB_function();
 
         void presetting(); 
-        void update_memory_pool(const std::string& file_path);
+        void update_mainDB_missing_slices(const std::string& file_path);
         std::string return_current_date_string();
-        int create_new_file_on_db_information(const std::string& file_path);
-        int create_new_file_on_subordinate_db_record(const std::string& file_path);
-        bool read_missing_slices_from_db_information_file(const std::string& file_path);
-        std::vector<int> read_missing_slices_from_db_subordinate_file(request_message& request_message_ref,const std::string& last_update_db_subordinate_file_path);
+        int create_new_file_on_db_information(const std::string& file_path);//done
+        int create_new_file_on_subordinate_db_record(const std::string& file_path);//done
+        bool read_missing_slices_from_db_information_file(const std::string& file_path);//done
+        std::vector<int> read_missing_slices_from_db_subordinate_file(
+            request_message &request_message_ref,
+            const std::string &last_update_db_subordinate_file_path,
+            ConnectionWrapper *connectionWrapper);
         std::vector<int> return_continous_sequence(int file_size);
-        int update_db_information(const std::string&file_id,const std::string& file_path,const std::string& missing_slice_index_json);
+        int updateFileRecord(const std::string&file_id,const std::string& file_path,const std::string& missing_slice_index_json);
         void merge_select_file(request_message& request_message_ref);
         void delete_select_file(request_message& request_message_ref);
 
-        // Sqlite_available_subordinate_file* m_sqlite_available_subordinate_file_ptr;
         memory_pool& m_memory_pool_ref;
         download_path_manager& m_download_path_manager_ref;
         ConnectionPool* m_connection_pool_ptr;
@@ -152,7 +228,6 @@ class Sqlite_DB_function{
         const char* create_new_db_information_record_sql = "INSERT INTO file_records (file_id,input_file_path,missing_slices_json,subordinate_dbfile_path,last_modified_file) VALUES(?,?,?,?,?)";
         const char* create_new_subordinate_db_record_sql = "INSERT INTO slice_records (file_id,input_file_path,magic,total_slices,output_file_path,missing_slices_json) VALUES(?,?,?,?,?,?)";
         const char* update_db_information_sql = "UPDATE file_records SET missing_slices_json = ?  , last_modified_file = ? WHERE file_id = ?";
-
 
         sqlite3_stmt* read_sourcefile_from_db_information_file_stmt_ptr = nullptr;
         sqlite3_stmt* check_table_exist_stmt_ptr = nullptr;
@@ -171,6 +246,7 @@ class Sqlite_DB_function{
         UNIQUE(file_id,missing_slices_json)
         ))"
         }; 
+
     public:
         class builder{
             private:
@@ -215,7 +291,7 @@ class Sqlite_DB_write_file{
 
         Sqlite_DB_function& m_sqlite_db_function_ref;
 
-        int write_message_in_db_subordinate_file_in_batch(std::queue<mqtt::const_message_ptr>& m_tmp_received_messages_queue);
+        int write_message_in_db_subordinate_file_in_batch(std::queue<mqtt::const_message_ptr>& m_tmp_received_messages_queue){return true;}
         int blob_parameter_insert(ConnectionWrapper* Wrapper_ptr,TestMsg& msg);
 };
 

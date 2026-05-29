@@ -49,7 +49,7 @@ template <typename F>
 inline auto Thread_pool::enqueue(F &&f) -> std::future<decltype(f())>
 {
     using return_type = decltype(f());
-    //  揭示函数返回值类型（如 int/double/void）
+    //  揭示函数返回值类型（如 int/float/void）
     //  记录函数调用特征（无参数 `()`）
     
     auto task = std::make_shared<std::packaged_task<return_type()>>(

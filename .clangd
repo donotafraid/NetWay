@@ -7,7 +7,7 @@ CompileFlags:
     - -isystem
     - /usr/local/include
     - -isystem
-    - /usr/include/x86_64-linux-gnu
+    - /usr/include/x86_64-linux-gnu/qt5 
     - -isystem
     - /usr/include
     - -std=gnu++17
@@ -16,13 +16,31 @@ CompileFlags:
     - -I
     - /root/.conan2/p/b/backwed58a3d05b5f6/p/include
     - -I
-    - /mnt/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/include/
+    - /root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/include/
     - -I
-    - /mnt/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/
+    - /root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/
     - -I
     - /root/snap7/release/wrappers/c-cpp/
     - -I
     - /root/snap7/src/core/
+    - -I
+    - /root/open62541-v1.4.14/include/
+    - -I
+    - /root/open62541-v1.4.14/build/src_generated
+    - -I
+    - /root/open62541-v1.4.14/plugins/include/
+    - -I
+    - /root/prometheus-cpp/build/core/include
+    - -I
+    - /root/prometheus-cpp/build/pull/include/
+    - -I
+    - /root/prometheus-cpp/build/push/include/
+    - -I
+    - /root/prometheus-cpp/pull/include/
+    - -I
+    - /root/prometheus-cpp/push/include/
+    - -I
+    - /root/prometheus-cpp/core/include/
   CompilationDatabase: compile_commands.json
 
 Index:

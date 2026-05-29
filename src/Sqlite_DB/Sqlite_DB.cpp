@@ -16,6 +16,7 @@ std::unique_ptr<Sqlite_DB> Sqlite_DB_Create::create()
     return std::unique_ptr<Sqlite_DB>(new Sqlite_DB());
 }
 
+//  解析文件并整理数据
 void source_data_parse::parse_source_data_from_request(
     std::string& msg,
     std::vector<uint8_t> &file_data_vector, 
@@ -378,7 +379,7 @@ bool Sqlite_DB_function::read_missing_slices_from_db_information_file(const std:
         {
             auto request_message_ptr = m_memory_pool_ref.return_ptr();
             request_message_ptr->set_is_download(false);
-            request_message_ptr->set_file_id(file_id); 
+            request_message_ptr->set_file_id(file_id.data()); 
             request_message_ptr->set_input_file_path(input_file_path); 
             std::string json_text (missing_slices_index_string) ;
             request_message_ptr->set_missing_slices_index_json( json_text);
@@ -415,6 +416,7 @@ std::vector<int> Sqlite_DB_function::return_continous_sequence(int file_size){
     return missing_index_vector;
 }
 
+//  divide the file into many slice datas 
 int Sqlite_DB_function::create_new_file_on_db_information(const std::string& sourcefile_path)
 {
     int file_size = fs::file_size(sourcefile_path);
@@ -493,166 +495,193 @@ std::string source_data_parse::return_task_from_queue()
     return msg;
 }
 
-int Sqlite_DB_write_file::write_message_in_db_subordinate_file_in_batch(std::queue<mqtt::const_message_ptr>& m_tmp_received_messages_queue)
-{ 
-    auto connection_wrapped_ptr = m_sqlite_db_function_ref.m_connection_pool_ptr->return_connectionWrapper_ptr();
-    sqlite3_exec(connection_wrapped_ptr->db_ptr,"BEGIN TRANSACTION",nullptr,nullptr,nullptr);
-    if (connection_wrapped_ptr == nullptr || connection_wrapped_ptr->return_stmt_ptr(DB_Type::CONTENT)== nullptr)
-    {
-        std::cerr << "get_DBfile_parameters : return_connectionWrapper_ptr is nullptr ! and connectino_wrapped_ptr.get() is "
-        <<connection_wrapped_ptr.get() << std::endl;
-        return false;
-    }
+// int Sqlite_DB_write_file::write_message_in_db_subordinate_file_in_batch(std::queue<mqtt::const_message_ptr>& m_tmp_received_messages_queue)
+// { 
+//     auto connection_wrapped_ptr = m_sqlite_db_function_ref.m_connection_pool_ptr->get_SubConnection();
+//     sqlite3_exec(connection_wrapped_ptr->get_db(),"BEGIN TRANSACTION",nullptr,nullptr,nullptr);
+//     if (connection_wrapped_ptr == nullptr || connection_wrapped_ptr->return_stmt_ptr(DB_Type::CONTENT)== nullptr)
+//     {
+//         std::cerr << "get_DBfile_parameters : get_SubConnection is nullptr ! and connectino_wrapped_ptr.get() is "
+//         <<connection_wrapped_ptr.get() << std::endl;
+//         return false;
+//     }
 
-    while(!m_tmp_received_messages_queue.empty())
-    {
-        TestMsg data_information;
-        auto msg = m_tmp_received_messages_queue.front()->to_string();
-        data_information.ParseFromString(msg);
-        m_tmp_received_messages_queue.pop();
+//     while(!m_tmp_received_messages_queue.empty())
+//     {
+//         TestMsg data_information;
+//         auto msg = m_tmp_received_messages_queue.front()->to_string();
+//         data_information.ParseFromString(msg);
+//         m_tmp_received_messages_queue.pop();
 
-        int rc = blob_parameter_insert(connection_wrapped_ptr.get(),data_information);
-        if(rc != SQLITE_OK)
-        {
-            std::cerr<< "Insert slice_contents failed and error :"<<sqlite3_errmsg(connection_wrapped_ptr->db_ptr)<<std::endl;
-            sqlite3_exec(connection_wrapped_ptr->db_ptr,"ROLLBACK",nullptr,nullptr,nullptr);
-            m_sqlite_db_function_ref.m_connection_pool_ptr->release_connectionWrapper_ptr(std::move(connection_wrapped_ptr));
-            return false;
-        }
+//         int rc = blob_parameter_insert(connection_wrapped_ptr.get(),data_information);
+//         if(rc != SQLITE_OK)
+//         {
+//             std::cerr<< "Insert slice_contents failed and error :"<<sqlite3_errmsg(connection_wrapped_ptr->get_db())<<std::endl;
+//             sqlite3_exec(connection_wrapped_ptr->get_db(),"ROLLBACK",nullptr,nullptr,nullptr);
+//             m_sqlite_db_function_ref.m_connection_pool_ptr->release_connectionWrapper_ptr(std::move(connection_wrapped_ptr));
+//             return false;
+//         }
     
-        //  insert slice_contents 
-        rc = sqlite3_step(connection_wrapped_ptr->return_stmt_ptr(DB_Type::CONTENT));
-        if (rc != SQLITE_DONE || connection_wrapped_ptr->return_stmt_ptr(DB_Type::CONTENT) == nullptr)
-        {
-            std::cerr<< "Insert slice_contents failed and error :"<<sqlite3_errmsg(connection_wrapped_ptr->db_ptr)<<std::endl;
-            sqlite3_exec(connection_wrapped_ptr->db_ptr,"ROLLBACK",nullptr,nullptr,nullptr);
-            m_sqlite_db_function_ref.m_connection_pool_ptr->release_connectionWrapper_ptr(std::move(connection_wrapped_ptr));
-            return false;
-        }
+//         //  insert slice_contents 
+//         rc = sqlite3_step(connection_wrapped_ptr->return_stmt_ptr(DB_Type::CONTENT));
+//         if (rc != SQLITE_DONE || connection_wrapped_ptr->return_stmt_ptr(DB_Type::CONTENT) == nullptr)
+//         {
+//             std::cerr<< "Insert slice_contents failed and error :"<<sqlite3_errmsg(connection_wrapped_ptr->get_db())<<std::endl;
+//             sqlite3_exec(connection_wrapped_ptr->get_db(),"ROLLBACK",nullptr,nullptr,nullptr);
+//             m_sqlite_db_function_ref.m_connection_pool_ptr->release_connectionWrapper_ptr(std::move(connection_wrapped_ptr));
+//             return false;
+//         }
         
-        sqlite3_reset(connection_wrapped_ptr->return_stmt_ptr(DB_Type::CONTENT));
-    }
-    sqlite3_exec(connection_wrapped_ptr->db_ptr,"COMMIT",nullptr,nullptr,nullptr);
+//         sqlite3_reset(connection_wrapped_ptr->return_stmt_ptr(DB_Type::CONTENT));
+//     }
+//     sqlite3_exec(connection_wrapped_ptr->get_db(),"COMMIT",nullptr,nullptr,nullptr);
 
-    //  update memory pool
-    m_sqlite_db_function_ref.update_memory_pool(connection_wrapped_ptr->return_db_file_path());
+//     //  update memory pool
+//     m_sqlite_db_function_ref.update_mainDB_missing_slices(connection_wrapped_ptr->return_db_file_path());
 
-    //  release connection   
-    m_sqlite_db_function_ref.m_connection_pool_ptr->release_connectionWrapper_ptr(std::move(connection_wrapped_ptr));
+//     //  release connection   
+//     m_sqlite_db_function_ref.m_connection_pool_ptr->release_connectionWrapper_ptr(std::move(connection_wrapped_ptr));
 
-    #if DEBUG_TEST == true
-        std::cout << "write_message_in_db_subordinate_file_in_batch is success" << std::endl;
-    #endif
+//     #if DEBUG_TEST == true
+//         std::cout << "write_message_in_db_subordinate_file_in_batch is success" << std::endl;
+//     #endif
 
-    return SQLITE_DONE;
-}
+//     return SQLITE_DONE;
+// }
 
-void Sqlite_DB_function::update_memory_pool(const std::string& file_path)
-{
-    for(size_t i = 0; i < m_memory_pool_ref.size(); i++)
-    {
-        auto request_message_ptr = m_memory_pool_ref.return_pre_ptr();
-        std::vector<int> tmp_vector = read_missing_slices_from_db_subordinate_file(*request_message_ptr,file_path);
-        if(tmp_vector.size()!=0)
-        {
-            request_message_ptr->set_missing_slices_index_json(nlohmann::json(tmp_vector).dump());
-        }
-        else
-        {
-            request_message_ptr->set_missing_slices_index_json("");
-        }
-        int rc = update_db_information(request_message_ptr->file_id(),file_path,request_message_ptr->missing_slices_index_json());
-        if (rc != SQLITE_DONE)
-        {
-            std::cerr <<"the file: "<<request_message_ptr->input_file_path()<< " update_db_information failed and error :"<<sqlite3_errmsg(db_information_ptr)<<std::endl;
-        }
+// // 内存池中所有请求对象的批量更新
+// void Sqlite_DB_function::update_mainDB_missing_slices(const std::string &file_path) {
+//   size_t pool_size = m_memory_pool_ref.size();
+//   std::unique_ptr<ConnectionWrapper> connection_wrapped_ptr =
+//       m_connection_pool_ptr->get_SubConnection(
+//           file_path);
 
+//   for (size_t i = 0; i < pool_size; i++) {
+//     std::shared_ptr<request_message> request_message_ptr =
+//         m_memory_pool_ref.return_pre_ptr();
+//     std::vector<int> tmp_vector = read_missing_slices_from_db_subordinate_file(
+//         *request_message_ptr, file_path, connection_wrapped_ptr.get());
 
-        m_memory_pool_ref.push(std::move(request_message_ptr));
-    }
-}
+//     // 判断vector不包含-1
+//     if (std::find(tmp_vector.begin(), tmp_vector.end(), -1) ==
+//         tmp_vector.end()) {
+//       request_message_ptr->set_missing_slices_index_json(
+//           nlohmann::json(tmp_vector).dump());
+//     } else {
+//       request_message_ptr->set_missing_slices_index_json("");
+//     }
 
-int Sqlite_DB_function::update_db_information(const std::string& file_id,const std::string& file_path,const std::string& missing_slices_index_json)
-{
-    int rc = sqlite3_bind_blob(update_db_information_stmt_ptr,3,file_id.data(),file_id.size(),SQLITE_STATIC);
-    rc = sqlite3_bind_text(update_db_information_stmt_ptr,2,file_path.c_str(),file_path.size(),SQLITE_TRANSIENT);
-    rc = sqlite3_bind_text(update_db_information_stmt_ptr,1,missing_slices_index_json.data(),missing_slices_index_json.size(),SQLITE_TRANSIENT);  
+//     int rc =
+//         updateFileRecord(request_message_ptr->file_id(), file_path,
+//                               request_message_ptr->missing_slices_index_json());
+//     if (rc != SQLITE_DONE) {
+//       std::cerr << "the file: " << request_message_ptr->input_file_path()
+//                 << " updateFileRecord failed and error :"
+//                 << sqlite3_errmsg(db_information_ptr) << std::endl;
+//     }
+
+//     m_memory_pool_ref.push(std::move(request_message_ptr));
+//   }
+
+//   m_connection_pool_ptr->release_connectionWrapper_ptr(std::move(connection_wrapped_ptr));
+// }
+
+// int Sqlite_DB_function::updateFileRecord(const std::string& file_id,const std::string& file_path,const std::string& missing_slices_index_json)
+// {
+//     int rc = sqlite3_bind_blob(update_db_information_stmt_ptr,3,file_id.data(),file_id.size(),SQLITE_STATIC);
+//     rc = sqlite3_bind_text(update_db_information_stmt_ptr,2,file_path.c_str(),file_path.size(),SQLITE_TRANSIENT);
+//     rc = sqlite3_bind_text(update_db_information_stmt_ptr,1,missing_slices_index_json.data(),missing_slices_index_json.size(),SQLITE_TRANSIENT);  
     
-    if(rc != SQLITE_OK)
-    {
-        std::cerr<< "update_db_information failed and error :"<<sqlite3_errmsg(db_information_ptr)<<std::endl;
-        return -1;
-    }
+//     if(rc != SQLITE_OK)
+//     {
+//         std::cerr<< "updateFileRecord failed and error :"<<sqlite3_errmsg(db_information_ptr)<<std::endl;
+//         return -1;
+//     }
 
-    rc = sqlite3_step(update_db_information_stmt_ptr);
-    if(rc != SQLITE_DONE)
-    {
-        std::cerr<< "update_db_information failed and error :"<<sqlite3_errmsg(db_information_ptr)<<std::endl;
-        return -1;
-    }
-    sqlite3_reset(update_db_information_stmt_ptr);
-    return rc;
-}
+//     rc = sqlite3_step(update_db_information_stmt_ptr);
+//     if(rc != SQLITE_DONE)
+//     {
+//         std::cerr<< "updateFileRecord failed and error :"<<sqlite3_errmsg(db_information_ptr)<<std::endl;
+//         return -1;
+//     }
+//     sqlite3_reset(update_db_information_stmt_ptr);
+//     return rc;
+// }
 
-int Sqlite_DB_write_file::blob_parameter_insert(ConnectionWrapper* connection_wrapped_ptr,TestMsg& data_information)
-{
-    // blind parameters with slice_contents
-    int rc = sqlite3_bind_blob(connection_wrapped_ptr->return_stmt_ptr(DB_Type::CONTENT), 1,
-                                data_information.file_id().data(), 
-                                data_information.file_id().size(), 
-                                SQLITE_STATIC);
-    rc = sqlite3_bind_int(connection_wrapped_ptr->return_stmt_ptr(DB_Type::CONTENT), 2,
-                            data_information.slice_index());
-    rc = sqlite3_bind_blob(connection_wrapped_ptr->return_stmt_ptr(DB_Type::CONTENT), 3,
-                            data_information.aes_key().data(),
-                            data_information.aes_key().size(),
-                            SQLITE_TRANSIENT);
-    rc = sqlite3_bind_blob(connection_wrapped_ptr->return_stmt_ptr(DB_Type::CONTENT), 4,
-                            data_information.iv().data(),
-                            data_information.iv().size(),
-                            SQLITE_STATIC);
-    rc = sqlite3_bind_blob(connection_wrapped_ptr->return_stmt_ptr(DB_Type::CONTENT), 5,
-                            data_information.ciphertext().data(),
-                            data_information.ciphertext().size(),
-                            SQLITE_STATIC);
-    return rc;
-}
+// int Sqlite_DB_write_file::blob_parameter_insert(ConnectionWrapper* connection_wrapped_ptr,TestMsg& data_information)
+// {
+//     // blind parameters with slice_contents
+//     int rc = sqlite3_bind_blob(connection_wrapped_ptr->return_stmt_ptr(DB_Type::CONTENT), 1,
+//                                 data_information.file_id().data(), 
+//                                 data_information.file_id().size(), 
+//                                 SQLITE_STATIC);
+//     rc = sqlite3_bind_int(connection_wrapped_ptr->return_stmt_ptr(DB_Type::CONTENT), 2,
+//                             data_information.slice_index());
+//     rc = sqlite3_bind_blob(connection_wrapped_ptr->return_stmt_ptr(DB_Type::CONTENT), 3,
+//                             data_information.aes_key().data(),
+//                             data_information.aes_key().size(),
+//                             SQLITE_TRANSIENT);
+//     rc = sqlite3_bind_blob(connection_wrapped_ptr->return_stmt_ptr(DB_Type::CONTENT), 4,
+//                             data_information.iv().data(),
+//                             data_information.iv().size(),
+//                             SQLITE_STATIC);
+//     rc = sqlite3_bind_blob(connection_wrapped_ptr->return_stmt_ptr(DB_Type::CONTENT), 5,
+//                             data_information.ciphertext().data(),
+//                             data_information.ciphertext().size(),
+//                             SQLITE_STATIC);
+//     return rc;
+// }
 
-Sqlite_DB_function::Sqlite_DB_function(memory_pool& memory_pool_ref,download_path_manager& download_path_manager_ref)
-: m_memory_pool_ref(memory_pool_ref)
-,m_download_path_manager_ref(download_path_manager_ref)
-,m_connection_pool_ptr(new ConnectionPool())
-{
+// Sqlite_DB_function::Sqlite_DB_function(memory_pool& memory_pool_ref,download_path_manager& download_path_manager_ref)
+// : m_memory_pool_ref(memory_pool_ref)
+// ,m_download_path_manager_ref(download_path_manager_ref)
+// ,m_connection_pool_ptr(new ConnectionPool())
+// {
 
-}
+// }
 
-std::vector<int> Sqlite_DB_function::read_missing_slices_from_db_subordinate_file(request_message& request_message_ptr,const std::string& last_update_db_subordinate_file_path)
-{
-    std::vector<int> missing_slices_index_vector;
-    auto connection_wrapped_ptr = m_connection_pool_ptr->check_use_ptr_in_connection_pool(last_update_db_subordinate_file_path);
-    
-    int rc =sqlite3_bind_blob(connection_wrapped_ptr->return_stmt_ptr
-        (DB_Type::GET_FAIL_INDEX),1,request_message_ptr.missing_slices_index_json().data(),request_message_ptr.missing_slices_index_json().size(),SQLITE_STATIC);
-    if(rc != SQLITE_OK)
-    {
-        std::cerr<<"Error binding parameter: "<<sqlite3_errmsg(db_subordinate_ptr)<<std::endl;
-        return std::vector<int>{};
-    }
-    rc = sqlite3_bind_blob(connection_wrapped_ptr->return_stmt_ptr(DB_Type::GET_FAIL_INDEX),2,request_message_ptr.file_id().data(),request_message_ptr.file_id().size(),SQLITE_STATIC);
-    if(rc != SQLITE_OK)
-    {
-        std::cerr<<"Error binding parameter: "<<sqlite3_errmsg(db_subordinate_ptr)<<std::endl;
-        return std::vector<int>{};
-    }
+// std::vector<int>
+// Sqlite_DB_function::read_missing_slices_from_db_subordinate_file(
+//     request_message &request_message_ptr,
+//     const std::string &last_update_db_subordinate_file_path,
+//     ConnectionWrapper *connection_wrapped_ptr) {
 
-    while((rc = sqlite3_step(connection_wrapped_ptr->return_stmt_ptr(DB_Type::GET_FAIL_INDEX))) == SQLITE_ROW )
-    {
-        missing_slices_index_vector.push_back(sqlite3_column_int(connection_wrapped_ptr->return_stmt_ptr(DB_Type::GET_FAIL_INDEX),0));
-    }
+//   std::vector<int> missing_slices_index_vector;
+//   if (!connection_wrapped_ptr) {
+//     std::cerr << "Failed to get database connection" << std::endl;
+//     return missing_slices_index_vector;
+//   }
 
-    m_connection_pool_ptr->release_connectionWrapper_ptr(std::move(connection_wrapped_ptr));
-    return missing_slices_index_vector;
-}
+//   int rc = sqlite3_bind_blob(
+//       connection_wrapped_ptr->return_stmt_ptr(DB_Type::GET_FAIL_INDEX), 1,
+//       request_message_ptr.missing_slices_index_json().data(),
+//       request_message_ptr.missing_slices_index_json().size(), SQLITE_STATIC);
+//   if (rc != SQLITE_OK) {
+//     // 数据库连接对象内部维护了最近的错误码和错误信息
+//     // 当参数绑定失败时，SQLite 会将错误信息设置到数据库连接对象中
+//     std::cerr << "Error binding parameter: "
+//               << sqlite3_errmsg(connection_wrapped_ptr->get_db()) << std::endl;
+//     return std::vector<int>{-1};
+//   }
+
+//   rc = sqlite3_bind_blob(
+//       connection_wrapped_ptr->return_stmt_ptr(DB_Type::GET_FAIL_INDEX), 2,
+//       request_message_ptr.file_id().data(),
+//       request_message_ptr.file_id().size(), SQLITE_STATIC);
+//   if (rc != SQLITE_OK) {
+//     std::cerr << "Error binding parameter: "
+//               << sqlite3_errmsg(connection_wrapped_ptr->get_db()) << std::endl;
+//     return std::vector<int>{-1};
+//   }
+
+//   while ((rc = sqlite3_step(connection_wrapped_ptr->return_stmt_ptr(
+//               DB_Type::GET_FAIL_INDEX))) == SQLITE_ROW) {
+//     missing_slices_index_vector.push_back(sqlite3_column_int(
+//         connection_wrapped_ptr->return_stmt_ptr(DB_Type::GET_FAIL_INDEX), 0));
+//   }
+
+//   return missing_slices_index_vector;
+// }
 
 void Sqlite_information::presetting_db_information()
 {
@@ -679,131 +708,254 @@ void taskExecution::delete_task_from_memory_pool(const std::string& input_file_p
     }
 }
 
-void Sqlite_DB_function::merge_select_file(request_message& request_message_ref)
-{ 
-    int rc ;
-    bool transaction_success_falg=false;
-    auto connection_wrapped_ptr = m_connection_pool_ptr->return_connectionWrapper_ptr();
-    std::string file_name_string = fs::path(request_message_ref.input_file_path()).filename().string();
-    std::string tmp_file_path = m_download_path_manager_ref.download_folder_path + "/" + file_name_string +".tmp";
+// void Sqlite_DB_function::merge_select_file(request_message& request_message_ref)
+// { 
+//     int rc ;
+//     bool transaction_success_falg=false;
+//     auto connection_wrapped_ptr = m_connection_pool_ptr->get_SubConnection();
+//     std::string file_name_string = fs::path(request_message_ref.input_file_path()).filename().string();
+//     std::string tmp_file_path = m_download_path_manager_ref.download_folder_path + "/" + file_name_string +".tmp";
 
-    // select file_id , input_file_path from record
-    // in loop , should not reset the condition stmt , because the loop based on stmt to get next row 
-    rc = sqlite3_bind_blob(connection_wrapped_ptr->return_stmt_ptr(DB_Type::MERGE_SELECT_FILE),1,request_message_ref.file_id().data(),request_message_ref.file_id().size(),SQLITE_STATIC);
-    if (rc != SQLITE_OK)
-    {
-        std::cerr<<"merge_select_file:sqlite3_bind_blob error : "<<sqlite3_errmsg(db_subordinate_ptr)<<std::endl;
-        m_connection_pool_ptr->release_connectionWrapper_ptr(std::move(connection_wrapped_ptr));
-        return;
-    }
+//     // select file_id , input_file_path from record
+//     // in loop , should not reset the condition stmt , because the loop based on stmt to get next row 
+//     rc = sqlite3_bind_blob(connection_wrapped_ptr->return_stmt_ptr(DB_Type::MERGE_SELECT_FILE),1,request_message_ref.file_id().data(),request_message_ref.file_id().size(),SQLITE_STATIC);
+//     if (rc != SQLITE_OK)
+//     {
+//         std::cerr<<"merge_select_file:sqlite3_bind_blob error : "<<sqlite3_errmsg(db_subordinate_ptr)<<std::endl;
+//         m_connection_pool_ptr->release_connectionWrapper_ptr(std::move(connection_wrapped_ptr));
+//         return;
+//     }
 
-    rc = sqlite3_exec(connection_wrapped_ptr->db_ptr,"BEGIN TRANSACTION", nullptr, nullptr,nullptr);
-    if(rc != SQLITE_OK)
-    {
-        std::cerr<<"merge_select_file: BEGIN TRANSACTION : "<<sqlite3_errmsg(db_subordinate_ptr)<<std::endl;
-        m_connection_pool_ptr->release_connectionWrapper_ptr(std::move(connection_wrapped_ptr));
-        return;
-    }
+//     rc = sqlite3_exec(connection_wrapped_ptr->get_db(),"BEGIN TRANSACTION", nullptr, nullptr,nullptr);
+//     if(rc != SQLITE_OK)
+//     {
+//         std::cerr<<"merge_select_file: BEGIN TRANSACTION : "<<sqlite3_errmsg(db_subordinate_ptr)<<std::endl;
+//         m_connection_pool_ptr->release_connectionWrapper_ptr(std::move(connection_wrapped_ptr));
+//         return;
+//     }
 
-    //  write message to tmp_file 
-    std::ofstream file_out(tmp_file_path,std::ios::app | std::ios::binary);
-    if(!file_out)
-    {
-        std::cerr<<"merge_select_file:mergerSQLData : open file error : "<<file_name_string<<std::endl;
-        return;
-    }
+//     //  write message to tmp_file 
+//     std::ofstream file_out(tmp_file_path,std::ios::app | std::ios::binary);
+//     if(!file_out)
+//     {
+//         std::cerr<<"merge_select_file:mergerSQLData : open file error : "<<file_name_string<<std::endl;
+//         return;
+//     }
 
-    //  read content from db_subordinate_file and write it in tmp_file
-    //  下面的循环等价于：rc = is_equal(step() == SQLITE_ROW)
-    //  step() 没有找到合适对象时，返回 SQLITE_DONE
-    while ( (rc = (sqlite3_step(connection_wrapped_ptr->return_stmt_ptr(DB_Type::MERGE_SELECT_FILE)) == SQLITE_ROW)) ) {
-        //  select from 0~N , bind from 1~N
-        {
-            int slice_index = sqlite3_column_int(connection_wrapped_ptr->return_stmt_ptr(DB_Type::MERGE_SELECT_FILE),1);
-            const char* slice_content = reinterpret_cast<const char*>(sqlite3_column_blob(connection_wrapped_ptr->return_stmt_ptr(DB_Type::MERGE_SELECT_FILE),2));
-            int slice_content_size = sqlite3_column_bytes(connection_wrapped_ptr->return_stmt_ptr(DB_Type::MERGE_SELECT_FILE),2);
+//     //  read content from db_subordinate_file and write it in tmp_file
+//     //  下面的循环等价于：rc = is_equal(step() == SQLITE_ROW)
+//     //  step() 没有找到合适对象时，返回 SQLITE_DONE
+//     while ( (rc = (sqlite3_step(connection_wrapped_ptr->return_stmt_ptr(DB_Type::MERGE_SELECT_FILE)) == SQLITE_ROW)) ) {
+//         //  select from 0~N , bind from 1~N
+//         {
+//             int slice_index = sqlite3_column_int(connection_wrapped_ptr->return_stmt_ptr(DB_Type::MERGE_SELECT_FILE),1);
+//             const char* slice_content = reinterpret_cast<const char*>(sqlite3_column_blob(connection_wrapped_ptr->return_stmt_ptr(DB_Type::MERGE_SELECT_FILE),2));
+//             int slice_content_size = sqlite3_column_bytes(connection_wrapped_ptr->return_stmt_ptr(DB_Type::MERGE_SELECT_FILE),2);
 
-           file_out.write((slice_content),slice_content_size);
-        }
-    }
-    if(rc != SQLITE_OK)
-    {
-        std::cerr<<"merge_select_file: while loop : "<<sqlite3_errmsg(connection_wrapped_ptr->db_ptr)<<std::endl;
-        m_connection_pool_ptr->release_connectionWrapper_ptr(std::move(connection_wrapped_ptr));
-        return;
-    }
+//            file_out.write((slice_content),slice_content_size);
+//         }
+//     }
+//     if(rc != SQLITE_OK)
+//     {
+//         std::cerr<<"merge_select_file: while loop : "<<sqlite3_errmsg(connection_wrapped_ptr->get_db())<<std::endl;
+//         m_connection_pool_ptr->release_connectionWrapper_ptr(std::move(connection_wrapped_ptr));
+//         return;
+//     }
 
-    //  close tmp_file and rename tmp_file to actual file_name
-    file_out.close();
-    if( std::rename( (tmp_file_path).c_str(), ( m_download_path_manager_ref.download_folder_path + "/" + file_name_string).c_str() ) !=0)
-    {
-        std::cerr<<"merge_select_file: tmp_file deal with fail"<<std::endl;
-        m_connection_pool_ptr->release_connectionWrapper_ptr(std::move(connection_wrapped_ptr));
-        return;
-    }
+//     //  close tmp_file and rename tmp_file to actual file_name
+//     file_out.close();
+//     if( std::rename( (tmp_file_path).c_str(), ( m_download_path_manager_ref.download_folder_path + "/" + file_name_string).c_str() ) !=0)
+//     {
+//         std::cerr<<"merge_select_file: tmp_file deal with fail"<<std::endl;
+//         m_connection_pool_ptr->release_connectionWrapper_ptr(std::move(connection_wrapped_ptr));
+//         return;
+//     }
 
-    //  assign write-file operation is successful
-    transaction_success_falg = true;
+//     //  assign write-file operation is successful
+//     transaction_success_falg = true;
     
-    //  judge transaction success or not
-    if(transaction_success_falg == true)
-    {
-        //  commit transaction
-        rc = sqlite3_exec(connection_wrapped_ptr->db_ptr, "COMMIT", nullptr,nullptr, nullptr);
-        if(rc != SQLITE_OK)
-        {
-            std::cerr<<"merge_select_file: commit fail"<<std::endl;
-            sqlite3_exec(connection_wrapped_ptr->db_ptr, "ROLLBACK", nullptr,nullptr, nullptr);
-        }
+//     //  judge transaction success or not
+//     if(transaction_success_falg == true)
+//     {
+//         //  commit transaction
+//         rc = sqlite3_exec(connection_wrapped_ptr->get_db(), "COMMIT", nullptr,nullptr, nullptr);
+//         if(rc != SQLITE_OK)
+//         {
+//             std::cerr<<"merge_select_file: commit fail"<<std::endl;
+//             sqlite3_exec(connection_wrapped_ptr->get_db(), "ROLLBACK", nullptr,nullptr, nullptr);
+//         }
        
-    }
-    else {
-        //  if transaction fail , rollback it transaction
-        sqlite3_exec(connection_wrapped_ptr->db_ptr, "ROLLBACK", nullptr,nullptr, nullptr);
-        std::remove(tmp_file_path.c_str());
-        std::cerr<<"merge_select_file: transaction fail"<<std::endl;
-    }
+//     }
+//     else {
+//         //  if transaction fail , rollback it transaction
+//         sqlite3_exec(connection_wrapped_ptr->get_db(), "ROLLBACK", nullptr,nullptr, nullptr);
+//         std::remove(tmp_file_path.c_str());
+//         std::cerr<<"merge_select_file: transaction fail"<<std::endl;
+//     }
 
-    m_connection_pool_ptr->release_connectionWrapper_ptr(std::move(connection_wrapped_ptr));
-}
+//     m_connection_pool_ptr->release_connectionWrapper_ptr(std::move(connection_wrapped_ptr));
+// }
 
-void Sqlite_DB_function::delete_select_file(request_message& request_message_ref)
-{
-    int rc ;
-    bool transaction_success_falg=false;
-    auto connection_wrapped_ptr = m_connection_pool_ptr->return_connectionWrapper_ptr();
+// void Sqlite_DB_function::delete_select_file(request_message& request_message_ref)
+// {
+//     int rc ;
+//     bool transaction_success_falg=false;
+//     auto connection_wrapped_ptr = m_connection_pool_ptr->get_SubConnection();
 
-    // in loop , should not reset the condition stmt , because the loop based on stmt to get next row 
-    rc = sqlite3_bind_blob(connection_wrapped_ptr->return_stmt_ptr(DB_Type::DELETE_SELECT_FILE),1,request_message_ref.file_id().data(),request_message_ref.file_id().size(),SQLITE_STATIC);
-    if (rc != SQLITE_OK)
-    {
-        std::cerr<<"delete_select_file:sqlite3_bind_blob error : "<<sqlite3_errmsg(db_subordinate_ptr)<<std::endl;
-        m_connection_pool_ptr->release_connectionWrapper_ptr(std::move(connection_wrapped_ptr));
-        return;
-    }
+//     // in loop , should not reset the condition stmt , because the loop based on stmt to get next row 
+//     rc = sqlite3_bind_blob(connection_wrapped_ptr->return_stmt_ptr(DB_Type::DELETE_SELECT_FILE),1,request_message_ref.file_id().data(),request_message_ref.file_id().size(),SQLITE_STATIC);
+//     if (rc != SQLITE_OK)
+//     {
+//         std::cerr<<"delete_select_file:sqlite3_bind_blob error : "<<sqlite3_errmsg(db_subordinate_ptr)<<std::endl;
+//         m_connection_pool_ptr->release_connectionWrapper_ptr(std::move(connection_wrapped_ptr));
+//         return;
+//     }
 
-    rc = sqlite3_exec(connection_wrapped_ptr->db_ptr,"BEGIN TRANSACTION", nullptr, nullptr,nullptr);
-    if(rc != SQLITE_OK)
-    {
-        std::cerr<<"delete_select_file: BEGIN TRANSACTION : "<<sqlite3_errmsg(db_subordinate_ptr)<<std::endl;
-        m_connection_pool_ptr->release_connectionWrapper_ptr(std::move(connection_wrapped_ptr));
-        return;
-    }
+//     rc = sqlite3_exec(connection_wrapped_ptr->get_db(),"BEGIN TRANSACTION", nullptr, nullptr,nullptr);
+//     if(rc != SQLITE_OK)
+//     {
+//         std::cerr<<"delete_select_file: BEGIN TRANSACTION : "<<sqlite3_errmsg(db_subordinate_ptr)<<std::endl;
+//         m_connection_pool_ptr->release_connectionWrapper_ptr(std::move(connection_wrapped_ptr));
+//         return;
+//     }
 
-    rc = sqlite3_step(connection_wrapped_ptr->return_stmt_ptr(DB_Type::DELETE_SELECT_FILE));
-    if(rc != SQLITE_DONE)
-    {
-        std::cerr<<"delete_select_file: sqlite3_step : "<<sqlite3_errmsg(db_subordinate_ptr)<<std::endl;
-        m_connection_pool_ptr->release_connectionWrapper_ptr(std::move(connection_wrapped_ptr));
-        return;
-    }
+//     rc = sqlite3_step(connection_wrapped_ptr->return_stmt_ptr(DB_Type::DELETE_SELECT_FILE));
+//     if(rc != SQLITE_DONE)
+//     {
+//         std::cerr<<"delete_select_file: sqlite3_step : "<<sqlite3_errmsg(db_subordinate_ptr)<<std::endl;
+//         m_connection_pool_ptr->release_connectionWrapper_ptr(std::move(connection_wrapped_ptr));
+//         return;
+//     }
 
-    rc = sqlite3_exec(connection_wrapped_ptr->db_ptr, "COMMIT;", nullptr, nullptr, nullptr);
-    if( rc != SQLITE_OK)
-    {
-        std::cerr<<"delete_select_file: sqlite3_exec : "<<sqlite3_errmsg(db_subordinate_ptr)<<std::endl;
-    }
-    std::cout<<"delete_select_file: delete file success\n";
-    m_connection_pool_ptr->release_connectionWrapper_ptr(std::move(connection_wrapped_ptr));
+//     rc = sqlite3_exec(connection_wrapped_ptr->get_db(), "COMMIT;", nullptr, nullptr, nullptr);
+//     if( rc != SQLITE_OK)
+//     {
+//         std::cerr<<"delete_select_file: sqlite3_exec : "<<sqlite3_errmsg(db_subordinate_ptr)<<std::endl;
+//     }
+//     std::cout<<"delete_select_file: delete file success\n";
+//     m_connection_pool_ptr->release_connectionWrapper_ptr(std::move(connection_wrapped_ptr));
 
+// }
+
+// //  SqliteDatabaseManager-------------------------------------------------
+// void SqliteDatabaseManager::initializeDatabase()
+// {
+//     //  open db_information_file
+//     if(sqlite3_open_v2(db_file_name.c_str(),&db_information_ptr,SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE|SQLITE_OPEN_NOMUTEX,nullptr) != SQLITE_OK)
+//     {
+//         std::cerr<<"Sqlite_information::presetting: "<<db_file_name<<" open failed\n";
+//         return;
+//     }
+
+//     // if table not exist, create table in db_information_file 
+//     if(sqlite3_prepare_v2(db_information_ptr,statements.check_table_exist_sql,strlen(statements.check_table_exist_sql),&stmts.check_table_exist_stmt_ptr,nullptr) != SQLITE_OK)
+//     {   
+//         std::cerr<<"Sqlite_information::presetting: "<<db_file_name<<" prepare check_sql failed\n";
+//         return;
+//     }
+//     else{
+//         bool table_exist = (sqlite3_step(stmts.check_table_exist_stmt_ptr) == SQLITE_ROW);
+//         if(!table_exist)
+//         {
+//             for(auto& sql:Create_Table)
+//             {
+//                 if(sqlite3_exec(db_information_ptr,sql,nullptr,nullptr,nullptr) != SQLITE_OK)
+//                 {
+//                     std::cerr<<"Sqlite_information::presetting: "<<db_file_name<<" create table failed\n";
+//                     return;
+//                 }
+//             }
+//         }
+//     }    
+
+//     //  read sourcefile information in db_information 
+//     if(sqlite3_prepare_v2(db_information_ptr,statements.read_sourcefile_from_db_information_sql,strlen(statements.read_sourcefile_from_db_information_sql),&stmts.read_sourcefile_from_db_information_file_stmt_ptr,nullptr) != SQLITE_OK)
+//     {
+//         std::cerr<<"Sqlite_information::presetting: "<<db_file_name<<" prepare read_sql failed\n";
+//         return;
+//     }
+
+//     //  create new record in db_information
+//     if (sqlite3_prepare_v2(db_information_ptr,statements.create_new_db_information_record_sql,strlen(statements.create_new_db_information_record_sql),&stmts.create_new_db_information_record_stmt_ptr,nullptr) != SQLITE_OK) {
+//         std::cerr<<"Sqlite_information::presetting: "<<db_file_name<<" prepare update_db_information_stmt_ptr failed\n";
+//         return;
+//     }
+
+//     //  update db_information file
+//     if(sqlite3_prepare_v2(db_information_ptr,statements.update_db_information_sql,strlen(statements.update_db_information_sql),&stmts.update_db_information_stmt_ptr,nullptr) != SQLITE_OK)
+//     {
+//         std::cerr<<"Sqlite_information::presetting: "<<db_file_name<<" prepare update_db_information_sql failed\n";
+//         return;
+//     }
+
+//     //  create new record in db_suborigate file
+//     int rc = sqlite3_prepare_v2(db_subordinate_ptr, statements.insert_newRecord_sql, -1,
+//                                 &stmts.stmt_newRecord_ptr, nullptr);
+//     if (rc != SQLITE_OK || stmts.stmt_newRecord_ptr == nullptr) {
+//       std::cerr << "INSERT content failed and error is : "
+//                 << sqlite3_errmsg(db_subordinate_ptr) << std::endl;
+//       return;
+//     }
+
+//     // LEFT
+//     // JOIN的本质：左表所有行都会被保留，而右表（slice_contents）的行如果没有匹配，右表该项对应的所有列都会为NULL。
+//     // 随后，WHERE子句WHERE sc.slice_index IS
+//     // NULL会过滤出这些行，即序列值n会被选中作为缺失的索引。
+//     // 左连接中间结果集:包含所有左表的行，以及匹配的右表的行（如果有）。如果没有匹配，中间表里的该右表项的所有列都为NULL
+
+//     // read missing_slices_from_db_subodinate_file
+//     rc = (sqlite3_prepare_v2(
+//         db_subordinate_ptr, statements.read_missing_slices_from_db_subordinate_file_sql,
+//         strlen(statements.read_missing_slices_from_db_subordinate_file_sql),
+//         &stmts.read_missing_slices_from_db_subordinate_file_stmt_ptr, nullptr));
+//     if (rc != SQLITE_OK) {
+//       std::cerr << "Sqlite_information::presetting: prepare "
+//                    "read_missing_slices_from_db_subordinate_file_sql failed\n";
+//       return ;
+//     }
+
+//     //  merge select db_subordinate file
+//     rc = (sqlite3_prepare_v2(db_subordinate_ptr, statements.merge_select_db_subordinate_file_sql,
+//                              strlen(statements.merge_select_db_subordinate_file_sql),
+//                              &stmts.merge_select_db_subordinate_file_stmt_ptr,
+//                              nullptr));
+//     if (rc != SQLITE_OK) {
+//       std::cerr << "Sqlite_information::presetting: prepare "
+//                    "merge_select_db_subordinate_file_sql failed\n";
+//       return ;
+//     }
+
+//     //  delete select file
+//     rc = (sqlite3_prepare_v2(db_information_ptr, statements.delete_select_file_sql,
+//                              strlen(statements.delete_select_file_sql),
+//                              &stmts.delete_select_file_stmt_ptr, nullptr));
+//     if (rc != SQLITE_OK) {
+//       std::cerr << "Sqlite_information::presetting: prepare "
+//                    "delete_select_file_sql failed\n";
+//       return ;
+//     }
+// }
+
+
+
+
+// ApplicationCore--------------------------------------
+bool ApplicationCore::initialize() {
+  // 1. 基础设施
+  main_pool_ = std::make_unique<ConnectionPool>();
+  subordinate_pool_ = std::make_unique<ConnectionPool>();
+
+  // 2. 功能响应层（注入依赖）
+  file_service_ = std::make_unique<FileService>();
+
+  slice_service_ = std::make_unique<SliceRecordService>();
+
+  // 3. 外部响应层（注册信号处理器）
+  signal_router_ = std::make_unique<SignalRouter>();
+  signal_router_->register_handler(SignalType::FILE_REGISTER,
+                                   file_service_.get());
+  signal_router_->register_handler(SignalType::SLICE_REGISTER,
+                                   slice_service_.get());
+
+  return true;
 }

@@ -1,8 +1,8 @@
 #include "MQTTEncryptionClient/MQTTEncryptionClient.h"
-#include "Sqlite_DB/Sqlite_DB.h"
+// #include "Sqlite_DB/Sqlite_DB.h"
 MqttClient::~MqttClient()
 {
-    if (m_client->is_connected())
+    if (m_client && m_client->is_connected())
     {
         auto dis_token = m_client->disconnect();
         auto status =dis_token->wait_for(std::chrono::seconds(5));
@@ -21,7 +21,7 @@ int MqttClient::createinstance(Sqlite_DB_write_file* m_sqlite_DB_write_file)
     m_client = new mqtt::async_client(m_broker, m_client_id, 1, nullptr);
     m_connOpts.set_clean_session(true);
     m_connOpts.set_keep_alive_interval(500);
-    m_connOpts.set_max_inflight(m_max_inflaght_number);
+    m_connOpts.set_max_inflight(m_max_inflight_number);
     m_sqlite_DB_write_file_ptr = m_sqlite_DB_write_file;
     
     return 0;
@@ -143,8 +143,8 @@ int MqttClient::parse_json(std::ifstream &ifs)
         return -1;
     }
 
-    m_max_inflaght_number = config["max_inflight_number"];
-    if(m_max_inflaght_number < 0)
+    m_max_inflight_number = config["max_inflight_number"];
+    if(m_max_inflight_number < 0)
     {
         std::cout<<"max_inflight_number is empty!"<<std::endl;
         return -1;
@@ -157,6 +157,7 @@ int MqttClient::parse_json(std::ifstream &ifs)
     return 0;
 }
 
+//  send slice data by mqtt
 void MqttClient::SendSliceData(const std::string& proto_msg)
 {
     // auto result_promise = std::make_shared<std::promise<int>>();
@@ -193,5 +194,5 @@ void MqttClient::transmit_message_to_sqlite()
         m_received_messages_queue.swap(m_tmp_received_messages_queue);
     }
 
-    m_sqlite_DB_write_file_ptr->write_message_in_db_subordinate_file_in_batch(m_tmp_received_messages_queue);
+    // m_sqlite_DB_write_file_ptr->write_message_in_db_subordinate_file_in_batch(m_tmp_received_messages_queue);
 }

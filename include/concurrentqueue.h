@@ -1762,7 +1762,7 @@ private:
 				pr_blockIndexSize = poolBasedIndexSize;
 			}
 			
-			new_block_index(0);		// This creates an index with double the number of current entries, i.e. EXPLICIT_INITIAL_INDEX_SIZE
+			new_block_index(0);		// This creates an index with float the number of current entries, i.e. EXPLICIT_INITIAL_INDEX_SIZE
 		}
 		
 		~ExplicitProducer()

@@ -127,14 +127,90 @@ struct DB_Info_raw_ptr
     }
 };
 
-struct MainWindows_Intermediate_Struct
-{
-    std::string stored_DB_folder_path;
-    std::string input_file_path;
-    std::string output_file_path;
-    std::string db_file_path;
-    int file_size = 0;
-    std::map<std::string,std::pair<int,bool>> terminate_symbol_to_file_map; 
+// struct MainWindows_Intermediate_Struct
+// {
+//     std::string stored_DB_folder_path;
+//     std::string input_file_path;
+//     std::string output_file_path;
+//     std::string db_file_path;
+//     int file_size = 0;
+//     std::map<std::string,std::pair<int,bool>> terminate_symbol_to_file_map; 
+// };
+
+enum class SignalType {
+  // 切片相关操作（细粒度）
+  SLICE_SAVE,       // 保存单个切片
+  SLICE_BATCH_SAVE, // 批量保存切片
+  SLICE_QUERY,      // 查询切片
+  SLICE_DELETE,     // 删除切片
+  SLICE_MERGE,      // 合并切片为文件
+  SLICE_MIGRATE,    // 迁移切片
+  SLICE_CLEANUP,    // 清理孤立切片
+  SLICE_VERIFY,     // 验证切片完整性
+  SLICE_REGISTER,
+
+  // 文件相关操作
+  FILE_REGISTER,
+  FILE_OPERATION,
+  FILE_UPLOAD,
+  FILE_DOWNLOAD,
+
+  // 系统操作
+  SYSTEM_CONTROL,
+  SYSTEM_MONITOR,
+
+  // 其他业务模块...
 };
 
+// 信号优先级（用于处理顺序）
+enum class SignalPriority {
+    CRITICAL = 0,    // 关键操作（如数据保存）
+    HIGH = 1,        // 高优先级
+    NORMAL = 2,      // 普通优先级
+    LOW = 3,         // 低优先级（如查询统计）
+    BACKGROUND = 4   // 后台任务（如清理）
+};
+
+// 信号具体内容
+struct ExternalSignal {
+  SignalType type;
+  SignalPriority priority = SignalPriority::NORMAL;
+  std::string command; // 具体命令（可选，用于更细粒度）
+  uint64_t timestamp;
+  std::string source_id;
+  std::string request_id; // 用于追踪链路
+  std::queue<mqtt::const_message_ptr> m_tmp_received_messages_queue;
+
+  // 回调函数（用于异步响应）
+  std::function<void(bool, const std::string &)> callback;
+
+  ExternalSignal() : timestamp(0) {}
+
+  ExternalSignal(SignalType t, const std::string &cmd,
+                 SignalPriority pri = SignalPriority::NORMAL,
+                 const std::string &src = "")
+      : type(t), priority(pri), command(cmd),
+        timestamp(std::chrono::duration_cast<std::chrono::milliseconds>(
+                      std::chrono::system_clock::now().time_since_epoch())
+                      .count()),
+        source_id(src), request_id(generate_request_id()) {}
+
+private:
+  static std::string generate_request_id() {
+    // 生成唯一请求ID
+    static std::atomic<uint64_t> counter{0};
+    return std::to_string(
+               std::chrono::steady_clock::now().time_since_epoch().count()) +
+           "_" + std::to_string(counter++);
+  }
+};
+
+// 辅助数据结构
+struct SliceRecord {
+  std::string file_id;
+  int slice_index = 0;
+  std::string aes_key; // 32 bytes
+  std::string iv;      // 16 bytes
+  std::string plaintext;
+};
 #endif

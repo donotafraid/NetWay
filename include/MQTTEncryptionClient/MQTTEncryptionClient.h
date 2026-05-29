@@ -35,7 +35,7 @@ class MqttClient: public virtual mqtt::callback
         int m_port;
         int m_qos;
         int m_retained;
-        int m_max_inflaght_number ;
+        int m_max_inflight_number ;
 
         std::string m_broker;
         std::string m_client_id;
@@ -54,4 +54,6 @@ class MqttClient: public virtual mqtt::callback
         Sqlite_DB_write_file* m_sqlite_DB_write_file_ptr; 
     private:
 };
+
+
 #endif

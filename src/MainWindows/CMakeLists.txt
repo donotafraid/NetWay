@@ -9,15 +9,18 @@ set(appleName "MainWindows")
 #获取特定文件夹下的.c  .cpp 源文件
 set(
     SOURCES
-    ${CMAKE_CURRENT_SOURCE_DIR}/MainWindows.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/MainWindow_Rebuild.cpp
+    # ${CMAKE_CURRENT_SOURCE_DIR}/Monitor.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/DropArea.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/LineChartTest.cpp
 )
-
-#设置源目录变量
-set(TargetFolder "MainWindows")
 
 #确保编译器能找到库文件进行 Moc 文件的生成
 set (MOC_HEADERS
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../include/MainWindows/MainWindows.h
+    # ${CMAKE_CURRENT_SOURCE_DIR}/../../include/MainWindows/Monitor.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../include/MainWindows/DropArea.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../include/MainWindows/MainWindow_Rebuild.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../include/MainWindows/LineChartTest.h
 )
 
 #创建动态库/静态库文件名，将源文件添加到动态库/静态库文件里
@@ -35,6 +38,7 @@ $<INSTALL_INTERFACE:include>
 target_link_libraries(${appleName}
 PRIVATE
 Sqlite_DB::Sqlite_DB
+PLC::PLC
 third_party_deps
 )
 
