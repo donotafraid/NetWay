@@ -89,6 +89,7 @@ public:
 
   int rowCount(const QModelIndex &parent = QModelIndex()) const override;
   int columnCount(const QModelIndex &parent = QModelIndex()) const override;
+  bool hasChildren(const QModelIndex &parent = QModelIndex()) const override;
 
   // return data from internal Model
   QVariant data(const QModelIndex &index,
@@ -111,6 +112,11 @@ public:
                         const QVariant &value);
   // set internal member function
   void setOPCUADataBlock(std::shared_ptr<OPCUADataBlock> &block);
+
+  //  simuilate function
+  void simulateTreeViewCalls(); 
+
+
 
 signals:
   void requestOPCUADataBlockModified();
@@ -221,6 +227,7 @@ public:
 
     //  update function
     Result<bool, RichError> updateTypeEnum(std::shared_ptr<OPCUAParseResult> &data);
+    void resetValueByTypeEnum(OPCUAModernDataStruct &data);
 
   signals:
     void requestSaveOPCUADataBlock(
@@ -374,6 +381,9 @@ public:
         return true;
       }
     }
+
+   
+
 
   private slots:
     // 连接View的信号到Model的操作

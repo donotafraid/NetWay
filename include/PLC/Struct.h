@@ -116,7 +116,7 @@ struct OPCUAModernDataStruct {
   int array_dimension = -1;
   std::string browse_name;
   std::string filter_reason;
-  std::unique_ptr<Dynamic_Value> data_pointer;
+  std::unique_ptr<Dynamic_Value> data_pointer = std::make_unique<Dynamic_Value>();
 
   S7DataType data_type_enum = S7DataType::UNKNOWN;
   std::string variable_full_path;

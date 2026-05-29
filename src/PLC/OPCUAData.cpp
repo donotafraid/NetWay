@@ -646,6 +646,39 @@ void OPCUADataBlockModel::setOPCUADataBlock(std::shared_ptr<OPCUADataBlock> &blo
     buildTree();
     printTreeNode(m_rootNode.get());
     endResetModel(); // View 会自动重新读取所有数据
+    // 在你的代码中调用
+    // simulateTreeViewCalls();
+}
+
+void OPCUADataBlockModel::simulateTreeViewCalls() {
+  qDebug() << "\n=== Simulating TreeView Calls ===";
+
+  // 1. 获取顶层索引
+  QModelIndex rootIdx;
+  int topRows = this->rowCount(rootIdx);
+  qDebug() << "Top rows:" << topRows;
+
+  for (int row = 0; row < topRows; row++) {
+    QModelIndex topIdx = this->index(row, 0, rootIdx);
+    qDebug() << "\nTop node[" << row << "]:" << this->data(topIdx).toString();
+
+    // 2. 检查是否有子节点（View 会调用这个）
+    bool hasKids = this->hasChildren(topIdx);
+    qDebug() << "  hasChildren:" << hasKids;
+
+    // 3. 如果有子节点，获取它们
+    if (hasKids) {
+      int childRows = this->rowCount(topIdx);
+      qDebug() << "  child count:" << childRows;
+
+      for (int childRow = 0; childRow < childRows && childRow < 5; childRow++) {
+        QModelIndex childIdx = this->index(childRow, 0, topIdx);
+        qDebug() << "    child[" << childRow
+                 << "]:" << this->data(childIdx).toString()
+                 << "hasChildren:" << this->hasChildren(childIdx);
+      }
+    }
+  }
 }
 
 // ==================== QAbstractTableModel 接口 ====================
@@ -697,6 +730,33 @@ int OPCUADataBlockModel::rowCount(const QModelIndex &parent) const {
 
 int OPCUADataBlockModel::columnCount(const QModelIndex &parent) const {
   return 5; // 名称、类型、值、读取权限、注解
+}
+
+bool OPCUADataBlockModel::hasChildren(const QModelIndex &parent) const {
+  qDebug() << "=== hasChildren() called ===";
+
+  if (!parent.isValid()) {
+    bool result = !m_rootNode->children.isEmpty();
+    qDebug() << "  top level, children count:" << m_rootNode->children.size();
+    qDebug() << "  returning:" << result;
+    return result;
+  }
+
+  // index node self
+  TreeNode *node = static_cast<TreeNode *>(parent.internalPointer());
+  if (!node) {
+    qDebug() << "  node is null, returning false";
+    return false;
+  }
+
+  // 容器节点且有子节点才返回 true
+  bool hasChild = (node->m_dataBlock == nullptr) && !node->children.isEmpty();
+  qDebug() << "  node:" << node->displayName
+           << "is container:" << (node->m_dataBlock == nullptr)
+           << "children count:" << node->children.size()
+           << "hasChildren:" << hasChild;
+
+  return hasChild;
 }
 
 // QVariant OPCUADataBlockModel::data(const QModelIndex &index, int role) const {
@@ -1590,11 +1650,36 @@ Result<bool,RichError> OPCUADataBlockBuilder::updateTypeEnum(std::shared_ptr<OPC
     auto it = typeMap.find(item.raw_data_type);
     if (it != typeMap.end()) {
       item.data_type_enum = it->second;
+      resetValueByTypeEnum(item);
     } else {
       item.data_type_enum = S7DataType::UNKNOWN;
     }
   }
   return Result<bool, RichError>(true);
+}
+
+void OPCUADataBlockBuilder::resetValueByTypeEnum(OPCUAModernDataStruct &data) {
+  auto &s7_type = data.data_type_enum;
+  if (s7_type == S7DataType::BOOL) {
+    { data.data_pointer->Reset_Value(bool{0}); }
+  } else if (s7_type == S7DataType::BYTE) {
+    uint8_t tmp;
+    { data.data_pointer->Reset_Value(uint8_t{0}); }
+  } else if (s7_type == S7DataType::INT) {
+    { data.data_pointer->Reset_Value(int16_t{0}); }
+  } else if (s7_type == S7DataType::WORD) {
+    { data.data_pointer->Reset_Value(uint16_t{0}); }
+  } else if (s7_type == S7DataType::DWORD || s7_type == S7DataType::UDINT) {
+    { data.data_pointer->Reset_Value(uint32_t{0}); }
+  } else if (s7_type == S7DataType::DINT) {
+    { data.data_pointer->Reset_Value(int32_t{0}); }
+  } else if (s7_type == S7DataType::REAL) {
+    { data.data_pointer->Reset_Value(float{0}); }
+  } else if (s7_type == S7DataType::STRING) {
+    { data.data_pointer->Reset_Value(std::string{0}); }
+  } else {
+    { data.data_pointer->Reset_Value(std::string{0}); }
+  }
 }
 
 //OPCUADelegate-----------------------------------------------------------
@@ -1924,6 +2009,7 @@ void OPCUADataBlockView::setupUI() {
     treeView->setAlternatingRowColors(true);
     treeView->setAnimated(true);  // 展开/折叠动画
     treeView->setIndentation(20); // 设置缩进
+    treeView->expandAll(); // 展开所有节点，验证是否都能正常显示
 
     // 状态栏
     m_statusBar = new QStatusBar();
@@ -2058,6 +2144,17 @@ void OPCUADataBlockController::initializeView(OPCUADataBlockView *view)
   }
   else
   {
+    // 打印实际类型
+    qDebug() << "=== VIEW TYPE DEBUG ===";
+    qDebug() << "View class name:" << view->metaObject()->className();
+    qDebug() << "View inheritance:";
+    const QMetaObject *meta = view->metaObject();
+    const QMetaObject *meta_treeView= view->getTableView()->metaObject();
+    while (meta) {
+      qDebug() <<"view class Name : "<< "  -" << meta->className();
+      qDebug() <<"treeView class Name " <<"  -" << meta_treeView->className();
+      meta = meta->superClass();
+    }
     m_view = view;
   }
 }
