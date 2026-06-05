@@ -1047,7 +1047,7 @@ bool OPCUA_Access::isSiemensContainer(const std::string& browseName)
 
     case ConnectionState::OBJECT_ONLY:
       // 僵尸对象：尝试重连而不是重新创建
-      return reconnect(5, 1000);
+      return reconnect(1, 1000);
 
     case ConnectionState::UNINITIALIZED:
       // 需要创建新对象

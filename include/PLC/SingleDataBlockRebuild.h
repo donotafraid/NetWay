@@ -370,7 +370,7 @@ class DataBlockView : public QWidget {
 public:
     explicit DataBlockView(QWidget* parent = nullptr){
       setupUI();
-      initializeConnection();
+      buildConnection();
     };
     ~DataBlockView()
     {
@@ -425,7 +425,7 @@ private:
     void updateButtonStates(bool isWorking = false){}
     
     //  connect function
-    void initializeConnection();
+    void buildConnection();
     
     QTableView* m_tableView;
     QPushButton* m_refreshBtn;

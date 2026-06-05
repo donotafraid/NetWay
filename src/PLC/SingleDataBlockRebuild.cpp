@@ -1158,14 +1158,14 @@ bool DataBlockModel::setData(const QModelIndex& index, const QVariant& value, in
         return true;
     }
     
-    if (index.column() == 4) { // Comment 列
-        item.comment = value.toString().toStdString();
-        emit dataChanged(index, index, {Qt::DisplayRole});
-        return true;
-    }
+    // if (index.column() == 4) { // Comment 列
+    //     item.comment = value.toString().toStdString();
+    //     emit dataChanged(index, index, {Qt::DisplayRole});
+    //     return true;
+    // }
     
     // Data Block Number 和 OffReset_Value 列通常只读，不允许编辑
-    if (index.column() == 0 || index.column() == 1 || index.column() == 2) {
+    if (index.column() == 0 || index.column() == 1 || index.column() == 2 || index.column() == 4) {
         return false; // 只读
     }
     
@@ -1623,7 +1623,7 @@ void DataBlockView::importFile() {
     }
 }
 
-void DataBlockView::initializeConnection()
+void DataBlockView::buildConnection()
 {
   connect(m_refreshBtn, &QPushButton::clicked, this,
           &DataBlockView::onRefreshClicked);

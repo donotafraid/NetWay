@@ -4,6 +4,7 @@
 #include "PLC/XMLParser.h"
 
 class OPCUADataBlock;
+class SpecialTreeView;
 
 struct TreeNode {
   OPCUAModernDataStruct *m_dataBlock = nullptr;
@@ -81,6 +82,9 @@ public:
   std::vector<OPCUAModernDataStruct> &getModelItemVecotr();
   QString getDisplayValue(const OPCUAModernDataStruct &var, int column) const;
   QString getTypeString(S7DataType type) const;
+  TreeNode *getNodeByVisualRow(int visualRow) const;
+  TreeNode *getRootNode();
+
 
   // QAbstractTableModel 接口
   QModelIndex index(int row, int column,
@@ -113,11 +117,6 @@ public:
   // set internal member function
   void setOPCUADataBlock(std::shared_ptr<OPCUADataBlock> &block);
 
-  //  simuilate function
-  void simulateTreeViewCalls(); 
-
-
-
 signals:
   void requestOPCUADataBlockModified();
 
@@ -134,28 +133,31 @@ private:
   std::shared_ptr<OPCUADataBlock> m_OPCUADataBlock;
   std::shared_ptr<TreeNode> m_rootNode;
   QHash<QString, TreeNode *> m_parentNodeIDMap; // 路径到节点的映射
+  QMap<int, TreeNode *> m_visualRowMap;         // 视觉行号 → 节点指针
+  bool m_visualRowMapValid = false;
 
   // 辅助方法
   // 输入：数据节点指针 (TreeNode*)
   // 输出：QModelIndex
   QModelIndex indexFromNode(TreeNode *node, int column = 0) const;
   void buildTree(TreeNode* parent = nullptr);
+
+  void buildVisualRowMapRecursive(TreeNode *node, int &currentRow);
+  void rebuildVisualRowMap();
   TreeNode *createPlaceholderNode(const std::string &parentName);
-  OPCUAModernDataStruct *findNode(const std::string &targetName);
+  OPCUAModernDataStruct *findOPCUADataStruct(const std::string &targetName);
   std::string getParentName(const OPCUAModernDataStruct &element);
   void updateAllDataByLevel(int targetColumn);
   void collectIndicesByLevel(TreeNode *node, int level,
                              QMap<int, QList<QModelIndex>> &levelMap);
   // validation function
   bool isValidIndex(const QModelIndex &index) const;
-  void printTreeNode(TreeNode *node, int depth = 0, bool isLast = true); 
-
+  void printTreeNode(TreeNode *node, int depth = 0, bool isLast = true);
+  
   std::string extractVariableNameWithoutIndex(const std::string &input); 
   std::pair<std::string, std::string>
   extractVariableNameWithIndex(const std::string &input); 
-
   std::string extractLastPartWithoutIndexForArray(const std::string &input); 
-
   std::string extractLastPartWithoutIndexForNormal(const std::string &input); 
 };
 
@@ -254,6 +256,7 @@ public:
     void paint(QPainter *painter, const QStyleOptionViewItem &option,
                const QModelIndex &index) const override;
 
+
   private:
     QWidget* createBoolEditor(QWidget* parent) const;
     QWidget* createfloatEditor(QWidget* parent) const;
@@ -262,85 +265,155 @@ public:
     QWidget* createNumberEditor(QWidget* parent, S7DataType dataType) const;
 };
 
-//  responsibility : Provides UI controls and UI business logic 
+//  responsibility : Provides UI controls and UI business logic
 class OPCUADataBlockView : public QWidget {
-    Q_OBJECT
-    
+  Q_OBJECT
+
 public:
-    explicit OPCUADataBlockView(QWidget* parent = nullptr);
-    ~OPCUADataBlockView();
-   
-    
-    // 设置Model
-    void getModel(OPCUADataBlockModel* model){m_model = model;};
-    void getDelegate(OPCUADataDelegate *delegate) { m_delegate = delegate; };
-    void setModel() { treeView->setModel(m_model); };
-    void setDelegate() { treeView->setItemDelegate(m_delegate); };
+  explicit OPCUADataBlockView(QWidget *parent = nullptr);
+  ~OPCUADataBlockView();
 
-    // 外部响应层接口 - 接收外部信号
-    void onRefreshComplete(bool success, const QString& error);
-    void onWriteComplete(bool success, const QString& error);
-    void onConnectWithOPCUADataBlockView(QSplitter *splitter); 
-    
-    //  get function
-    // QTableView* getTableView() { return m_tableView; }
-    QTreeView* getTableView() { return treeView; }
-    QWidget *getView(){return this;}
+  // 设置Model
+  void getModel(OPCUADataBlockModel *model);
+  void getDelegate(OPCUADataDelegate *delegate);
+  void setModel();
+  void setDelegate();
 
-    // 功能响应层接口 - 响应用户操作
-    void refreshData() {}                                    // 刷新数据
-    void writeData() { std::cout << "write Data !\n"; }      // 写入数据
-    void exportToCSV() { std::cout << "export To CSV !\n"; } // 导出CSV
-    void findValue() { std::cout << "find Value!\n"; }       // 查找值
-    void filterByType() { std::cout << "filterByType !\n"; } // 按类型过滤
-    void importFile(); // 导入配置文件
+  // 外部响应层接口 - 接收外部信号
+  void onRefreshComplete(bool success, const QString &error);
+  void onWriteComplete(bool success, const QString &error);
+  void onConnectWithOPCUADataBlockView(QSplitter *splitter);
 
-  signals:
-    // 发送给外部层的请求信号
-    void requestRefresh();
-    void requestWrite();
-    void requestRead();
-    void requestDataTypeChange();
-    void requestFile(const QString &file_path);
-    
+  //  get function
+  // QTableView* getTableView() { return m_tableView; }
+  QTreeView *getTableView();
+  QWidget *getView();
+
+  // 功能响应层接口 - 响应用户操作
+  void refreshData() {}                                    // 刷新数据
+  void writeData() { std::cout << "write Data !\n"; }      // 写入数据
+  void exportToCSV() { std::cout << "export To CSV !\n"; } // 导出CSV
+  void findValue() { std::cout << "find Value!\n"; }       // 查找值
+  void filterByType() { std::cout << "filterByType !\n"; } // 按类型过滤
+  void importFile();                                       // 导入配置文件
+
+signals:
+  // 发送给外部层的请求信号
+  void requestRefresh();
+  void requestWrite();
+  void requestRead();
+  void requestDataTypeChange();
+  void requestFile(const QString &file_path);
+
 private slots:
-    void onRefreshClicked();
-    void onWriteClicked();
-    void onExportClicked(){std::cout<<"Export clicked !\n";}
-    void onImportClicked(){std::cout<<"Import Clicked !\n";}
-    void onFindClicked(){std::cout<<"Find Clicked !\n";}
-    void onFilterChanged(const QString& text){std::cout<<"Filter Changed !\n";}
-    void onRowdoubleClicked(const QModelIndex &index) {
-      std::cout << "RowdoubleClicked !\n";
-      // m_tableView->edit(index);
-      treeView->edit(index);
-    }
+  void onRefreshClicked();
+  void onWriteClicked();
+  void onExportClicked() { std::cout << "Export clicked !\n"; }
+  void onImportClicked() {
+    std::cout << "Import Clicked !\n";
+    std::cout << "testWithStandardModel called " << std::endl;
+    validateTreeStructure();
+  }
+  void selectCell(const QModelIndex &index);
+  void onFindClicked() { std::cout << "Find Clicked !\n"; }
+  void onFilterChanged(const QString &text) {
+    std::cout << "Filter Changed !\n";
+  }
+
+  void onRowdoubleClicked(const QModelIndex &index);
+  void validateTreeStructure();
+
+  // 在程序启动时设置
+void printCallStack();
+
+
+// 在 selectCell 中添加保护
+
+  bool eventFilter(QObject *obj, QEvent *event) override;
+  QModelIndex manualIndexAt(const QPoint &pos);
+
+  QModelIndex findIndexByNode(TreeNode *node, int column) const;
+  QModelIndex findIndexByY(const QModelIndex &parent, int &currentY,
+                           int targetY, int targetX);
+  QModelIndex mapVisualRowToModelIndex(const QModelIndex &parent,
+                                       int targetVisualRow, int targetCol,
+                                       int &currentVisualRow);
+  QModelIndex mapVisualRowToModelIndex(const QModelIndex &parent,
+                                       int targetVisualRow, int targetCol);
+  int calculateColumnAtX(int x) const;
+
+  int getDepth(const QModelIndex &index);
 
 private:
-    void setupUI();
-    void showStatusMessage(const QString& message, bool isError = false){}
-    void updateButtonStates(bool isWorking = false){}
-    
-    //  connect function
-    void initializeConnection();
-    
-    QTreeView* treeView ;
-    QTableView* m_tableView;
-    QPushButton* m_refreshBtn;
-    QPushButton* m_writeBtn;
-    QPushButton* m_exportBtn;
-    QPushButton* m_importBtn;
+  void setupUI();
+  void showStatusMessage(const QString &message, bool isError = false) {}
+  void updateButtonStates(bool isWorking = false) {}
 
-    QLineEdit* m_searchEdit;
-    QComboBox* m_typeFilter;
-    QStatusBar* m_statusBar;
-    QProgressBar* m_progressBar;
+  //  connect function
+  void buildConnection();
 
-    QString m_currentIp;
-    QString m_currentOPCUADataBlock;
+  // QTreeView *treeView;
+  SpecialTreeView *treeView;
+  QTableView *m_tableView;
+  QPushButton *m_refreshBtn;
+  QPushButton *m_writeBtn;
+  QPushButton *m_exportBtn;
+  QPushButton *m_importBtn;
 
-    OPCUADataBlockModel *m_model = nullptr;
-    OPCUADataDelegate *m_delegate = nullptr;
+  QLineEdit *m_searchEdit;
+  QComboBox *m_typeFilter;
+  QStatusBar *m_statusBar;
+  QProgressBar *m_progressBar;
+
+  QString m_currentIp;
+  QString m_currentOPCUADataBlock;
+
+  OPCUADataBlockModel *m_model = nullptr;
+  OPCUADataDelegate *m_delegate = nullptr;
+
+  int headerHeight = -1;
+  QModelIndex lastSelectIdx;
+  bool initializeStatus = false;
+};
+
+class SpecialTreeView : public QTreeView {
+  Q_OBJECT
+
+public:
+  explicit SpecialTreeView(QWidget *parent = nullptr);
+  ~SpecialTreeView();
+
+  //  get function
+  void getModel(OPCUADataBlockModel *model);
+  void getDelegate(OPCUADataDelegate *delegate);
+  QTreeView *getTableView() { return this; }
+  QWidget *getView() { return this; }
+  //  set function
+  void setHeaderHeight(int height);
+
+  QModelIndex findIndexByNode(TreeNode *node, int column) const;
+  QModelIndex findIndexByY(const QModelIndex &parent, int &currentY,
+                           int targetY, int targetX);
+  QModelIndex mapVisualRowToModelIndex(const QModelIndex &parent,
+                                       int targetVisualRow, int targetCol,
+                                       int &currentVisualRow);
+  QModelIndex mapVisualRowToModelIndex(const QModelIndex &parent,
+                                       int targetVisualRow, int targetCol);
+  QModelIndex indexAt(const QPoint &pos) const override;
+
+  int calculateColumnAtX(int x) const;
+
+  int getDepth(const QModelIndex &index);
+
+private:
+  int headerHeight = -1;
+  OPCUADataBlockModel *m_model = nullptr;
+  OPCUADataDelegate *m_delegate = nullptr;
+
+  mutable QPoint m_cachedPos;
+  mutable QModelIndex m_cachedIndex;
+  mutable qint64 m_lastCacheTime = 0;
+  mutable int m_hitCount = 0;
 };
 
 //  responsibility : Coordinating business interactions
@@ -565,4 +638,33 @@ private:
     std::shared_ptr<OPCUADataBlockBuilder> m_builder;
     std::vector<std::shared_ptr<OPCUADeviceReader>> m_readerVector;
     std::unique_ptr<OPCUADataBlockController> m_controller;
+};
+
+class MyApplication : public QApplication
+{
+    Q_OBJECT
+public:
+    MyApplication(int &argc, char **argv) : QApplication(argc, argv) {}
+
+    bool notify(QObject *receiver, QEvent *event) override
+    {
+        // 核心：在事件被分发到目标对象之前进行拦截
+        if (event->type() == QEvent::MouseButtonPress || 
+            event->type() == QEvent::MouseMove || 
+            event->type() == QEvent::Paint) 
+        {
+            qDebug() << "------ Event Dispatched ------";
+            qDebug() << "Event Type:" << event->type();
+            qDebug() << "Receiver Object:" << receiver->metaObject()->className();
+            
+            // 如果是鼠标事件，可以打印更多细节
+            if (event->type() == QEvent::MouseButtonPress) {
+                QMouseEvent *mouseEvent = static_cast<QMouseEvent*>(event);
+                qDebug() << "Mouse Press Position:" << mouseEvent->pos();
+            }
+        }
+
+        // 调用父类的notify，保证事件的正常处理
+        return QApplication::notify(receiver, event);
+    }
 };

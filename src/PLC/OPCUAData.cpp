@@ -430,7 +430,7 @@ bool OPCUADeviceReader::onRequestBuildOPCUA(const std::string& ip_Address,
     m_identifier = ip_Address + "-" + "OPC_UA";
     m_opcUA = std::make_unique<OPCUA_Access>(ip_Address, nameSpace, port);
     
-    auto result = m_opcUA->reconnect(5, 1000);
+    auto result = m_opcUA->reconnect(1, 1000);
     if (result.is_fail()) {
         std::cout << "OPCUA Connect fail , reason : " << result.unwrap_err().what() << std::endl;
         return false;
@@ -644,71 +644,43 @@ void OPCUADataBlockModel::setOPCUADataBlock(std::shared_ptr<OPCUADataBlock> &blo
     beginResetModel(); // 告诉 View 准备完全重置
     m_OPCUADataBlock = block;
     buildTree();
+    rebuildVisualRowMap();
     printTreeNode(m_rootNode.get());
     endResetModel(); // View 会自动重新读取所有数据
     // 在你的代码中调用
     // simulateTreeViewCalls();
 }
 
-void OPCUADataBlockModel::simulateTreeViewCalls() {
-  qDebug() << "\n=== Simulating TreeView Calls ===";
-
-  // 1. 获取顶层索引
-  QModelIndex rootIdx;
-  int topRows = this->rowCount(rootIdx);
-  qDebug() << "Top rows:" << topRows;
-
-  for (int row = 0; row < topRows; row++) {
-    QModelIndex topIdx = this->index(row, 0, rootIdx);
-    qDebug() << "\nTop node[" << row << "]:" << this->data(topIdx).toString();
-
-    // 2. 检查是否有子节点（View 会调用这个）
-    bool hasKids = this->hasChildren(topIdx);
-    qDebug() << "  hasChildren:" << hasKids;
-
-    // 3. 如果有子节点，获取它们
-    if (hasKids) {
-      int childRows = this->rowCount(topIdx);
-      qDebug() << "  child count:" << childRows;
-
-      for (int childRow = 0; childRow < childRows && childRow < 5; childRow++) {
-        QModelIndex childIdx = this->index(childRow, 0, topIdx);
-        qDebug() << "    child[" << childRow
-                 << "]:" << this->data(childIdx).toString()
-                 << "hasChildren:" << this->hasChildren(childIdx);
-      }
-    }
-  }
-}
-
 // ==================== QAbstractTableModel 接口 ====================
 QModelIndex OPCUADataBlockModel::index(int row, int column,
                                        const QModelIndex &parent) const {
-  if (!hasIndex(row, column, parent))
-    return QModelIndex();
+    if (!hasIndex(row, column, parent))
+        return QModelIndex();
 
-  TreeNode *parentNode = parent.isValid()
-                             ? static_cast<TreeNode *>(parent.internalPointer())
-                             : m_rootNode.get();
+    TreeNode *parentNode = parent.isValid()
+                               ? static_cast<TreeNode *>(parent.internalPointer())
+                               : m_rootNode.get();
 
-  if (!parentNode || row >= parentNode->children.size())
-    return QModelIndex();
+    if (!parentNode || row >= parentNode->children.size())
+        return QModelIndex();
 
-  return createIndex(row, column, parentNode->children[row]);
+    // ⚠️ 关键：这里创建索引时传入的指针是否正确？
+    TreeNode* childNode = parentNode->children[row];
+    QModelIndex result =
+        createIndex(row, column, childNode); // ← childNode 应该非空且有数据
+
+    return result;
 }
 
 QModelIndex OPCUADataBlockModel::parent(const QModelIndex &child) const {
-  if (!child.isValid())
-    return QModelIndex();
-
   TreeNode *childNode = static_cast<TreeNode *>(child.internalPointer());
+
   TreeNode *parentNode = childNode ? childNode->parent : nullptr;
 
-  // 没有父节点，或父节点是根节点 → 返回无效索引
-  if (!parentNode || parentNode == m_rootNode.get())
+  if (!parentNode || parentNode == m_rootNode.get()) {
     return QModelIndex();
+  }
 
-  // 获取父节点在其父节点（祖父节点）中的行号
   TreeNode *grandParent = parentNode->parent;
   int row = grandParent ? grandParent->children.indexOf(parentNode) : -1;
 
@@ -718,6 +690,62 @@ QModelIndex OPCUADataBlockModel::parent(const QModelIndex &child) const {
   return createIndex(row, 0, parentNode);
 }
 
+// QModelIndex OPCUADataBlockModel::parent(const QModelIndex &child) const {
+//     TreeNode *childNode = static_cast<TreeNode *>(child.internalPointer());
+    
+//     // 替换 qDebug 为 spdlog::debug
+//     spdlog::debug("[parent] childPtr: {} childParentPtr: {}", 
+//                   fmt::ptr(childNode), 
+//                   fmt::ptr(childNode ? childNode->parent : nullptr));
+
+//     TreeNode *parentNode = childNode ? childNode->parent : nullptr;
+
+//     if (!parentNode || parentNode == m_rootNode.get()) {
+//         spdlog::debug("[parent] returning ROOT");
+//         return QModelIndex();
+//     }
+
+//     TreeNode *grandParent = parentNode->parent;
+//     int row = grandParent ? grandParent->children.indexOf(parentNode) : -1;
+
+//     spdlog::debug("[parent] parentNode: {} grandParent: {} row in grandParent: {}", 
+//                   fmt::ptr(parentNode), 
+//                   fmt::ptr(grandParent), 
+//                   row);
+
+//     if (row < 0)
+//         return QModelIndex();
+
+//     return createIndex(row, 0, parentNode);
+// }
+
+// QModelIndex OPCUADataBlockModel::index(int row, int column,
+//                                        const QModelIndex &parent) const {
+//     if (!hasIndex(row, column, parent))
+//         return QModelIndex();
+
+//     TreeNode *parentNode = parent.isValid()
+//                                ? static_cast<TreeNode *>(parent.internalPointer())
+//                                : m_rootNode.get();
+
+//     if (!parentNode || row >= parentNode->children.size())
+//         return QModelIndex();
+
+//     TreeNode* childNode = parentNode->children[row];
+
+//     // 替换 qDebug 为 spdlog::debug
+//     spdlog::debug("[index] parent: {} parentPtr: {} row: {} col: {} childPtr: {} childData: {} childParentPtr: {}",
+//                   parent.isValid() ? parent.data().toString().toStdString() : "ROOT",
+//                   fmt::ptr(parentNode),
+//                   row,
+//                   column,
+//                   fmt::ptr(childNode),
+//                   childNode ? childNode->displayName.toStdString() : "NULL",
+//                   fmt::ptr(childNode ? childNode->parent : nullptr));
+
+//     return createIndex(row, column, childNode);
+// }
+
 int OPCUADataBlockModel::rowCount(const QModelIndex &parent) const {
   if (!parent.isValid()) {
     // 顶层节点数量
@@ -725,15 +753,16 @@ int OPCUADataBlockModel::rowCount(const QModelIndex &parent) const {
   }
 
   TreeNode *node = static_cast<TreeNode *>(parent.internalPointer());
+  int count = node ? node->children.size() : 0;
   return node ? node->children.size() : 0;
 }
 
 int OPCUADataBlockModel::columnCount(const QModelIndex &parent) const {
-  return 5; // 名称、类型、值、读取权限、注解
+  return 5; // 叶子节点有所有数据列
 }
 
 bool OPCUADataBlockModel::hasChildren(const QModelIndex &parent) const {
-  qDebug() << "=== hasChildren() called ===";
+  // qDebug() << "=== hasChildren() called ===";
 
   if (!parent.isValid()) {
     bool result = !m_rootNode->children.isEmpty();
@@ -751,136 +780,14 @@ bool OPCUADataBlockModel::hasChildren(const QModelIndex &parent) const {
 
   // 容器节点且有子节点才返回 true
   bool hasChild = (node->m_dataBlock == nullptr) && !node->children.isEmpty();
-  qDebug() << "  node:" << node->displayName
-           << "is container:" << (node->m_dataBlock == nullptr)
-           << "children count:" << node->children.size()
-           << "hasChildren:" << hasChild;
+  // qDebug() << "  node:" << node->displayName
+  //          << "is container:" << (node->m_dataBlock == nullptr)
+  //          << "children count:" << node->children.size()
+  //          << "hasChildren:" << hasChild
+  //          << " its index : "<<parent;
 
   return hasChild;
 }
-
-// QVariant OPCUADataBlockModel::data(const QModelIndex &index, int role) const {
-//   if (!index.isValid())
-//     return QVariant();
-
-//   if (index.row() >= m_OPCUADataBlock->getVariableVectorSize()) {
-//     return QVariant();
-//   }
-
-//   // 获取数据（注意：这里需要非const引用，因为可能需要在DisplayRole中读取）
-//   std::vector<OPCUAModernDataStruct> &items = m_OPCUADataBlock->getVariabeDataVector();
-//   OPCUAModernDataStruct &item = items[index.row()];
-
-//   TreeNode *node = static_cast<TreeNode *>(index.internalPointer());
-
-//   // EditRole - 返回原始数据用于编辑
-//   if (role == Qt::EditRole) {
-//     switch (index.column()) {
-//     case 0: // Name 列
-//       return QString::fromStdString(node->m_dataBlock->variable_name);
-
-//     case 1: // Data Type 列（只读）
-//       return static_cast<int>(node->m_dataBlock->data_type_enum);
-
-//     case 2: // limit of authority 列（只读）
-//       return node->m_dataBlock->access_level;
-
-//     case 3: // Value 列 - 根据数据类型返回原始值
-//       switch (node->m_dataBlock->data_type_enum) {
-//       case S7DataType::BOOL:
-//         return node->m_dataBlock->data_pointer->get<bool>();
-//       case S7DataType::BYTE:
-//         return node->m_dataBlock->data_pointer->get<uint8_t>();
-//       case S7DataType::INT:
-//         return node->m_dataBlock->data_pointer->get<int16_t>();
-//       case S7DataType::DINT:
-//         return node->m_dataBlock->data_pointer->get<int32_t>();
-//       case S7DataType::WORD:
-//         return node->m_dataBlock->data_pointer->get<uint16_t>();
-//       case S7DataType::DWORD:
-//         return node->m_dataBlock->data_pointer->get<uint32_t>();
-//       case S7DataType::UDINT:
-//         return node->m_dataBlock->data_pointer->get<uint32_t>();
-//       case S7DataType::REAL:
-//         return node->m_dataBlock->data_pointer->get<float>();
-//       case S7DataType::STRING:
-//         return QString::fromStdString(node->m_dataBlock->data_pointer->get<std::string>());
-//       default:
-//         return node->m_dataBlock->data_pointer->get<QVariant>();
-//       }
-
-//     case 4: // Comment 列
-//       return QString::fromStdString(node->m_dataBlock->description);
-
-//     default:
-//       return QVariant();
-//     }
-//   }
-
-//   // DisplayRole - 返回格式化的显示数据
-//   if (role == Qt::DisplayRole) {
-//     switch (index.column()) {
-//     case 0: // Name 列
-//       return QString::fromStdString(node->m_dataBlock->variable_name);
-
-//     case 1: // Data Type 列
-//     {
-//       auto it = S7DataTypeToString.find(node->m_dataBlock->data_type_enum);
-//       if (it != S7DataTypeToString.end()) {
-//         return QString::fromStdString(it->second);
-//       }
-//       return QString::fromStdString("UNKNOWN");
-//     }
-
-//     case 2: // limit of authority 列
-//       return node->m_dataBlock->access_level;
-
-//     case 3: // Value 列 - 格式化显示
-//       switch (node->m_dataBlock->data_type_enum) {
-//       case S7DataType::BOOL:
-//         return node->m_dataBlock->data_pointer->get<bool>() ? "true" : "false";
-
-//       case S7DataType::BYTE:
-//         return QString::number(node->m_dataBlock->data_pointer->get<uint8_t>());
-
-//       case S7DataType::INT:
-//         return QString::number(node->m_dataBlock->data_pointer->get<int16_t>());
-
-//       case S7DataType::DINT:
-//         return QString::number(node->m_dataBlock->data_pointer->get<int32_t>());
-
-//       case S7DataType::WORD:
-//         return QString::number(node->m_dataBlock->data_pointer->get<uint16_t>());
-
-//       case S7DataType::DWORD:
-//         return QString("0x%1").arg(node->m_dataBlock->data_pointer->get<uint32_t>(), 8, 16,
-//                                    QChar('0'));
-
-//       case S7DataType::UDINT:
-//         return QLocale(QLocale::English)
-//             .toString(node->m_dataBlock->data_pointer->get<uint32_t>());
-//         // 结果示例： "1,234,567" 而不是 "1234567"
-
-//       case S7DataType::REAL:
-//         return QString::number(node->m_dataBlock->data_pointer->get<float>(), 'f', 6);
-
-//       case S7DataType::STRING:
-//         return QString::fromStdString(node->m_dataBlock->data_pointer->get<std::string>());
-
-//       default:
-//         return QString::fromStdString(node->m_dataBlock->data_pointer->get<std::string>());
-//       }
-
-//     case 4: // Comment 列
-//       return QString::fromStdString(node->m_dataBlock->description);
-
-//     default:
-//       return QVariant();
-//     }
-//   }
-
-//   return QVariant();
-// }
 
 QVariant OPCUADataBlockModel::data(const QModelIndex &index, int role) const {
   if (!index.isValid())
@@ -1126,14 +1033,14 @@ bool OPCUADataBlockModel::setData(const QModelIndex& index, const QVariant& valu
         return true;
     }
     
-    if (index.column() == 4) { // Comment 列
-        node->m_dataBlock->description = value.toString().toStdString();
-        emit dataChanged(index, index, {Qt::DisplayRole});
-        return true;
-    }
+    // if (index.column() == 4) { // Comment 列
+    //     node->m_dataBlock->description = value.toString().toStdString();
+    //     emit dataChanged(index, index, {Qt::DisplayRole});
+    //     return true;
+    // }
     
     // Data Block Number 和 OffReset_Value 列通常只读，不允许编辑
-    if (index.column() == 0 || index.column() == 1 || index.column() == 2) {
+    if (index.column() == 0 || index.column() == 1 || index.column() == 2 || index.column() == 4) {
         return false; // 只读
     }
     
@@ -1170,7 +1077,8 @@ Qt::ItemFlags OPCUADataBlockModel::flags(const QModelIndex &index) const {
     return Qt::NoItemFlags;
 
   TreeNode *node = static_cast<TreeNode *>(index.internalPointer());
-  if (node->m_dataBlock && index.column() == 1) {
+  if (node->m_dataBlock && index.column() == 3 &&
+      node->children.isEmpty()) { // 关键：检查是否有子节点
     return Qt::ItemIsEnabled | Qt::ItemIsSelectable | Qt::ItemIsEditable;
   }
 
@@ -1448,15 +1356,51 @@ QModelIndex OPCUADataBlockModel::indexFromNode(TreeNode *node,
   return createIndex(row, column, node); // 存储节点指针作为内部ID
 }
 
-void OPCUADataBlockModel::buildTree(TreeNode* parent) {
-  if(!m_rootNode)
-  {
+void OPCUADataBlockModel::rebuildVisualRowMap() {
+  m_visualRowMap.clear();
+  int currentRow = 0;
+  buildVisualRowMapRecursive(m_rootNode.get(), currentRow);
+  m_visualRowMapValid = true;
+
+  qDebug() << "Visual row map built with" << m_visualRowMap.size() << "entries";
+}
+
+void OPCUADataBlockModel::buildVisualRowMapRecursive(TreeNode *node,
+                                                     int &currentRow) {
+  if (!node)
+    return;
+
+  // 记录当前节点的视觉行号（跳过根节点）
+  if (node != m_rootNode.get()) {
+    m_visualRowMap[currentRow] = node;
+    currentRow++;
+  }
+
+  // 递归处理子节点
+  for (TreeNode *child : node->children) {
+    buildVisualRowMapRecursive(child, currentRow);
+  }
+}
+
+TreeNode *OPCUADataBlockModel::getNodeByVisualRow(int visualRow) const {
+  if (!m_visualRowMapValid) {
+    return nullptr;
+  }
+  return m_visualRowMap.value(visualRow, nullptr);
+}
+
+TreeNode *OPCUADataBlockModel::getRootNode()
+{
+  return m_rootNode.get();
+}
+
+void OPCUADataBlockModel::buildTree(TreeNode *parent) {
+  if (!m_rootNode) {
     m_rootNode = std::make_shared<TreeNode>();
     m_rootNode->displayName = "Root";
   }
 
-  for(auto &element : m_OPCUADataBlock->getVariabeDataVector())
-  {
+  for (auto &element : m_OPCUADataBlock->getVariabeDataVector()) {
     //  special node skip it
     if (element.filter_reason != "" ||
         m_parentNodeIDMap.find(QString::fromStdString(element.variable_name)) !=
@@ -1470,20 +1414,16 @@ void OPCUADataBlockModel::buildTree(TreeNode* parent) {
     parentName = getParentName(element);
     // DB....Test,Motor,Array_Template
     auto it = m_parentNodeIDMap.find(QString::fromStdString(parentName));
-    if(it != m_parentNodeIDMap.end() )
-    {
+    if (it != m_parentNodeIDMap.end()) {
       //  find it !
       parent = it.value();
-    }
-    else
-    {
+    } else {
       //  can not find it ! mean we need build parent Node in Map fisrt
       parent = createPlaceholderNode(parentName);
     }
-    
+
     TreeNode *varNode = new TreeNode();
-    if(element.array_dimension == -1)
-    {
+    if (element.array_dimension == -1) {
       varNode->m_dataBlock = &element;
     }
     //  Array_Template do not need set m_dataBlock
@@ -1496,12 +1436,51 @@ void OPCUADataBlockModel::buildTree(TreeNode* parent) {
   }
 }
 
+// TreeNode *
+// OPCUADataBlockModel::createPlaceholderNode(const std::string &parentName) {
+//   if (m_parentNodeIDMap.find(QString::fromStdString(parentName)) !=
+//       m_parentNodeIDMap.end()) {
+//         //  mean the parent node has exist 
+//         return nullptr;
+//   }
+
+//   //  get parent data block
+//   auto parentPointer = findOPCUADataStruct(parentName);
+//   if (parentPointer) {
+//     //  generate parent node by parent data block when the parent node do not exist in parent map
+//     auto gradParentPointer = createPlaceholderNode(getParentName(*parentPointer));
+
+//     TreeNode *placeholder = new TreeNode();
+//     placeholder->displayName = QString::fromStdString(parentName);
+//     m_parentNodeIDMap[placeholder->displayName] = placeholder;
+//     if(!gradParentPointer)
+//     {
+//       //  mean the gradparent node has exist , need find by map
+//       placeholder->parent = m_parentNodeIDMap[QString::fromStdString(
+//           getParentName(*parentPointer))];
+//     }
+//     else
+//     {
+//       placeholder->parent = gradParentPointer;
+//     }
+//      placeholder->parent ->children.append(placeholder);
+//     return placeholder;
+//   }
+//   else
+//   {
+//     //  find node result -> nullptr means the node is root node (DB......)
+//     m_rootNode->displayName = QString::fromStdString(parentName);
+//     m_parentNodeIDMap[m_rootNode->displayName] = m_rootNode.get();
+//     return m_rootNode.get();
+//   }
+// }
+
 TreeNode *
 OPCUADataBlockModel::createPlaceholderNode(const std::string &parentName) {
   if (m_parentNodeIDMap.find(QString::fromStdString(parentName)) !=
       m_parentNodeIDMap.end()) {
-        //  mean the parent node has exist 
-        return nullptr;
+    //  mean the parent node has exist
+    return nullptr;
   }
 
   TreeNode *placeholder = new TreeNode();
@@ -1509,23 +1488,20 @@ OPCUADataBlockModel::createPlaceholderNode(const std::string &parentName) {
   m_parentNodeIDMap[placeholder->displayName] = placeholder;
 
   //  get parent data block
-  auto parentPointer = findNode(parentName);
+  auto parentPointer = findOPCUADataStruct(parentName);
   if (parentPointer) {
-    //  generate parent node by parent data block when the parent node do not exist in parent map
-    auto gradParentPointer = createPlaceholderNode(getParentName(*parentPointer));
-    if(!gradParentPointer)
-    {
+    //  generate parent node by parent data block when the parent node do not
+    //  exist in parent map
+    auto gradParentPointer =
+        createPlaceholderNode(getParentName(*parentPointer));
+    if (!gradParentPointer) {
       //  mean the gradparent node has exist , need find by map
       placeholder->parent = m_parentNodeIDMap[QString::fromStdString(
           getParentName(*parentPointer))];
-    }
-    else
-    {
+    } else {
       placeholder->parent = gradParentPointer;
     }
-  }
-  else
-  {
+  } else {
     //  find node result -> nullptr means the node is root node (DB......)
     placeholder->parent = m_rootNode.get();
   }
@@ -1535,7 +1511,7 @@ OPCUADataBlockModel::createPlaceholderNode(const std::string &parentName) {
 }
 
 OPCUAModernDataStruct * 
-OPCUADataBlockModel::findNode(const std::string &targetName) {
+OPCUADataBlockModel::findOPCUADataStruct(const std::string &targetName) {
   for(auto &element : m_OPCUADataBlock->getVariabeDataVector()) 
   {
     if(element.variable_name == targetName)
@@ -1683,51 +1659,74 @@ void OPCUADataBlockBuilder::resetValueByTypeEnum(OPCUAModernDataStruct &data) {
 }
 
 //OPCUADelegate-----------------------------------------------------------
-QWidget* OPCUADataDelegate::createEditor(QWidget* parent, const QStyleOptionViewItem& option,
-                                      const QModelIndex& index) const {
-    if (index.column() == 3) { // Value 列
-        // 获取第1列（数据类型列）
-        QModelIndex typeIndex = index.sibling(index.row(), 1);
-        // 读取数据类型
-        S7DataType dataType = static_cast<S7DataType>(
-            typeIndex.data(Qt::EditRole).toInt());
-
-        switch (dataType) {
-        case S7DataType::BOOL:
-            return createBoolEditor(parent);
-        case S7DataType::BYTE:
-            return createNumberEditor(parent, S7DataType::BYTE);
-        case S7DataType::INT:
-            return createNumberEditor(parent, S7DataType::INT);
-        case S7DataType::DINT:
-            return createNumberEditor(parent, S7DataType::DINT);
-        case S7DataType::WORD:
-            return createNumberEditor(parent, S7DataType::WORD);
-        case S7DataType::DWORD:
-            return createHexEditor(parent,dataType);
-        case S7DataType::UDINT:
-            return createHexEditor(parent,dataType);
-        case S7DataType::REAL:
-            return createfloatEditor(parent);
-        case S7DataType::STRING:
-            return createStringEditor(parent);
-
-        default:
-            return createNumberEditor(parent, dataType);
-        }
+QWidget *OPCUADataDelegate::createEditor(QWidget *parent,
+                                         const QStyleOptionViewItem &option,
+                                         const QModelIndex &index) const {
+  if (index.column() == 3) { // Value 列
+    // 获取数据类型
+    TreeNode *node = static_cast<TreeNode *>(index.internalPointer());
+    if (!node || !node->m_dataBlock) {
+      qDebug() << "Node or dataBlock is null";
+      return QStyledItemDelegate::createEditor(parent, option, index);
     }
-    
-    // 其他列使用默认编辑器
-    return QStyledItemDelegate::createEditor(parent, option, index);
+    S7DataType dataType = node->m_dataBlock->data_type_enum;
+
+    QWidget* editor = nullptr;
+    switch (dataType) {
+    case S7DataType::BOOL:
+      editor = createBoolEditor(parent);
+      break;
+    case S7DataType::BYTE:
+      editor = createNumberEditor(parent, S7DataType::BYTE);
+      break;
+    case S7DataType::INT:
+      editor = createNumberEditor(parent, S7DataType::INT);
+      break;
+    case S7DataType::DINT:
+      editor = createNumberEditor(parent, S7DataType::DINT);
+      break;
+    case S7DataType::WORD:
+      editor = createNumberEditor(parent, S7DataType::WORD);
+      break;
+    case S7DataType::DWORD:
+      editor = createHexEditor(parent, dataType);
+      break;
+    case S7DataType::UDINT:
+      editor = createHexEditor(parent, dataType);
+      break;
+    case S7DataType::REAL:
+      editor = createfloatEditor(parent);
+      break;
+    case S7DataType::STRING:
+      editor = createStringEditor(parent);
+      break;
+    default:
+      editor = createNumberEditor(parent, dataType);
+      break;
+    }
+
+    return editor;
+  }
+
+  //  // 注释列使用文本编辑器
+  // if (index.column() == 4) {
+  //   QLineEdit *editor = new QLineEdit(parent);
+  //   editor->setGeometry(option.rect);
+  //   editor->setFixedSize(option.rect.width(), option.rect.height());
+  //   return editor;
+  // }
+
+  // 其他列使用默认编辑器
+  return QStyledItemDelegate::createEditor(parent, option, index);
 }
+
 
 void OPCUADataDelegate::setEditorData(QWidget* editor, const QModelIndex& index) const {
     QVariant value = index.data(Qt::EditRole);
     
     if (index.column() == 3) {
-        QModelIndex typeIndex = index.sibling(index.row(), 1);
-        S7DataType dataType = static_cast<S7DataType>(
-            typeIndex.data(Qt::EditRole).toInt());
+        TreeNode *node = static_cast<TreeNode *>(index.internalPointer());
+        S7DataType dataType = node->m_dataBlock->data_type_enum;
 
         switch (dataType) {
         case S7DataType::BOOL: {
@@ -1787,10 +1786,8 @@ void OPCUADataDelegate::setEditorData(QWidget* editor, const QModelIndex& index)
 void OPCUADataDelegate::setModelData(QWidget* editor, QAbstractItemModel* model,
                                   const QModelIndex& index) const {
     if (index.column() == 3) {
-        QModelIndex typeIndex = index.sibling(index.row(), 1);
-        S7DataType dataType = static_cast<S7DataType>(
-            typeIndex.data(Qt::EditRole).toInt());
-        
+        TreeNode *node = static_cast<TreeNode *>(index.internalPointer());
+        S7DataType dataType = node->m_dataBlock->data_type_enum;
         QVariant value;
         
         switch (dataType) {
@@ -1954,27 +1951,48 @@ QWidget* OPCUADataDelegate::createNumberEditor(QWidget* parent, S7DataType dataT
     return spinBox;
 }
 
-void OPCUADataDelegate::paint(QPainter *painter,
-                           const QStyleOptionViewItem &option,
-                           const QModelIndex &index) const {
-  // 复制选项
-  QStyleOptionViewItem opt = option;
 
-  // 设置文本对齐方式为居中
+void OPCUADataDelegate::paint(QPainter *painter,
+                              const QStyleOptionViewItem &option,
+                              const QModelIndex &index) const {
+
+  QStyleOptionViewItem opt = option; // ✅ 从传入的 option 复制
   opt.displayAlignment = Qt::AlignCenter;
 
-  // 调用基类绘制
+  if (index.column() == 3 && index.row() == 0 && !index.parent().isValid()) {
+    // qDebug() << "ROOT col3 painted!  WHY?";
+    // painter->fillRect(opt.rect, Qt::red); // 红色背景
+    return;                               // 不调用父类
+  }
+
+  // ✅ 不调用父类的 paint，直接绘制
+  // 或者调用父类但传入完全重建的 opt
   QStyledItemDelegate::paint(painter, opt, index);
 }
 
 //OPCUAView-----------------------------------------------------------------
 OPCUADataBlockView::OPCUADataBlockView(QWidget *parent) {
   setupUI();
-  initializeConnection();
+  buildConnection();
 };
 
 OPCUADataBlockView::~OPCUADataBlockView() {
   std::cout << "~OPCUADataBlockView call" << std::endl;
+}
+
+void OPCUADataBlockView::getModel(OPCUADataBlockModel *model) {
+  m_model = model;
+  treeView->getModel(model);
+}
+void OPCUADataBlockView::getDelegate(OPCUADataDelegate *delegate) {
+  m_delegate = delegate;
+  treeView->getDelegate(delegate);
+}
+void OPCUADataBlockView::setModel() {
+  treeView->setModel(m_model); // 2. 设置列宽（必须在设置模型后）
+}
+void OPCUADataBlockView::setDelegate() {
+  treeView->setItemDelegate(m_delegate);
 }
 
 void OPCUADataBlockView::setupUI() {
@@ -2005,11 +2023,28 @@ void OPCUADataBlockView::setupUI() {
     // m_tableView->setEditTriggers(QAbstractItemView::EditKeyPressed);
     // m_tableView->setSelectionMode(QAbstractItemView::ExtendedSelection);
     // m_tableView->setSortingEnabled(true);
-    treeView = new QTreeView;
-    treeView->setAlternatingRowColors(true);
-    treeView->setAnimated(true);  // 展开/折叠动画
+    treeView = new SpecialTreeView();
+    treeView->setUniformRowHeights(true); // 优化性能
+    treeView->setRootIsDecorated(true);   // 显示展开/折叠图标
+    treeView->setAlternatingRowColors(true); // 斑马条纹，提升可读性
     treeView->setIndentation(20); // 设置缩进
-    treeView->expandAll(); // 展开所有节点，验证是否都能正常显示
+    treeView->setAutoScroll(false);
+    treeView->setSelectionBehavior(QAbstractItemView::SelectItems);
+    treeView->setSelectionMode(QAbstractItemView::SingleSelection); // 单选
+    // treeView->setEditTriggers(
+    //     QAbstractItemView::DoubleClicked |
+    //     QAbstractItemView::EditKeyPressed); // 编辑触发方式
+    treeView->setEditTriggers(QAbstractItemView::DoubleClicked // 只保留双击
+                              // 移除 EditKeyPressed
+                              // 确保不包含 CurrentChanged 和 SelectedClicked
+    );
+
+    treeView->header()->setDefaultAlignment(Qt::AlignCenter);
+    treeView->header()->setStretchLastSection(true); // 最后一列填充剩余空间
+    QFont font = treeView->font();
+    font.setPointSize(25); // 放大字体
+    treeView->setFont(font);
+    
 
     // 状态栏
     m_statusBar = new QStatusBar();
@@ -2071,7 +2106,540 @@ void OPCUADataBlockView::importFile() {
     }
 }
 
-void OPCUADataBlockView::initializeConnection()
+void OPCUADataBlockView::onRowdoubleClicked(const QModelIndex &index) 
+{
+
+}
+
+void OPCUADataBlockView::validateTreeStructure() {
+  qDebug() << "========================================";
+  qDebug() << "=== 开始验证树结构（增强版） ===";
+  qDebug() << "========================================";
+
+  int nodeCount = 0;
+  int leafCount = 0;
+  int errorCount = 0;
+  int depthLevels = 0;
+
+  std::function<void(const QModelIndex &, int)> traverse =
+      [&](const QModelIndex &parent, int depth) {
+        depthLevels = std::max(depthLevels, depth);
+        int rows = m_model->rowCount(parent);
+
+        for (int row = 0; row < rows; row++) {
+          QModelIndex idx = m_model->index(row, 0, parent);
+          if (!idx.isValid()) {
+            qDebug() << "❌ 错误：无效索引 at row:" << row << "depth:" << depth;
+            errorCount++;
+            continue;
+          }
+
+          nodeCount++;
+
+          TreeNode *node = static_cast<TreeNode *>(idx.internalPointer());
+          QString indent = QString(" ").repeated(depth * 2);
+
+          // 获取节点信息
+          QString nodeName = idx.data().toString();
+          bool hasData = (node && node->m_dataBlock != nullptr);
+          bool hasChildren = m_model->hasChildren(idx);
+          int childCount = m_model->rowCount(idx);
+
+          // 获取内部指针信息
+          quint64 internalPtr =
+              reinterpret_cast<quint64>(idx.internalPointer());
+          quint64 parentPtr = 0;
+          if (node && node->parent) {
+            parentPtr = reinterpret_cast<quint64>(node->parent);
+          }
+
+          // 获取节点类型（如果有 dataBlock）
+          QString dataType = "无数据";
+          quint64 dataPtr = 0;
+          if (hasData && node->m_dataBlock) {
+            dataType = QString::fromStdString(node->m_dataBlock->data_type);
+            dataPtr = reinterpret_cast<quint64>(node->m_dataBlock);
+          }
+
+          // 特殊标记：如果节点有数据但不是叶子节点（有子节点），这是一个严重问题
+          bool invalidState = (hasData && hasChildren);
+          if (invalidState) {
+            qDebug() << "";
+            qDebug().noquote()
+                << indent + "⚠️⚠️⚠️ 警告：节点同时有数据和孩子！⚠️⚠️⚠️";
+            errorCount++;
+          }
+
+          // 打印节点信息
+          QString nodeInfo = QString("%1[%2] row:%3 col:0 name:\"%4\" %5")
+                                 .arg(indent)
+                                 .arg(nodeCount)
+                                 .arg(row)
+                                 .arg(nodeName)
+                                 .arg(invalidState ? "❌【异常节点】" : "");
+
+          qDebug().noquote() << nodeInfo;
+          qDebug().noquote() << indent + "  ├─ internalPtr : 0x" +
+                                    QString::number(internalPtr, 16);
+          qDebug().noquote() << indent + "  ├─ parentPtr   : 0x" +
+                                    QString::number(parentPtr, 16);
+          qDebug().noquote() << indent + "  ├─ hasData     : " +
+                                    QString(hasData ? "true" : "false");
+          qDebug().noquote() << indent + "  ├─ dataType    : " + dataType;
+          qDebug().noquote() << indent + "  ├─ dataPtr     : 0x" +
+                                    QString::number(dataPtr, 16);
+          qDebug().noquote() << indent + "  ├─ hasChildren : " +
+                                    QString(hasChildren ? "true" : "false");
+          qDebug().noquote()
+              << indent + "  └─ childCount  : " + QString::number(childCount);
+
+          // 统计叶子节点（应该有数据的节点）
+          if (!hasChildren && hasData) {
+            leafCount++;
+          }
+
+          // 打印所有列的数据
+          for (int col = 0; col < m_model->columnCount(parent); col++) {
+            QModelIndex colIdx = m_model->index(row, col, parent);
+            if (colIdx.isValid()) {
+              QVariant data = colIdx.data(Qt::DisplayRole);
+              qDebug().noquote()
+                  << indent + "     col" + QString::number(col) + " : "
+                  << data.toString();
+            } else {
+              qDebug().noquote()
+                  << indent + "     ❌ 列" + QString::number(col) + "无效";
+              errorCount++;
+            }
+          }
+
+          qDebug() << "";
+
+          // 递归子节点
+          if (hasChildren) {
+            traverse(idx, depth + 1);
+          }
+        }
+      };
+
+  traverse(QModelIndex(), 0);
+
+  qDebug() << "========================================";
+  qDebug() << "=== 验证结果统计 ===";
+  qDebug() << "总节点数        : " << nodeCount;
+  qDebug() << "数据叶子节点数  : " << leafCount;
+  qDebug() << "最大深度        : " << depthLevels;
+  qDebug() << "错误/警告数     : " << errorCount;
+  qDebug() << "========================================";
+
+  // 额外：打印 manualIdx 和 viewIdx 的对应关系提示
+  qDebug() << "";
+  qDebug() << "=== 提示 ===";
+  qDebug() << "注意：viewIdx 应该只包含数据叶子节点（无子节点）";
+  qDebug() << "如果发现节点同时有数据和子节点，说明树结构有问题";
+  qDebug() << "数据叶节点的 dataPtr 应该与 manualIdx 中的 internalPtr 一致";
+  qDebug() << "========================================";
+}
+
+void OPCUADataBlockView::printCallStack() {
+  // {
+  //   // 1. 创建堆栈跟踪对象
+  //   backward::StackTrace st;
+
+  //   // 2. 捕获当前堆栈，最多捕获32帧
+  //   st.load_here(32);
+
+  //   // 3. 创建打印器
+  //   backward::Printer p;
+
+  //   // 4. 打印到控制台 (qDebug也可以，但直接打印更清晰)
+  //   p.print(st);
+  // }
+
+   // 1. 创建堆栈跟踪对象
+    backward::StackTrace st;
+    st.load_here(32);
+    
+    // 2. 创建打印器并配置
+    backward::Printer p;
+    p.object = true;      // 打印对象地址
+    p.address = true;     // 打印地址
+    
+    // 3. 捕获到字符串流
+    std::stringstream ss;
+    p.print(st, ss);
+    
+    // 4. 写入 spdlog
+    spdlog::info("========== Call Stack ==========\n{}", ss.str());
+}
+
+// 添加调试代码验证
+void OPCUADataBlockView::selectCell(const QModelIndex &index) {
+  static QElapsedTimer lastCall;
+  static QModelIndex lastIndex;
+
+  qDebug() << "=== selectCell called at" << QTime::currentTime().toString();
+
+  if (lastIndex.isValid() && lastIndex == index && lastCall.elapsed() < 99) {
+    qDebug() << "WARNING: Duplicate selectCell call within 99ms!";
+  }
+  lastCall.start();
+  lastIndex = index;
+
+  // 临时断开所有信号
+  auto *selModel = treeView->selectionModel();
+  bool blocked = selModel->blockSignals(true);
+
+  QItemSelection selection(index, index);
+  selModel->select(selection, QItemSelectionModel::ClearAndSelect);
+
+  selModel->blockSignals(blocked);
+
+  // 验证选择
+  auto selected = selModel->selectedIndexes();
+  qDebug() << "Selected after (signals blocked):" << selected;
+
+  // 重新发出信号
+  selModel->selectionChanged(selection, QItemSelection());
+}
+
+bool OPCUADataBlockView::eventFilter(QObject *obj, QEvent *event) {
+  if (obj == treeView->viewport() &&
+      event->type() == QEvent::MouseButtonDblClick) {
+    QMouseEvent *mouseEvent = static_cast<QMouseEvent *>(event);
+
+    // 手动计算点击位置对应的索引
+    QModelIndex idx = manualIndexAt(mouseEvent->pos());
+    TreeNode *node = static_cast<TreeNode *>(idx.internalPointer());
+    if (node == nullptr || node->m_dataBlock == nullptr) {
+      return QWidget::eventFilter(obj, event);
+    }
+
+    // ✅ 关键验证：检查 column>0 时，parent() 是否能正确返回
+    if (idx.column() > 0) {
+      // 测试：通过这个索引获取父节点
+      QModelIndex parentCheck = idx.parent();
+      qDebug() << "=== index() final validation ===";
+      qDebug() << "  idx.isValid()=" << idx.isValid();
+      qDebug() << "  idx.row()=" << idx.row();
+      qDebug() << "  idx.column()=" << idx.column();
+      qDebug() << "  parentCheck.isValid()=" << parentCheck.isValid();
+      if (parentCheck.isValid()) {
+        qDebug() << "  parentCheck.row()=" << parentCheck.row();
+        qDebug() << "  parentCheck.column()=" << parentCheck.column();
+        qDebug() << "  parentCheck.data()=" << parentCheck.data().toString();
+      }
+
+      // 测试：通过这个索引获取数据
+      QVariant data = idx.data(Qt::DisplayRole);
+      qDebug() << "  data()=" << data.toString();
+    }
+
+    if (idx.column() == 3 || idx.column() == 4) {
+      // 调用 edit() 创建编辑器
+      treeView->edit(idx);
+      QPoint pos0(10, mouseEvent->pos().y()); // X=10 保证在第0列
+      QModelIndex idxCol0 = treeView->indexAt(pos0);
+
+      // 立即修正编辑器位置
+      QTimer::singleShot(0, this, [this, idx, idxCol0]() {
+        QWidget *editor = treeView->indexWidget(idx);
+        if (editor) {
+          // 基于第0列计算正确位置
+          QRect baseRect = treeView->visualRect(idxCol0);
+
+          if (baseRect.isValid()) {
+            int x = treeView->columnViewportPosition(idx.column());
+            int w = treeView->columnWidth(idx.column());
+            editor->setGeometry(x, baseRect.y(), w, baseRect.height());
+            qDebug() << "Fixed editor geometry to:" << editor->geometry();
+          }
+        }
+      });
+
+      return true;
+    }
+
+    return true; // 阻止信号继续传播
+  }
+
+  if (obj == treeView->viewport() && event->type() == QEvent::MouseButtonPress) {
+    {
+      if (headerHeight == -1) {
+        headerHeight = treeView->header()->height();
+        treeView->setHeaderHeight(headerHeight);
+      }
+
+      QMouseEvent *mouseEvent = static_cast<QMouseEvent *>(event);
+      QModelIndex idx = treeView->indexAt(mouseEvent->pos());
+      if (idx != lastSelectIdx) {
+        lastSelectIdx = idx;
+      } else {
+        if(idx.row() != -1 && idx.column() != -1)
+          return true;
+      }
+
+      TreeNode *node = static_cast<TreeNode *>(idx.internalPointer());
+      // ✅ 第0列：让 Qt 正常处理（展开/折叠、选择等）
+      if (!idx.isValid() || node == nullptr || node->m_dataBlock == nullptr) {
+        return QWidget::eventFilter(obj, event); // 交给 Qt 默认处理
+      }
+
+      QModelIndex parent = idx.parent(); // 保留 parent 用于子节点
+
+      {
+        QModelIndex col0Idx = m_model->index(idx.row(), 0, parent);
+
+        // if(!initializeStatus)
+        // {
+        //   auto *selModel = treeView->selectionModel();
+        //   connect(selModel, &QItemSelectionModel::selectionChanged, this,
+        //           [this](const QItemSelection &selected,
+        //                  const QItemSelection &deselected) {
+        //             qDebug() << "⚠️ selectionChanged SIGNAL!";
+        //             qDebug() << "  Selected:" << selected.indexes();
+        //             qDebug() << "  Deselected:" << deselected.indexes();
+
+        //             // 打印调用栈找出是谁触发的
+        //             this->printCallStack();
+        //           });
+        //   initializeStatus = true;
+        // }
+
+        if (col0Idx.isValid()) {
+          treeView->selectionModel()->clearSelection();
+
+          QTimer::singleShot(100, this, [this,col0Idx]() {
+            // 只选择第0列
+            treeView->selectionModel()->select(col0Idx,
+                                               QItemSelectionModel::Select);
+            this->treeView->viewport()->update();
+          });
+        }
+      }
+
+      return true;
+    }
+  }
+
+  return QWidget::eventFilter(obj, event);
+}
+
+
+QModelIndex OPCUADataBlockView::manualIndexAt(const QPoint &pos) {
+  if (headerHeight == -1) {
+    headerHeight = treeView->header()->height();
+    treeView->setHeaderHeight(headerHeight);
+  }
+  qDebug()<<"========OPCUADataBlockView::manualIndexAt===================";
+  qDebug() << "pos->X :" << pos.x() << "  pos->Y : " << pos.y();
+  // ✅ 获取滚动偏移
+  int scrollValue = treeView->verticalScrollBar()->value() ;
+  int rowHeight = treeView->fontMetrics().height() ;
+
+  //  滚动偏移 = 0 时 ， 坐标 低于 Header 高度，视为点击 Header
+  if (pos.y() < headerHeight) {
+    return QModelIndex();
+  }
+
+  // 计算全局行号
+  int relativeY;
+  relativeY = pos.y();
+  
+  //  calculate row position of mouse where is in
+  //  upperLimition should >=1
+  int upperLimition = 1;
+  while(1)
+  {
+    if(relativeY < headerHeight)
+    {
+      break;
+    } else {
+      if (upperLimition * rowHeight <= (relativeY-headerHeight)) {
+        ++upperLimition;
+      } else {
+        ++upperLimition;
+        break;
+      }
+    }
+  }
+
+  int visualRow = upperLimition - 1;               // 视口中的行号
+  int globalRow = scrollValue + visualRow; // 全局行号
+  qDebug() << "relativeY:" << relativeY << "pos.y():" << pos.y()
+           << "rowHeight:" << rowHeight<<"HeaderHeight:"<<headerHeight;
+  qDebug() << "scrollValue:" << scrollValue << "visualRow:" << visualRow
+           << "globalRow:" << globalRow;
+ 
+
+  // 通过映射表获取节点
+  TreeNode *node = m_model->getNodeByVisualRow(globalRow);
+  qDebug() << "select item :" << node->displayName
+           << " and its parent name :" << node->parent->displayName;
+  if (!node) {
+    qDebug() << "No node found for visual row:" << globalRow;
+    return QModelIndex();
+  }
+
+  // ✅ 动态计算列号
+  int col = calculateColumnAtX(pos.x());
+  if (col < 0) {
+    return QModelIndex();
+  }
+
+  QModelIndex returnIdx = findIndexByNode(node, col);
+  return returnIdx;
+}
+
+
+QModelIndex OPCUADataBlockView::findIndexByNode(TreeNode *node, int column) const {
+  if (!node || node == m_model->getRootNode()) {
+    return QModelIndex();
+  }
+
+  // 获取父节点
+  TreeNode *parentNode = node->parent;
+  if (!parentNode) {
+    return QModelIndex();
+  }
+
+  // 获取 node 在父节点中的行号
+  int row = parentNode->children.indexOf(node);
+  if (row < 0) {
+    return QModelIndex();
+  }
+
+  // 需要获取父节点的 QModelIndex
+  // 如果父节点是根节点，parentIdx 应该无效
+  QModelIndex parentIdx;
+
+  if (parentNode != m_model->getRootNode()) {
+    // 递归获取父节点的索引
+    parentIdx = findIndexByNode(parentNode, 0); // 获取父节点的第0列
+                                                // 在 manualIndexAt 中添加
+    if (!parentIdx.isValid()) {
+      return QModelIndex();
+    }
+  }
+
+  // 返回目标列的索引
+  return m_model->index(row, column, parentIdx);
+}
+
+QModelIndex OPCUADataBlockView::mapVisualRowToModelIndex(
+    const QModelIndex &parent, 
+    int targetVisualRow, 
+    int targetCol,
+    int &currentVisualRow) {
+    
+    int rows = m_model->rowCount(parent);
+    for (int row = 0; row < rows; row++) {
+        QModelIndex idx = m_model->index(row, targetCol, parent);
+        
+        // 检查当前视觉行是否匹配
+        if (currentVisualRow == targetVisualRow) {
+            return idx;
+        }
+        currentVisualRow++;
+        
+        // 如果节点展开，递归处理子节点
+        if (treeView->isExpanded(idx)) {
+            QModelIndex childIdx = mapVisualRowToModelIndex(
+                idx, targetVisualRow, targetCol, currentVisualRow);
+            if (childIdx.isValid()) {
+                return childIdx;
+            }
+        }
+    }
+    
+    return QModelIndex();
+}
+
+// 重载版本，方便调用
+QModelIndex OPCUADataBlockView::mapVisualRowToModelIndex(
+    const QModelIndex &parent, 
+    int targetVisualRow, 
+    int targetCol) {
+    
+    int currentVisualRow = 0;
+    return mapVisualRowToModelIndex(parent, targetVisualRow, targetCol, currentVisualRow);
+}
+
+QModelIndex OPCUADataBlockView::findIndexByY(const QModelIndex &parent,
+                                             int &currentY, int targetY,
+                                             int targetX) {
+    int rows = m_model->rowCount(parent);
+    int depth = getDepth(parent);
+    int indentX = depth * treeView->indentation();
+    
+    // ✅ 如果是根节点，跳过表头高度
+    int startY = currentY;
+    if (!parent.isValid()) {
+        startY = treeView->header()->height();
+    }
+    
+    for (int row = 0; row < rows; row++) {
+        QModelIndex idx = m_model->index(row, 0, parent);
+        if (!idx.isValid()) continue;
+        
+        QRect rect = treeView->visualRect(idx);
+        int rowHeight = rect.isValid() ? rect.height() : treeView->fontMetrics().height() + 2;
+        
+        // 计算这一行的实际 Y 坐标
+        int rowStartY = (row == 0 && !parent.isValid()) ? startY : currentY;
+        
+        // 检查目标Y是否在当前行内
+        if (targetY >= rowStartY && targetY < rowStartY + rowHeight) {
+            int currentX = indentX;
+            for (int col = 0; col < m_model->columnCount(parent); col++) {
+                int colWidth = treeView->columnWidth(col);
+                if (targetX >= currentX && targetX < currentX + colWidth) {
+                    return m_model->index(row, col, parent);
+                }
+                currentX += colWidth;
+            }
+            return QModelIndex();
+        }
+        
+        currentY = rowStartY + rowHeight;
+        
+        if (treeView->isExpanded(idx)) {
+            QModelIndex childIdx = findIndexByY(idx, currentY, targetY, targetX);
+            if (childIdx.isValid()) {
+                return childIdx;
+            }
+        }
+    }
+    
+    return QModelIndex();
+}
+
+int OPCUADataBlockView::calculateColumnAtX(int x) const {
+  int offset = 0;
+  int columnCount = m_model->columnCount();
+
+  for (int col = 0; col < columnCount; col++) {
+    int colWidth = treeView->columnWidth(col);
+    if (x >= offset && x < offset + colWidth) {
+      return col;
+    }
+    offset += colWidth;
+  }
+
+  return -1; // 没有找到对应的列
+}
+
+int OPCUADataBlockView::getDepth(const QModelIndex &index) {
+    int depth = 0;
+    QModelIndex parent = index.parent();
+    while (parent.isValid()) {
+        depth++;
+        parent = parent.parent();
+    }
+    return depth;
+}
+
+void OPCUADataBlockView::buildConnection()
 {
   connect(m_refreshBtn, &QPushButton::clicked, this,
           &OPCUADataBlockView::onRefreshClicked);
@@ -2089,6 +2657,9 @@ void OPCUADataBlockView::initializeConnection()
   //         &OPCUADataBlockView::onRowdoubleClicked);
   connect(treeView, &QTreeView::doubleClicked, this,
           &OPCUADataBlockView::onRowdoubleClicked);
+
+  treeView->viewport()->installEventFilter(this);
+ 
 }
 
 // 外部响应层回调
@@ -2109,6 +2680,8 @@ void OPCUADataBlockView::onConnectWithOPCUADataBlockView(QSplitter *splitter) {
   splitter->addWidget(this);
 };
 
+QTreeView *OPCUADataBlockView::getTableView() { return treeView; }
+QWidget *OPCUADataBlockView::getView() { return this; }
 
 //OPCUAController----------------------------------------------------------
 void OPCUADataBlockController::initialize(Scope *scope) {
@@ -2493,4 +3066,251 @@ bool OPCUADataBlockManager::buildDataFromFile(const QString &ip_Address,const QS
   {
     return true;
   }
+}
+
+//SpecialTreeView------------------------------------------------
+SpecialTreeView::SpecialTreeView(QWidget *parent) {
+ 
+};
+
+SpecialTreeView::~SpecialTreeView() {
+  std::cout << "~SpecialTreeView call" << std::endl;
+}
+
+QModelIndex SpecialTreeView::indexAt(const QPoint &pos) const {
+  {
+    qint64 currentTime = QDateTime::currentMSecsSinceEpoch();
+
+    // 缓存策略：同一位置 100ms 内直接返回缓存
+    if (std::abs(pos.y() - m_cachedPos.y()) <= 3 &&
+        std::abs(pos.x() - m_cachedPos.x()) <= 3 &&
+        (currentTime - m_lastCacheTime) < 1000) {
+      m_hitCount++;
+      if (m_hitCount % 10 == 0) {
+        qDebug() << "indexAt cache hit:" << m_hitCount << "times";
+      }
+      return m_cachedIndex;
+    }
+
+    // 实际计算
+    m_hitCount = 0;
+    m_cachedPos = pos;
+    m_cachedIndex = QTreeView::indexAt(pos);
+    m_lastCacheTime = currentTime;
+  }
+
+  qDebug() << "======SpecialTreeView::indexAt=================" ;
+  qDebug() << "pos->X :" << pos.x() << "  pos->Y : " << pos.y();
+  // ✅ 获取滚动偏移
+  int scrollValue = this->verticalScrollBar()->value();
+  int rowHeight = this->fontMetrics().height();
+
+  //  滚动偏移 = 0 时 ， 坐标 低于 Header 高度，视为点击 Header
+  if (pos.y() < headerHeight) {
+    return QModelIndex();
+    }
+
+    // 计算全局行号
+    int relativeY;
+    relativeY = pos.y();
+
+    //  calculate row position of mouse where is in
+    //  upperLimition should >=1
+    int upperLimition = 1;
+    while (1) {
+      if (relativeY < headerHeight) {
+        break;
+      } else {
+        if (upperLimition * rowHeight <= (relativeY - headerHeight)) {
+          ++upperLimition;
+        } else {
+          ++upperLimition;
+          break;
+        }
+      }
+    }
+
+    int visualRow = upperLimition - 1;       // 视口中的行号
+    int globalRow = scrollValue + visualRow; // 全局行号
+    qDebug() << "pos.y():" << pos.y()
+             << "rowHeight:" << rowHeight << "HeaderHeight:" << headerHeight;
+    qDebug() << "scrollValue:" << scrollValue << "visualRow:" << visualRow
+             << "globalRow:" << globalRow;
+
+    // 通过映射表获取节点
+    TreeNode *node = m_model->getNodeByVisualRow(globalRow);
+    qDebug() << "select item :" << node->displayName
+             << " and its parent name :" << node->parent->displayName;
+    if (!node) {
+      qDebug() << "No node found for visual row:" << globalRow;
+      return QModelIndex();
+    }
+
+    // ✅ 动态计算列号
+    int col = calculateColumnAtX(pos.x());
+    if (col < 0) {
+      return QModelIndex();
+    }
+
+    QModelIndex returnIdx = findIndexByNode(node, col);
+    return returnIdx;
+  }
+
+QModelIndex SpecialTreeView::findIndexByNode(TreeNode *node, int column) const {
+  if (!node || node == m_model->getRootNode()) {
+    return QModelIndex();
+  }
+
+  // 获取父节点
+  TreeNode *parentNode = node->parent;
+  if (!parentNode) {
+    return QModelIndex();
+  }
+
+  // 获取 node 在父节点中的行号
+  int row = parentNode->children.indexOf(node);
+  if (row < 0) {
+    return QModelIndex();
+  }
+
+  // 需要获取父节点的 QModelIndex
+  // 如果父节点是根节点，parentIdx 应该无效
+  QModelIndex parentIdx;
+
+  if (parentNode != m_model->getRootNode()) {
+    // 递归获取父节点的索引
+    parentIdx = findIndexByNode(parentNode, 0); // 获取父节点的第0列
+                                                // 在 manualIndexAt 中添加
+    if (!parentIdx.isValid()) {
+      return QModelIndex();
+    }
+  }
+
+  // 返回目标列的索引
+  return m_model->index(row, column, parentIdx);
+}
+
+QModelIndex SpecialTreeView::mapVisualRowToModelIndex(
+    const QModelIndex &parent, 
+    int targetVisualRow, 
+    int targetCol,
+    int &currentVisualRow) {
+    
+    int rows = m_model->rowCount(parent);
+    for (int row = 0; row < rows; row++) {
+        QModelIndex idx = m_model->index(row, targetCol, parent);
+        
+        // 检查当前视觉行是否匹配
+        if (currentVisualRow == targetVisualRow) {
+            return idx;
+        }
+        currentVisualRow++;
+        
+        // 如果节点展开，递归处理子节点
+        if (this->isExpanded(idx)) {
+            QModelIndex childIdx = mapVisualRowToModelIndex(
+                idx, targetVisualRow, targetCol, currentVisualRow);
+            if (childIdx.isValid()) {
+                return childIdx;
+            }
+        }
+    }
+    
+    return QModelIndex();
+}
+
+// 重载版本，方便调用
+QModelIndex SpecialTreeView::mapVisualRowToModelIndex(
+    const QModelIndex &parent, 
+    int targetVisualRow, 
+    int targetCol) {
+    
+    int currentVisualRow = 0;
+    return mapVisualRowToModelIndex(parent, targetVisualRow, targetCol, currentVisualRow);
+}
+
+QModelIndex SpecialTreeView::findIndexByY(const QModelIndex &parent,
+                                             int &currentY, int targetY,
+                                             int targetX) {
+    int rows = m_model->rowCount(parent);
+    int depth = getDepth(parent);
+    int indentX = depth * this->indentation();
+    
+    // ✅ 如果是根节点，跳过表头高度
+    int startY = currentY;
+    if (!parent.isValid()) {
+        startY = this->header()->height();
+    }
+    
+    for (int row = 0; row < rows; row++) {
+        QModelIndex idx = m_model->index(row, 0, parent);
+        if (!idx.isValid()) continue;
+        
+        QRect rect = this->visualRect(idx);
+        int rowHeight = rect.isValid() ? rect.height() : this->fontMetrics().height() + 2;
+        
+        // 计算这一行的实际 Y 坐标
+        int rowStartY = (row == 0 && !parent.isValid()) ? startY : currentY;
+        
+        // 检查目标Y是否在当前行内
+        if (targetY >= rowStartY && targetY < rowStartY + rowHeight) {
+            int currentX = indentX;
+            for (int col = 0; col < m_model->columnCount(parent); col++) {
+                int colWidth = this->columnWidth(col);
+                if (targetX >= currentX && targetX < currentX + colWidth) {
+                    return m_model->index(row, col, parent);
+                }
+                currentX += colWidth;
+            }
+            return QModelIndex();
+        }
+        
+        currentY = rowStartY + rowHeight;
+        
+        if (this->isExpanded(idx)) {
+            QModelIndex childIdx = findIndexByY(idx, currentY, targetY, targetX);
+            if (childIdx.isValid()) {
+                return childIdx;
+            }
+        }
+    }
+    
+    return QModelIndex();
+}
+
+int SpecialTreeView::calculateColumnAtX(int x) const {
+  int offset = 0;
+  int columnCount = m_model->columnCount();
+
+  for (int col = 0; col < columnCount; col++) {
+    int colWidth = this->columnWidth(col);
+    if (x >= offset && x < offset + colWidth) {
+      return col;
+    }
+    offset += colWidth;
+  }
+
+  return -1; // 没有找到对应的列
+}
+
+int SpecialTreeView::getDepth(const QModelIndex &index) {
+    int depth = 0;
+    QModelIndex parent = index.parent();
+    while (parent.isValid()) {
+        depth++;
+        parent = parent.parent();
+    }
+    return depth;
+}
+
+void SpecialTreeView::getModel(OPCUADataBlockModel *model) {
+  m_model = model;
+}
+
+void SpecialTreeView::getDelegate(OPCUADataDelegate *delegate) {
+  m_delegate = delegate;
+}
+
+void SpecialTreeView::setHeaderHeight(int height) {
+  this->headerHeight = height;
 }

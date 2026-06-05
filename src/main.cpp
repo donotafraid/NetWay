@@ -14,10 +14,38 @@
 
 int main(int argc, char *argv[]) {
   std::string file_path = "PLC_config.txt";
+  {
+   spdlog::set_pattern("[%Y-%m-%d %H:%M:%S.%e] [%^%l%$] %v");
+
+    // 2. 设置全局日志级别，低于此级别的日志不会被记录
+    spdlog::set_level(spdlog::level::debug); // 线上环境一般设为 info 或 warn
+
+    // 4. 创建异步、滚动的文件日志器
+    //    - "global_logger": 日志器的唯一标识名称
+    //    - "logs/app.log":  日志文件的基础路径和名称，实际文件会像 app.1.log,
+    //    app.2.log
+    //    - 1048576 * 5:     单个日志文件的最大大小，这里是5MB
+    //    - 3:               保留的日志文件数量，总占用 ≈ 5MB * 3 = 15MB
+    // 只传文件路径，不传额外参数
+    auto async_file_logger = spdlog::create<spdlog::sinks::basic_file_sink_st>(
+        "global_logger", // 日志器名称
+        "logs/app.log"   // 仅文件路径，文件会无限增长
+    );
+
+
+    // 5. (可选) 设置刷新策略，关键错误时立即刷新，防止数据丢失
+    async_file_logger->flush_on(spdlog::level::err);
+
+    // 6. 核心：将这个创建好的日志器设置为全局默认日志器
+    //    此后，所有 spdlog::xxx(...) 的调用都会使用这个日志器
+    spdlog::set_default_logger(async_file_logger);
+  }
+  spdlog::info("全局日志系统已启动！");
 
   //   ObjectRouter::instance().registerObject("config://dashboard/monitor_dashBoard",monitor_dashBoard);
 
   QApplication a(argc, argv);
+  // MyApplication a(argc,argv);
   // WidgetDestructionTracker::instance().install();
   auto registry = std::make_shared<prometheus::Registry>();
   std::shared_ptr<ServiceMetrics> metrics = std::make_shared<ServiceMetrics>(registry);
@@ -62,97 +90,3 @@ int main(int argc, char *argv[]) {
   spdlog::shutdown();
   return rc;
 }
-
-// ------------------------------------------------
-// int main() {
-//   // 读取XML文件
-//   std::ifstream file("test.PLC_1.OPCUA.xml");
-//   if (!file.is_open()) {
-//     std::cerr << "Failed to open XML file" << std::endl;
-//     return 1;
-//   }
-
-//   std::string xml_content((std::istreambuf_iterator<char>(file)),
-//                           std::istreambuf_iterator<char>());
-//   file.close();
-
-//   // 创建解析器并执行解析
-//   OPCUAXMLParser parser(xml_content);
-//   auto result = parser.parse();
-
-//   // 输出解析结果
-//   std::cout
-//       << "==================== OPC UA XML 解析结果 ====================\n\n";
-
-//   // 1. 生成器信息
-//   std::cout << "【生成器信息】\n";
-//   std::cout << "  " << result->generator_info << "\n\n";
-
-//   // 2. 命名空间列表
-//   std::cout << "【命名空间列表】\n";
-//   for (size_t i = 0; i < result->namespace_uris.size(); ++i) {
-//     std::cout << "  [" << (i + 1) << "] " << result->namespace_uris[i] << "\n";
-//   }
-//   std::cout << "\n";
-
-//   // 3. 类型别名（只显示部分关键映射）
-//   std::cout << "【关键类型别名】\n";
-//   std::vector<std::string> key_aliases = {"BOOL",   "INT",  "DINT", "REAL",
-//                                           "STRING", "BYTE", "WORD", "DWORD"};
-//   for (const auto &alias : key_aliases) {
-//     if (result->type_aliases.find(alias) != result->type_aliases.end()) {
-//       std::cout << "  " << alias << " -> " << result->type_aliases[alias]
-//                 << "\n";
-//     }
-//   }
-//   std::cout << "\n";
-
-//   // 4. 变量列表（只显示业务相关的变量，过滤系统变量）
-//   std::cout << "【业务变量列表】\n";
-//   std::cout << "---------------------------------------------------------------"
-//                "-------------------------------------\n";
-//   std::cout << "序号 | 变量名                    | 类型     | NodeID标识       "
-//                "                        | 注释\n";
-//   std::cout << "---------------------------------------------------------------"
-//                "-------------------------------------\n";
-
-//   int index = 1;
-//   for (auto &var : result->variables) {
-//     // 过滤掉系统变量（如EnumValues、EngineeringRevision等）
-//     if (!parser.shouldKeepVariable(
-//             var.variable_name, var.variable_nodeID, var.data_type,
-//             var.browse_name,
-//             var.filter_reason)) { // 过滤数组索引如"0","1"等
-//       continue;
-//     }
-
-//     printf(" %-3d | %-25s | %-8s | %-38s | %s\n", index++,
-//            var.variable_name.c_str(), var.data_type.c_str(),
-//            var.variable_nodeID.c_str(), var.description.c_str());
-//   }
-//   std::cout << "---------------------------------------------------------------"
-//                "-------------------------------------\n";
-//   std::cout << "\n共解析 " << result->variables.size() << " 个UAVariable节点，";
-//   std::cout << "过滤后显示 " << (index - 1) << " 个业务变量。\n\n";
-
-//   // 5. 输出用于 OPC UA 读取的配置信息
-//   std::cout << "【OPC UA 读取配置示例】（用于 Set_Read_NodeID 函数）\n";
-//   std::cout << "---------------------------------------------------------------"
-//                "-------------------------------------\n";
-
-//   int sample_count = 0;
-//   for (const auto &var : result->variables) {
-//     if (var.filter_reason == "")
-//       break;
-
-//     std::cout << "变量名: " << var.variable_name << "\n";
-//     std::cout << "  m_nameSpace = " << var.namespace_index << "\n";
-//     std::cout << "  variable_nodeID = \"" << var.variable_nodeID << "\"\n";
-//     std::cout << "  完整NodeId = ns=" << var.namespace_index
-//               << ";s=" << var.variable_nodeID << "\n\n";
-//     std::cout << "  完整过滤原因 : " << var.filter_reason << "\n\n";
-//     sample_count++;
-//   }
-
-//   return 0;
-// }

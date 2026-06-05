@@ -71,6 +71,8 @@
 #include <QStatusBar>
 #include <QToolButton>
 #include <QStyledItemDelegate>
+#include <QStandardItemModel>
+#include <QAbstractProxyModel>
 #include <qtimezone.h>
 
 
