@@ -108,10 +108,9 @@ struct OPCUAModernDataStruct {
   int namespace_index;
   std::string data_type;
   std::string raw_data_type;
-  std::string display_name;
   std::string description;
   int access_level;
-  std::string parent_node_id;
+  std::string parent_nodeID;
   bool is_array;
   int array_dimension = -1;
   std::string browse_name;
@@ -136,10 +135,9 @@ struct OPCUAModernDataStruct {
         namespace_index(other.namespace_index),
         data_type(std::move(other.data_type)),
         raw_data_type(std::move(other.raw_data_type)),
-        display_name(std::move(other.display_name)),
         description(std::move(other.description)),
         access_level(other.access_level),
-        parent_node_id(std::move(other.parent_node_id)),
+        parent_nodeID(std::move(other.parent_nodeID)),
         is_array(other.is_array), array_dimension(other.array_dimension),
         browse_name(std::move(other.browse_name)),
         filter_reason(std::move(other.filter_reason)),
@@ -162,10 +160,9 @@ struct OPCUAModernDataStruct {
       namespace_index = other.namespace_index;
       data_type = std::move(other.data_type);
       raw_data_type = std::move(other.raw_data_type);
-      display_name = std::move(other.display_name);
       description = std::move(other.description);
       access_level = other.access_level;
-      parent_node_id = std::move(other.parent_node_id);
+      parent_nodeID = std::move(other.parent_nodeID);
       is_array = other.is_array;
       array_dimension = other.array_dimension;
       browse_name = std::move(other.browse_name);
@@ -193,10 +190,9 @@ struct OPCUAModernDataStruct {
     swap(namespace_index, other.namespace_index);
     swap(data_type, other.data_type);
     swap(raw_data_type, other.raw_data_type);
-    swap(display_name, other.display_name);
     swap(description, other.description);
     swap(access_level, other.access_level);
-    swap(parent_node_id, other.parent_node_id);
+    swap(parent_nodeID, other.parent_nodeID);
     swap(is_array, other.is_array);
     swap(array_dimension, other.array_dimension);
     swap(browse_name, other.browse_name);
@@ -218,10 +214,9 @@ struct OPCUAModernDataStruct {
     namespace_index = 0;
     data_type.clear();
     raw_data_type.clear();
-    display_name.clear();
     description.clear();
     access_level = 0;
-    parent_node_id.clear();
+    parent_nodeID.clear();
     is_array = false;
     array_dimension = 0;
     browse_name.clear();
@@ -267,5 +262,9 @@ struct OPCUAParseResult {
     return *this;
   }
 
+  void getOPCUAStrcutVec(std::vector<OPCUAModernDataStruct> &&vec)
+  {
+    variables = std::move(vec); 
+  }
 };
 

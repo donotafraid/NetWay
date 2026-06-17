@@ -65,8 +65,8 @@ class S7_Access
 
 class OPCUA_Access {
 public:
-  OPCUA_Access(const std::string &ip_Address,int nameSpace,int port)
-      :m_ip_Address(ip_Address), m_nameSpace(nameSpace),m_port(port) {
+  OPCUA_Access(const std::string &ip_Address, int nameSpace, int port)
+      : m_ip_Address(ip_Address), m_nameSpace(nameSpace), m_port(port) {
 
     try {
       m_readValueNodeID =
@@ -86,7 +86,7 @@ public:
   }
 
   ~OPCUA_Access() {
-    std::cout<<"~OPCUA call "<<std::endl;
+    std::cout << "~OPCUA call " << std::endl;
     if (m_readValueNodeID) {
       UA_free(m_readValueNodeID);
     }
@@ -96,18 +96,19 @@ public:
     CleanupBatchNodes();
     UA_Client_delete(m_client_pointer);
     m_client_pointer = nullptr; // 避免悬空指针
-    std::cout<<"~OPCUA call end "<<std::endl;
+    std::cout << "~OPCUA call end " << std::endl;
   };
 
   Result<bool, RichError> read();
-  Result<bool,RichError> read_nameSpace();
-  Result<bool,RichError> read_variable_from_device(UA_NodeId &nodeID,bool reverse_direction);
+  Result<bool, RichError> read_nameSpace();
+  Result<bool, RichError> read_variable_from_device(UA_NodeId &nodeID,
+                                                    bool reverse_direction);
 
   // trait function
-  Result<bool,RichError> expandNodeIdToString( UA_ExpandedNodeId &id);
-  Result<bool,RichError> nodeIdToString(std::string &str,UA_NodeId &nodeID);
+  Result<bool, RichError> expandNodeIdToString(UA_ExpandedNodeId &id);
+  Result<bool, RichError> nodeIdToString(std::string &str, UA_NodeId &nodeID);
   bool isSiemensContainer(const std::string &browseName);
-  Result<bool,RichError> waitForSessionActivation(int timeoutMs);
+  Result<bool, RichError> waitForSessionActivation(int timeoutMs);
   void UA_Variant_steal(UA_Variant *src, UA_Variant *dst) {
     // 1. 初始化目标 Variant
     UA_Variant_init(dst);
@@ -134,11 +135,11 @@ public:
   void configureClient();
 
   //  get function
-  ConnectionState getConnectionState() const; 
+  ConnectionState getConnectionState() const;
   Result<bool, RichError> ensureConnection();
   Result<bool, RichError> reconnect(int maxRetries, int retryDelayMs);
 
-  Result<bool,RichError> batchWrite();
+  Result<bool, RichError> batchWrite();
 
   template <typename T>
   Result<bool, RichError> write_by_vector(OPCUAModernDataStruct &var,
@@ -147,28 +148,28 @@ public:
   Result<bool, RichError> write_by_scalar(OPCUAModernDataStruct &var,
                                           T &src_vector);
 
-  Result<bool, RichError>
-  Read_UA_Variant_From_PLC();
+  Result<bool, RichError> Read_UA_Variant_From_PLC();
 
   Result<bool, RichError>
   Set_UA_To_Read_Normal_Scalar(const S7DataType &S7_type, Dynamic_Value &value,
                                int i);
- 
+
   Result<bool, RichError>
   Set_Read_UA_Array(std::vector<OPCUAModernDataStruct> &var_map,
                     OPCUAModernDataStruct &var, int &index);
   Result<bool, RichError>
   Set_Normal_To_Write_UA_Vector(OPCUAModernDataStruct &var,
                                 std::vector<uint8_t> &m_data_block_buffer);
- Result<bool, RichError>
+  Result<bool, RichError>
   batchSet_Normal_To_Write_UA_Vector(OPCUAModernDataStruct &var,
-                                std::vector<uint8_t> &m_data_block_buffer,int index);
+                                     std::vector<uint8_t> &m_data_block_buffer,
+                                     int index);
   Result<bool, RichError>
   Set_Normal_To_Write_UA_Scalar(OPCUAModernDataStruct &var,
                                 std::vector<uint8_t> &m_data_block_buffer);
   Result<bool, RichError>
-  batchSet_Normal_To_Write_UA_Scalar(OPCUAModernDataStruct &var,
-                                std::vector<uint8_t> &m_data_block_buffer,int index);
+  batchSet_Normal_To_Write_UA_Scalar(OPCUAModernDataStruct &var, int index);
+  Result<bool, RichError> getValueFromDataPointer(OPCUAModernDataStruct &var);
 
   // Result<bool, RichError>
   // batchSet_Normal_To_Write_UA_Scalar(OPCUAModernDataStruct &var, int index);
@@ -193,7 +194,7 @@ public:
 
   Result<bool, RichError> connect();
   bool isConnected();
-  void Set_Read_NodeID(UA_ReadValueId &nodeID,OPCUAModernDataStruct &node);
+  void Set_Read_NodeID(UA_ReadValueId &nodeID, OPCUAModernDataStruct &node);
 
   template <typename T>
   Result<bool, RichError>
@@ -206,19 +207,21 @@ public:
 
   template <typename T>
   Result<bool, RichError>
-  batchSet_UA_Array_StatusCode(int nameSpace, OPCUAModernDataStruct &SourceData_var,
-                          std::vector<T> &source_vector,int index);
+  batchSet_UA_Array_StatusCode(int nameSpace,
+                               OPCUAModernDataStruct &SourceData_var,
+                               std::vector<T> &source_vector, int index);
   template <typename T>
   Result<bool, RichError>
-  batchSet_UA_Scalar_StatusCode(int nameSpace, OPCUAModernDataStruct &SourceData_var,
-                           T &source_var,int index);
+  batchSet_UA_Scalar_StatusCode(int nameSpace,
+                                OPCUAModernDataStruct &SourceData_var,
+                                T &source_var, int index);
 
   void PrepareBatchRead(std::vector<OPCUAModernDataStruct> &data_vars) {
     // 复用 C++ vector
-    if(m_batchNodesValid)
-    {
-      std::cout<<"PrepareBatchRead skip for the batchReadNodes had initialize"<<std::endl;
-      return ;
+    if (m_batchNodesValid) {
+      std::cout << "PrepareBatchRead skip for the batchReadNodes had initialize"
+                << std::endl;
+      return;
     }
     m_batchReadNodes.clear();
     m_batchReadNodes.reserve(data_vars.size());
@@ -226,13 +229,16 @@ public:
     m_batchReadVariant.reserve(data_vars.size());
 
     for (auto &var : data_vars) {
+      if (var.filter_reason != "" || var.is_array) {
+        continue;
+      }
       UA_ReadValueId node;
       UA_Variant variant;
 
       UA_Variant_init(&variant);
       UA_ReadValueId_init(&node);
 
-      Set_Read_NodeID(node,var);
+      Set_Read_NodeID(node, var);
 
       m_batchReadNodes.push_back(std::move(node));
       m_batchReadVariant.push_back(std::move(variant));
@@ -243,15 +249,20 @@ public:
 
   void PrepareBatchWrite(std::vector<OPCUAModernDataStruct> &data_vars) {
     // 复用 C++ vector
-    if(m_batchWriteNodesValid)
-    {
-      std::cout<<"PrepareBatchWrite skip for the PrepareBatchWrite had initialize"<<std::endl;
-      return ;
+    if (m_batchWriteNodesValid) {
+      std::cout
+          << "PrepareBatchWrite skip for the PrepareBatchWrite had initialize"
+          << std::endl;
+      return;
     }
     m_batchWriteNodes.clear();
     m_batchWriteNodes.reserve(data_vars.size());
 
     for (auto &var : data_vars) {
+      if (var.filter_reason != "" || var.is_array) {
+        continue;
+      }
+
       UA_WriteValue m_writeValue;
       UA_WriteValue_init(&m_writeValue);
 
@@ -308,6 +319,6 @@ private:
   std::string m_ip_Address;
   bool m_batchNodesValid = false;
   bool m_batchWriteNodesValid = false;
-  };
+};
 
 #endif

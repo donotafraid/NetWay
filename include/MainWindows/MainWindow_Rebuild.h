@@ -9,6 +9,7 @@
 #include "MainWindows/LineChartTest.h"
 #include "PLC/OPCUAData.h"
 
+
 class IS7Controller;
 class SystemSetting;
 class S7_DeviceManager;
@@ -39,6 +40,7 @@ class S7_MainWindows_UI : public QMainWindow {
 
       QAction *loadExternalDataConfigAction = nullptr;
       QAction *loadInternalDataConfigAction = nullptr;
+      QAction *loadOPCUAInlineBrowseAction = nullptr;
     };
     struct DataBlockMenu {
       //  DataBlock MENU
@@ -158,6 +160,7 @@ public slots:
   void onLoadExternalDataBlock();
   void onDeleteDataBlock();
   void onLoadInternalDataBlock();
+  QString onLoadInlineBrowse();
 
   //  tree item function
   void onTreeItemExpanded(QTreeWidgetItem *item);
@@ -231,6 +234,8 @@ public:
                             const std::string &dataBlockName);
   void handleExternalOPCUAConnectRequest(const QString &ip_Address, int nameSpace,
                                        int port);
+  void handleExternalOPCUAInlineBrowsetRequest(const QString &ip_Address,
+                                         int nameSpace, int port);
   void handleExternalS7ConnectRequest(const QString &ip_Address, int rack,
                                     int slot);
   bool handleConnectRequest(const QString &ip_Address,

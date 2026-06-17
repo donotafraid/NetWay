@@ -612,58 +612,34 @@ Result<bool,RichError> OPCUA_Access::Set_Normal_To_Write_UA_Scalar(
   }
 }
 
-Result<bool, RichError> OPCUA_Access::batchSet_Normal_To_Write_UA_Scalar(
-    OPCUAModernDataStruct &var, std::vector<uint8_t> &m_data_block_buffer,
-    int index) {
+Result<bool, RichError>
+OPCUA_Access::batchSet_Normal_To_Write_UA_Scalar(OPCUAModernDataStruct &var,
+                                                 int index) {
   if (var.data_type_enum == S7DataType::BOOL) {
-    bool tmp;
-    {
-      Covert_Uint8_t_Vector_To_Normal_Scalar(var, m_data_block_buffer, tmp);
-      return batchSet_UA_Scalar_StatusCode(m_nameSpace, var, tmp, index);
-    }
+    bool tmp{var.data_pointer->get<bool>()};
+    return batchSet_UA_Scalar_StatusCode(m_nameSpace, var, tmp, index);
   } else if (var.data_type_enum == S7DataType::BYTE) {
-    uint8_t tmp;
-    {
-      Covert_Uint8_t_Vector_To_Normal_Scalar(var, m_data_block_buffer, tmp);
-      return batchSet_UA_Scalar_StatusCode(m_nameSpace, var, tmp, index);
-    }
+    uint8_t tmp{var.data_pointer->get<uint8_t>()};
+    return batchSet_UA_Scalar_StatusCode(m_nameSpace, var, tmp, index);
   } else if (var.data_type_enum == S7DataType::INT) {
-    int16_t tmp;
-    {
-      Covert_Uint8_t_Vector_To_Normal_Scalar(var, m_data_block_buffer, tmp);
-      return batchSet_UA_Scalar_StatusCode(m_nameSpace, var, tmp, index);
-    }
+    int16_t tmp{var.data_pointer->get<int16_t>()};
+    return batchSet_UA_Scalar_StatusCode(m_nameSpace, var, tmp, index);
   } else if (var.data_type_enum == S7DataType::WORD) {
-    uint16_t tmp;
-    {
-      Covert_Uint8_t_Vector_To_Normal_Scalar(var, m_data_block_buffer, tmp);
-      return batchSet_UA_Scalar_StatusCode(m_nameSpace, var, tmp, index);
-    }
+    uint16_t tmp{var.data_pointer->get<uint16_t>()};
+    return batchSet_UA_Scalar_StatusCode(m_nameSpace, var, tmp, index);
   } else if (var.data_type_enum == S7DataType::DWORD ||
              var.data_type_enum == S7DataType::UDINT) {
-    uint32_t tmp;
-    {
-      Covert_Uint8_t_Vector_To_Normal_Scalar(var, m_data_block_buffer, tmp);
-      return batchSet_UA_Scalar_StatusCode(m_nameSpace, var, tmp, index);
-    }
+    uint32_t tmp{var.data_pointer->get<uint32_t>()};
+    return batchSet_UA_Scalar_StatusCode(m_nameSpace, var, tmp, index);
   } else if (var.data_type_enum == S7DataType::DINT) {
-    int32_t tmp;
-    {
-      Covert_Uint8_t_Vector_To_Normal_Scalar(var, m_data_block_buffer, tmp);
-      return batchSet_UA_Scalar_StatusCode(m_nameSpace, var, tmp, index);
-    }
+    int32_t tmp{var.data_pointer->get<int32_t>()};
+    return batchSet_UA_Scalar_StatusCode(m_nameSpace, var, tmp, index);
   } else if (var.data_type_enum == S7DataType::REAL) {
-    float tmp;
-    {
-      Covert_Uint8_t_Vector_To_Normal_Scalar(var, m_data_block_buffer, tmp);
-      return batchSet_UA_Scalar_StatusCode(m_nameSpace, var, tmp, index);
-    }
+    float tmp{var.data_pointer->get<float>()};
+    return batchSet_UA_Scalar_StatusCode(m_nameSpace, var, tmp, index);
   } else if (var.data_type_enum == S7DataType::STRING) {
-    std::string tmp;
-    {
-      Covert_Uint8_t_Vector_To_Normal_Scalar(var, m_data_block_buffer, tmp);
-      return batchSet_UA_Scalar_StatusCode(m_nameSpace, var, tmp, index);
-    }
+    std::string tmp{var.data_pointer->get<std::string>()};
+    return batchSet_UA_Scalar_StatusCode(m_nameSpace, var, tmp, index);
   } else {
     return Result<bool, RichError>(
         RichError("Read_UA_Variant_From_PLC : s7_type is unknown"));
@@ -843,56 +819,12 @@ Result<bool, RichError> OPCUA_Access::Set_Read_UA_Array(
     std::vector<OPCUAModernDataStruct> &var_vector,
     OPCUAModernDataStruct &var,int &index)
 {
-    // 1. 参数验证
-    if (var_vector.empty()) {
-        return Result<bool, RichError>(
-            RichError("var_vector is empty"));
-    }
-    else
-    {
-      return Result<bool, RichError>(true);
-    }
-    
-    // // if (m_read_variant.arrayLength <= 0) {
-    // //     return Result<bool, RichError>(
-    // //         RichError("Invalid array length: " + 
-    // //                   std::to_string(m_read_variant.arrayLength)));
-    // // }
-    
-    // // // 2. 验证数组长度匹配
-    // // if (static_cast<int>(var.s7_data_array_length) != m_read_variant.arrayLength) {
-    // //     return Result<bool, RichError>(
-    // //         RichError("var_vector size (" + std::to_string(var_vector.size()) + 
-    // //                   ") does not match array length (" + 
-    // //                   std::to_string(m_read_variant.arrayLength) + ")"));
-    // // }
-    
-    // // 3. 遍历 var_vector 中的每个变量
-    // for (int i = index; i < index + var.s7_data_array_length; ++i) {
-    //   // // 构造数组元素路径（用于验证或日志）
-    //   // std::string array_member_full_path =
-    //   //     var.variable_nodeID + "[" + std::to_string(i) + "]";
-    //   // // 可选：验证路径是否匹配
-    //   // if (current_var.variable_nodeID != array_member_full_path) {
-    //   //     std::cerr << "Warning: Path mismatch for element " << i
-    //   //               << ": expected " << array_member_full_path
-    //   //               << ", got " << current_var.variable_nodeID << std::endl;
-    //   // }
+    // 读取数据并存储到 data_pointer
+    auto result =
+        Set_UA_To_Read_Normal_Scalar(var.data_type_enum, *var.data_pointer,
+                                     index); // 传递索引位置
 
-    //   // 读取数据并存储到 data_pointer
-    //   auto result = Set_UA_To_Read_Normal_Scalar(
-    //       var_vector[index].data_type_enum, *var_vector[index].data_pointer,
-    //       index); // 传递索引位置
-
-    //   if (result.is_fail()) {
-    //     return Result<bool, RichError>(
-    //         RichError("Failed to read array element[" + std::to_string(i) +
-    //                   "]: " + result.unwrap_err().what()));
-    //   }
-    // }
-
-    // //  4.统计遍历次数
-    // return Result<bool, RichError>(true);
+    return Result<bool, RichError>(result);
 }
 
 Result<bool, RichError> OPCUA_Access::read() {

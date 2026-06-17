@@ -212,36 +212,34 @@ void OPCUAXMLParser::parse_uavariable(const std::string& var_tag) {
     }
     
     // 解析父节点关系
-    std::string parent_node_id = get_attribute(var_tag, "ParentNodeId");
-    if (!parent_node_id.empty()) {
-        var.parent_node_id = parent_node_id;
+    std::string parent_nodeID = get_attribute(var_tag, "ParentNodeId");
+    if (!parent_nodeID.empty()) {
+        var.parent_nodeID = parent_nodeID;
     }
     
     // 提取标签内的内容
-    var.display_name = get_tag_content(var_tag, "DisplayName");
+    var.variable_name = get_tag_content(var_tag, "DisplayName");
     var.description = get_tag_content(var_tag, "Description");
     
     // 如果DisplayName为空，使用BrowseName
-    if (var.display_name.empty()) {
+    if (var.variable_name.empty()) {
         // BrowseName格式可能为 "3:VariableName"，需要去掉前缀
         size_t colon_pos = var.browse_name.find(':');
         if (colon_pos != std::string::npos) {
             var.variable_name = var.browse_name.substr(colon_pos + 1);
-            var.display_name = var.variable_name;
         } else {
             var.variable_name = var.browse_name;
-            var.display_name = var.variable_name;
         }
     } else {
       if (var.variable_nodeID.find("[") != std::string::npos) {
         auto parentName = extractLastPartWithoutIndex(var.variable_nodeID);
         if (parentName.empty()) {
-          var.variable_name = var.display_name;
+          var.variable_name = var.variable_name;
         } else {
-          var.variable_name = parentName + "[" + var.display_name + "]";
+          var.variable_name = parentName + "[" + var.variable_name + "]";
         }
       } else {
-        var.variable_name = var.display_name;
+        var.variable_name = var.variable_name;
       }
     }
     

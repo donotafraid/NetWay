@@ -2,6 +2,7 @@
 
 #include "PLC/OPC_UA.h"
 #include "PLC/XMLParser.h"
+#include "PLC/OPCUABrowser.h"
 
 class OPCUADataBlock;
 class SpecialTreeView;
@@ -11,7 +12,11 @@ struct TreeNode {
   TreeNode *parent;
   QList<TreeNode *> children;
   QString displayName = "";
+  bool isExpanded = false;
 
+  TreeNode *getChildNode(int index){
+    return children[index];
+  }
   TreeNode() : parent(nullptr) {}
   ~TreeNode() { qDeleteAll(children); }
 };
@@ -84,7 +89,14 @@ public:
   QString getTypeString(S7DataType type) const;
   TreeNode *getNodeByVisualRow(int visualRow) const;
   TreeNode *getRootNode();
+  TreeNode *getGlobalNode(const int globalIndex) {
+    TreeNode *Node = nullptr;
+    Node = this->getNodeByVisualRow(globalIndex);
+    return Node;
+  }
 
+  //  rebuild function
+  void rebuildVisualRowMap();
 
   // QAbstractTableModel 接口
   QModelIndex index(int row, int column,
@@ -143,7 +155,6 @@ private:
   void buildTree(TreeNode* parent = nullptr);
 
   void buildVisualRowMapRecursive(TreeNode *node, int &currentRow);
-  void rebuildVisualRowMap();
   TreeNode *createPlaceholderNode(const std::string &parentName);
   OPCUAModernDataStruct *findOPCUADataStruct(const std::string &targetName);
   std::string getParentName(const OPCUAModernDataStruct &element);
@@ -223,6 +234,8 @@ class OPCUADataBlockBuilder : public QObject{
   Q_OBJECT
 public:
     Result<bool,RichError> build(const QString &file_path,const std::string &ip_Address);
+    Result<bool,RichError> build_InlineBrowse(const std::string &ip_Address);
+    void TransformDataVec();
 
     Result<std::shared_ptr<OPCUAParseResult>, RichError> add_OPCUADataBlock_from_OPCUADataBlockDefinition(
         const QString &file_path,const std::string &ip_Address);
@@ -238,6 +251,7 @@ public:
   private:
     std::string m_name;
     int m_dbNumber = 0;
+
 };
 
 //  responsibility : The logic behind the data presented 
@@ -324,14 +338,12 @@ private slots:
   void validateTreeStructure();
 
   // 在程序启动时设置
-void printCallStack();
-
-
-// 在 selectCell 中添加保护
+  void printCallStack();
 
   bool eventFilter(QObject *obj, QEvent *event) override;
-  QModelIndex manualIndexAt(const QPoint &pos);
 
+  //  trim function for Index
+  QModelIndex manualIndexAt(const QPoint &pos);
   QModelIndex findIndexByNode(TreeNode *node, int column) const;
   QModelIndex findIndexByY(const QModelIndex &parent, int &currentY,
                            int targetY, int targetX);
@@ -341,7 +353,6 @@ void printCallStack();
   QModelIndex mapVisualRowToModelIndex(const QModelIndex &parent,
                                        int targetVisualRow, int targetCol);
   int calculateColumnAtX(int x) const;
-
   int getDepth(const QModelIndex &index);
 
 private:
@@ -388,6 +399,7 @@ public:
   void getDelegate(OPCUADataDelegate *delegate);
   QTreeView *getTableView() { return this; }
   QWidget *getView() { return this; }
+  int getGlobalIndex(){return globalRowPassager;}
   //  set function
   void setHeaderHeight(int height);
 
@@ -405,6 +417,74 @@ public:
 
   int getDepth(const QModelIndex &index);
 
+  // 缓存检查 - 返回 Result<QModelIndex, RichError>
+  Result<QModelIndex, RichError> checkCache(const QPoint &pos) const {
+    qint64 currentTime = QDateTime::currentMSecsSinceEpoch();
+
+    if (std::abs(pos.y() - m_cachedPos.y()) <= 3 &&
+        std::abs(pos.x() - m_cachedPos.x()) <= 3 &&
+        (currentTime - m_lastCacheTime) < 1000) {
+      m_hitCount++;
+      if (m_hitCount % 10 == 0) {
+        qDebug() << "indexAt cache hit:" << m_hitCount << "times";
+      }
+      return Result<QModelIndex, RichError>(m_cachedIndex);
+    }
+    return Result<QModelIndex, RichError>(RichError("Cache miss or expired"));
+  }
+
+  // 获取视觉行号
+  Result<int, RichError> getVisualRow(const QPoint &pos) const {
+    int scrollValue = this->verticalScrollBar()->value();
+    int rowHeight = this->fontMetrics().height();
+
+    // 计算行号逻辑
+    int relativeY = pos.y();
+
+    if (relativeY < headerHeight) {
+      return Result<int, RichError>(RichError("Click on header area"));
+    }
+
+    int visualRow = (relativeY - headerHeight) / rowHeight;
+    if (visualRow < 0) {
+      return Result<int, RichError>(RichError("Invalid visual row: negative"));
+    }
+
+    int globalRow = scrollValue + visualRow;
+    return Result<int, RichError>(globalRow);
+  }
+
+  // 获取节点
+  Result<TreeNode *, RichError> getNodeByRow(int globalRow) const {
+    TreeNode *node = m_model->getNodeByVisualRow(globalRow);
+    if (!node) {
+      return Result<TreeNode *, RichError>(
+          RichError("No node found for row: " + std::to_string(globalRow)));
+    }
+    return Result<TreeNode *, RichError>(node);
+  }
+
+  // 获取列号
+  Result<int, RichError> getColumnAtX(const QPoint &pos) const {
+    int col = calculateColumnAtX(pos.x());
+    if (col < 0) {
+      return Result<int, RichError>(
+          RichError("Invalid column: " + std::to_string(col)));
+    }
+    return Result<int, RichError>(col);
+  }
+
+  // 查找索引
+  Result<QModelIndex, RichError> findIndexByNode(TreeNode *node,
+                                                 int col) const {
+    QModelIndex idx = findIndexByNode(node, col);
+    if (!idx.isValid()) {
+      return Result<QModelIndex, RichError>(
+          RichError("Invalid model index for node: " + node->displayName.toStdString()));
+    }
+    return Result<QModelIndex, RichError>(idx);
+  }
+
 private:
   int headerHeight = -1;
   OPCUADataBlockModel *m_model = nullptr;
@@ -414,6 +494,7 @@ private:
   mutable QModelIndex m_cachedIndex;
   mutable qint64 m_lastCacheTime = 0;
   mutable int m_hitCount = 0;
+  mutable int globalRowPassager = 0 ;
 };
 
 //  responsibility : Coordinating business interactions
@@ -454,9 +535,14 @@ public:
         return true;
       }
     }
-
-   
-
+    bool onbuildOPCUAInlineBrowse(const std::string &ip_Address) {
+      auto result = m_OPCUADataBlockBuild->build_InlineBrowse(ip_Address);
+      if (result.is_fail()) {
+        return false;
+      } else {
+        return true;
+      }
+    }
 
   private slots:
     // 连接View的信号到Model的操作
@@ -476,6 +562,7 @@ public:
     std::shared_ptr<OPCUADataBlockModel> m_model = nullptr;
     std::shared_ptr<OPCUADataBlockBuilder> m_OPCUADataBlockBuild = nullptr;
     std::shared_ptr<OPCUADeviceReader> m_reader = nullptr;
+
 
     std::shared_ptr<OPCUADataBlock> m_OPCUADataBlock = nullptr;
     std::shared_ptr<OPCUAParseResult> m_OPCUAParseResult = nullptr;
@@ -597,6 +684,9 @@ public:
     // ========== 原有业务接口（需要指定操作哪个 OPCUADataBlock）==========
     bool buildOPCUAConnect(const QString &ipAddress,
                              int nameSpace, int port,const std::string &connectWay = "OPC_UA");
+
+    bool buildOPCUAInlineBrowse(const QString &ipAddress, int nameSpace, int port,
+                           const std::string &connectWay = "OPC_UA");
 
     bool checkConnectToDevice(const QString& ipAddress,
                         const std::string& connectWay);

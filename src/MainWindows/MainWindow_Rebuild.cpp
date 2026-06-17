@@ -217,6 +217,11 @@ void S7_MainWindows_UI::initalize_DeviceMenu() {
   m_DeviceMenu.subDeviceMenu.addAction(
       m_DeviceMenu.loadInternalDataConfigAction);
   m_DeviceMenu.subDeviceMenu.addSeparator();
+  m_DeviceMenu.loadOPCUAInlineBrowseAction =
+      new QAction("Load OPCUA Inline Browse", this);
+  m_DeviceMenu.subDeviceMenu.addAction(
+      m_DeviceMenu.loadOPCUAInlineBrowseAction);
+  m_DeviceMenu.subDeviceMenu.addSeparator();
 
   m_dataBlockMenu.deleteDataBLockAction =
       new QAction("Delete PLC Existing DataBlock", this);
@@ -634,6 +639,22 @@ void S7_MainWindows_UI::initialize_Add_Device_Page() {
             this, &S7_MainWindows_UI::onLoadExternalDataBlock);
     connect(m_DeviceMenu.loadInternalDataConfigAction, &QAction::triggered,
             this, &S7_MainWindows_UI::onLoadInternalDataBlock);
+    connect(m_DeviceMenu.loadOPCUAInlineBrowseAction, &QAction::triggered,
+            this, [this]{
+              auto file_path = this->onLoadInlineBrowse();
+              {
+                QTreeWidgetItem *dataBlockFolder = new QTreeWidgetItem(
+                    this->m_lastSelectItem.m_lastest_device_TreeWidget_item);
+                DeviceTableInfo m_tableInfo;
+
+                m_tableInfo.connectWay = m_lastSelectItem.m_info->connectWay;
+                m_tableInfo.dataBlockName = file_path.toStdString();
+                m_tableInfo.ip_Address = m_lastSelectItem.m_info->ip_Address;
+                m_deviceTableVector.push_back(std::move(m_tableInfo));
+
+                dataBlockFolder->setText(0, file_path);
+              }
+            });
     connect(m_deleteDevice_page.okButton, &QPushButton::clicked, m_deleteDevice_page.deleteDevice_page,
             &QDialog::accept);
     connect(m_deleteDevice_page.cancelButton, &QPushButton::clicked, m_deleteDevice_page.deleteDevice_page,
@@ -838,6 +859,15 @@ void S7_MainWindows_UI::onDeleteDataBlock() {
 
 void S7_MainWindows_UI::onLoadInternalDataBlock() {}
 
+QString S7_MainWindows_UI::onLoadInlineBrowse() {
+  m_manager->handleExternalOPCUAInlineBrowsetRequest("192.168.0.2-OPC_UA", 3, 4840);
+  return QString{"192.168.0.2-OPC_UA"
+                 "-"
+                 "3"
+                 "-"
+                 "4840"};
+}
+
 void S7_MainWindows_UI::update_parent_item_color(bool status)
 {
     if(status)
@@ -975,6 +1005,12 @@ void S7_DeviceManager::handleExternalOPCUAConnectRequest(const QString &ip_Addre
                                                        int nameSpace,
                                                        int port) {
     m_OPCUAdataBlockManager->buildOPCUAConnect(ip_Address, nameSpace, port);
+}
+
+void S7_DeviceManager::handleExternalOPCUAInlineBrowsetRequest(const QString &ip_Address, 
+                                                       int nameSpace,
+                                                       int port) {
+    m_OPCUAdataBlockManager->buildOPCUAInlineBrowse(ip_Address, nameSpace, port);
 }
 
 void S7_DeviceManager::handleExternalS7ConnectRequest(const QString &ip_Address, 
