@@ -66,23 +66,6 @@ struct UAStruct {
     }
 };
 
-// UA_String 转 std::string
-static std::string uaStringToString(const UA_String &str) {
-    if (!str.data || str.length == 0) {
-        return "";
-    }
-    return std::string((char*)str.data, str.length);
-}
-
-// NodeId 转字符串（用于集合的键）
-static std::string nodeIdToString(const UA_NodeId *nodeId) {
-    UA_String str;
-    UA_String_init(&str);  // 👈 关键：初始化字符串
-    UA_NodeId_print(nodeId, &str);
-    std::string result((char*)str.data, str.length);
-    UA_String_clear(&str);
-    return result;
-}
 
 // ==================== checkVariableAccess 实现 ====================
 
@@ -128,7 +111,7 @@ static bool readAndPrintVariable(UA_Client *client, const UA_NodeId &nodeId,
             for (size_t i = 0; i < arrayDimensionsSize; i++) {
                 dimensions.push_back(arrayDimensions[i]);
             }
-            item.array_dimension = (arrayDimensionsSize > 0) ? arrayDimensions[0] : 0;
+            item.arrayDimensions = std::to_string((arrayDimensionsSize > 0) ? arrayDimensions[0] : 0);
             
             // 打印数组信息
             if (dimensions.size() == 1) {
@@ -313,7 +296,9 @@ static void browseNodeChildren(UA_Client* client, const UA_NodeId& nodeId,
                           "{}{} [{}] - {} = {}", indent, childBrowseName,
                           ref->nodeClass == UA_NODECLASS_VARIABLE ? "Variable" : "Object",
                           "NodeId", childNodeId);
-                      item.variable_nodeID = childNodeId;
+                      UA_NodeId_copy(&ref->nodeId.nodeId,
+                                     &item.nodeID);
+                      // item.variable_nodeID = childNodeId;
                       item.variable_name = childBrowseName;
                       item.namespace_index = 0;
                       item.parent_nodeID = "";
@@ -737,10 +722,10 @@ struct OPCUAInlineBrowse {
       if (ref->nodeClass == UA_NODECLASS_VARIABLE) {
         // 读取 AccessLevel
         OPCUAModernDataStruct item;
-        item.variable_nodeID = childNodeId;
+        UA_NodeId_copy(&ref->nodeId.nodeId, &item.nodeID);
         item.variable_name = childBrowseName;
         item.namespace_index = ref->nodeId.nodeId.namespaceIndex;
-        item.parent_nodeID = extractParentNodeId(item.variable_nodeID);
+        item.parent_nodeID = extractParentNodeId(childNodeId);
 
         UA_Byte accessLevel = 0;
         UA_StatusCode status = UA_Client_readAccessLevelAttribute(

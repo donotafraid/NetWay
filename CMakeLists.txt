@@ -93,6 +93,7 @@ find_package(Boost REQUIRED)
 find_package(nlohmann_json REQUIRED)
 find_package(protobuf REQUIRED)
 find_package(CURL REQUIRED)
+find_package(libmodbus REQUIRED)
 
 
 # 设置 Protocol Buffers 文件的路径 (需要在命令行先生成后，再执行 cmake, 保证在 build 中生成了 proto.h 文件)
@@ -173,6 +174,8 @@ target_link_libraries(third_party_deps INTERFACE
     prometheus_push
     prometheus_pull
     prometheus_core
+    libmodbus::libmodbus
+    CURL::libcurl
 )
 
 set(CMAKE_AUTOMOC ON)
@@ -232,6 +235,10 @@ add_subdirectory(
     ${CMAKE_CURRENT_SOURCE_DIR}/src/load_config   
     ${CMAKE_BINARY_DIR}/load_config-build
 )
+add_subdirectory(
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/PLC_Collector   
+    ${CMAKE_BINARY_DIR}/PLC_Collector-build
+)
 
 #设置头文件目录
 set(CurrentFolder "${CMAKE_CURRENT_SOURCE_DIR}")
@@ -256,10 +263,11 @@ target_link_libraries(file_platform PRIVATE
  MainWindows::MainWindows
  Thread_pool_ptr::Thread_pool_ptr
  PLC::PLC
+ PLC_Collector::PLC_Collector
  Event_Tracking::Event_Tracking
  ServiceMetrics::ServiceMetrics
-GrafanaDashboardManager::GrafanaDashboardManager
-Common_Libraries_Struct::Common_Libraries_Struct
+ GrafanaDashboardManager::GrafanaDashboardManager
+ Common_Libraries_Struct::Common_Libraries_Struct
  third_party_deps
  )
 

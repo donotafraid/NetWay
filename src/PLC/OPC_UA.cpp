@@ -1,5 +1,134 @@
 #include "PLC/OPC_UA.h"
+//  EndianConverter----------------------------------------------------------------------------
+static Result<bool, RichError>
+S7BigEndianToLittleEndian(std::vector<uint8_t> &Sourcebuffer,
+               std::vector<uint8_t> &Destbuffer, const OPCUAModernDataStruct &var) {
+  switch (var.data_type_enum) {
 
+  case S7DataType::BOOL: {
+    if (Sourcebuffer[0] & (1 << var.bit_offset)) {
+      Destbuffer[var.bytes_offset] |= 1 << var.bit_offset;
+    } else {
+      Destbuffer[var.bytes_offset] &= ~(1 << var.bit_offset);
+    }
+    break;
+  }
+  case S7DataType::BYTE:
+    Destbuffer[var.bytes_offset] = Sourcebuffer[0];
+    break;
+  case S7DataType::INT:
+    Destbuffer[var.bytes_offset + 1] = Sourcebuffer[0];
+    Destbuffer[var.bytes_offset] = Sourcebuffer[1];
+    break;
+  case S7DataType::WORD:
+    Destbuffer[var.bytes_offset + 1] = Sourcebuffer[0];
+    Destbuffer[var.bytes_offset] = Sourcebuffer[1];
+    break;
+  case S7DataType::DWORD:
+    Destbuffer[var.bytes_offset + 3] = Sourcebuffer[0];
+    Destbuffer[var.bytes_offset + 2] = Sourcebuffer[1];
+    Destbuffer[var.bytes_offset + 1] = Sourcebuffer[2];
+    Destbuffer[var.bytes_offset + 0] = Sourcebuffer[3];
+    break;
+  case S7DataType::UDINT:
+    Destbuffer[var.bytes_offset + 3] = Sourcebuffer[0];
+    Destbuffer[var.bytes_offset + 2] = Sourcebuffer[1];
+    Destbuffer[var.bytes_offset + 1] = Sourcebuffer[2];
+    Destbuffer[var.bytes_offset + 0] = Sourcebuffer[3];
+    break;
+  case S7DataType::DINT:
+    Destbuffer[var.bytes_offset + 3] = Sourcebuffer[0];
+    Destbuffer[var.bytes_offset + 2] = Sourcebuffer[1];
+    Destbuffer[var.bytes_offset + 1] = Sourcebuffer[2];
+    Destbuffer[var.bytes_offset + 0] = Sourcebuffer[3];
+    break;
+  case S7DataType::REAL:
+    Destbuffer[var.bytes_offset + 3] = Sourcebuffer[0];
+    Destbuffer[var.bytes_offset + 2] = Sourcebuffer[1];
+    Destbuffer[var.bytes_offset + 1] = Sourcebuffer[2];
+    Destbuffer[var.bytes_offset + 0] = Sourcebuffer[3];
+    break;
+  case S7DataType::STRING: {
+    int effective_string_length = std::min(Sourcebuffer[0], Sourcebuffer[1]);
+    Destbuffer[var.bytes_offset] = Sourcebuffer[0];
+    Destbuffer[var.bytes_offset + 1] = Sourcebuffer[1];
+    memcpy(&Destbuffer[var.bytes_offset + 2], &Sourcebuffer[2],
+           effective_string_length);
+    break;
+  }
+  default:
+    return Result<bool, RichError>(
+        RichError("variable not found by variablePath"));
+  }
+  return Result<bool, RichError>(true);
+}
+
+static Result<bool, RichError>
+LittleEndianToS7BigEndian(std::vector<uint8_t> &Sourcebuffer,
+               std::vector<uint8_t> &&Destbuffer, const OPCUAModernDataStruct &var) {
+  switch (var.data_type_enum) {
+
+  case S7DataType::BOOL: {
+    if (Sourcebuffer[0] & (1 << var.bit_offset)) {
+      Destbuffer[var.bytes_offset] |= 1 << var.bit_offset;
+    } else {
+      Destbuffer[var.bytes_offset] &= ~(1 << var.bit_offset);
+    }
+    break;
+  }
+  case S7DataType::BYTE:
+    Destbuffer[var.bytes_offset] = Sourcebuffer[0];
+    break;
+  case S7DataType::INT:
+    Destbuffer[var.bytes_offset] = Sourcebuffer[1];
+    Destbuffer[var.bytes_offset + 1] = Sourcebuffer[0];
+    break;
+  case S7DataType::WORD:
+    Destbuffer[var.bytes_offset] = Sourcebuffer[1];
+    Destbuffer[var.bytes_offset + 1] = Sourcebuffer[0];
+    break;
+  case S7DataType::DWORD:
+    Destbuffer[var.bytes_offset + 0] = Sourcebuffer[3];
+    Destbuffer[var.bytes_offset + 1] = Sourcebuffer[2];
+    Destbuffer[var.bytes_offset + 2] = Sourcebuffer[1];
+    Destbuffer[var.bytes_offset + 3] = Sourcebuffer[0];
+    break;
+  case S7DataType::UDINT:
+    Destbuffer[var.bytes_offset + 0] = Sourcebuffer[3];
+    Destbuffer[var.bytes_offset + 1] = Sourcebuffer[2];
+    Destbuffer[var.bytes_offset + 2] = Sourcebuffer[1];
+    Destbuffer[var.bytes_offset + 3] = Sourcebuffer[0];
+    break;
+  case S7DataType::DINT:
+    Destbuffer[var.bytes_offset + 0] = Sourcebuffer[3];
+    Destbuffer[var.bytes_offset + 1] = Sourcebuffer[2];
+    Destbuffer[var.bytes_offset + 2] = Sourcebuffer[1];
+    Destbuffer[var.bytes_offset + 3] = Sourcebuffer[0];
+    break;
+  case S7DataType::REAL:
+    Destbuffer[var.bytes_offset + 0] = Sourcebuffer[3];
+    Destbuffer[var.bytes_offset + 1] = Sourcebuffer[2];
+    Destbuffer[var.bytes_offset + 2] = Sourcebuffer[1];
+    Destbuffer[var.bytes_offset + 3] = Sourcebuffer[0];
+    break;
+  case S7DataType::STRING: {
+    int effective_string_length = std::min(Sourcebuffer[0], Sourcebuffer[1]);
+    Destbuffer[var.bytes_offset] = Sourcebuffer[0];
+    Destbuffer[var.bytes_offset + 1] = Sourcebuffer[1];
+    memcpy(&Destbuffer[var.bytes_offset + 2], &Sourcebuffer[2],
+           effective_string_length);
+    break;
+  }
+  default:
+    return Result<bool, RichError>(
+        RichError("variable not found by variablePath"));
+  }
+  return Result<bool, RichError>(true);
+}
+
+
+
+//S7_Access------------------------------------------------------------------
 Result<bool,RichError> S7_Access::connect() 
 {
     bool check_result = isConnected();
@@ -48,6 +177,76 @@ void S7_Access::disconnect()
 S7Object& S7_Access::getClient()
 {
     return this->m_client_var;
+}
+
+Result<bool, RichError>
+S7_Access::batchReadS7DataBlock_FromPLC(OPCUADataBlock *data) {
+  bool success = true;
+  for (auto &var : data->getVariabeDataVector()) {
+    Sourcebuffer.clear();
+    Sourcebuffer.resize(var.s7_data_type_length);
+    {
+      auto result = this->read(1, var.bytes_offset, var.s7_data_type_length,
+                               Sourcebuffer.data());
+      if (result.is_fail()) {
+        std::cout << "Read action is fail" << std::endl;
+        return Result<bool, RichError>(result);
+        success = false;
+      } else {
+        success = true;
+        auto result = S7BigEndianToLittleEndian(Sourcebuffer, Destbuffer, var);
+        success = success && result.is_success();
+      }
+    }
+  }
+  if (success) {
+    data->getVariableDataBuffer().clear();
+    std::swap(Destbuffer, data->getVariableDataBuffer());
+    return Result<bool, RichError>(true);
+  } else {
+    return Result<bool, RichError>(RichError("read variable failed"));
+  }
+}
+
+Result<bool, RichError>
+S7_Access::batchWriteS7DataBlock_ToPLC(OPCUADataBlock *data) {
+  {
+     {
+      bool success = true;
+      for (auto &var : data->getVariabeDataVector()) {
+        {
+          tmpBuffer.clear();
+          tmpBuffer.resize(var.s7_data_type_length);
+          {
+            std::move(data->getVariableDataBuffer().begin() + var.bytes_offset,
+                      data->getVariableDataBuffer().begin() + var.bytes_offset +
+                          var.s7_data_type_length,
+                      tmpBuffer.begin());
+          }
+
+          //  single write condition result
+          auto result = this->write(
+              1, var.bytes_offset, var.s7_data_type_length, tmpBuffer.data());
+          if (result.is_fail()) {
+            return Result<bool, RichError>(result);
+          } else {
+            success = true;
+            std::cout << "Send successful\n";
+          }
+        }
+      }
+
+      //  check total write condition result
+      if (success) {
+        return Result<bool, RichError>(true);
+      } else {
+        return Result<bool, RichError>(RichError("read variable failed"));
+      }
+    }
+
+    //  reader is nullptr
+    return Result<bool, RichError>(RichError("S7Acess is nullptr"));
+  }
 }
 
 Result<bool,RichError> S7_Access::read(int DB_Number,int Start_Position,int Read_Size,uint8_t *SourceData_var) 
@@ -136,13 +335,14 @@ Result<bool,RichError> OPCUA_Access::Set_UA_Scalar_StatusCode(int nameSpace,OPCU
 
     //  INIT WRITE UA_VALUE
     UA_WriteValue_init(&m_writeValue);
-    m_writeValue.nodeId =
-        UA_NODEID_STRING_ALLOC(nameSpace, var.variable_nodeID.data());
+    UA_NodeId_copy(&var.nodeID, &m_writeValue.nodeId);
+    // m_writeValue.nodeId =
+    //     UA_NODEID_STRING_ALLOC(nameSpace, var.variable_nodeID.data());
     m_writeValue.attributeId = UA_ATTRIBUTEID_VALUE;
-    UA_String tmp_data = UA_STRING(const_cast<char*>(source_var.c_str()));
+    UA_String tmpBuffer = UA_STRING(const_cast<char*>(source_var.c_str()));
 
     //  COPY RESOURCE TO UA_VARIANT OF UA_WriteValue
-    UA_StatusCode status = UA_Variant_setScalarCopy(&m_writeValue.value.value,&tmp_data,type);
+    UA_StatusCode status = UA_Variant_setScalarCopy(&m_writeValue.value.value,&tmpBuffer,type);
     if(status != UA_STATUSCODE_GOOD)
     {
         UA_WriteValue_clear(&m_writeValue);
@@ -166,8 +366,9 @@ Result<bool,RichError> OPCUA_Access::Set_UA_Scalar_StatusCode(int nameSpace,OPCU
 
     //  INIT WRITE UA_VALUE
     UA_WriteValue_init(&m_writeValue);
-    m_writeValue.nodeId =
-        UA_NODEID_STRING_ALLOC(nameSpace, var.variable_nodeID.data());
+    UA_NodeId_copy(&var.nodeID, &m_writeValue.nodeId);
+    // m_writeValue.nodeId =
+    //     UA_NODEID_STRING_ALLOC(nameSpace, var.variable_nodeID.data());
     m_writeValue.attributeId = UA_ATTRIBUTEID_VALUE;
 
     //  COPY RESOURCE TO UA_VARIANT OF UA_WriteValue
@@ -195,8 +396,9 @@ Result<bool,RichError> OPCUA_Access::Set_UA_Array_StatusCode(int nameSpace,OPCUA
 
     //  INIT WRITE UA_VALUE
     UA_WriteValue_init(&m_writeValue);
-    m_writeValue.nodeId =
-        UA_NODEID_STRING_ALLOC(nameSpace, var.variable_nodeID.data());
+    UA_NodeId_copy(&var.nodeID, &m_writeValue.nodeId);
+    // m_writeValue.nodeId =
+    //     UA_NODEID_STRING_ALLOC(nameSpace, var.variable_nodeID.data());
     m_writeValue.attributeId = UA_ATTRIBUTEID_VALUE;
 
     //  COPY RESOURCE TO UA_VARIANT OF UA_WriteValue
@@ -226,8 +428,9 @@ Result<bool,RichError> OPCUA_Access::batchSet_UA_Scalar_StatusCode(int nameSpace
     auto &m_writeValue = m_batchWriteNodes[index];
     if(m_writeValue.attributeId != UA_ATTRIBUTEID_VALUE)
     {
-      m_writeValue.nodeId =
-          UA_NODEID_STRING_ALLOC(nameSpace, var.variable_nodeID.data());
+    UA_NodeId_copy(&var.nodeID, &m_writeValue.nodeId);
+      // m_writeValue.nodeId =
+      //     UA_NODEID_STRING_ALLOC(nameSpace, var.variable_nodeID.data());
       m_writeValue.attributeId = UA_ATTRIBUTEID_VALUE;
     }
 
@@ -257,8 +460,9 @@ Result<bool,RichError> OPCUA_Access::batchSet_UA_Scalar_StatusCode(int nameSpace
     //  INIT WRITE UA_VALUE
     auto &m_writeValue = m_batchWriteNodes[index];
     if (m_writeValue.attributeId != UA_ATTRIBUTEID_VALUE) {
-      m_writeValue.nodeId =
-          UA_NODEID_STRING_ALLOC(nameSpace, var.variable_nodeID.data());
+    UA_NodeId_copy(&var.nodeID, &m_writeValue.nodeId);
+      // m_writeValue.nodeId =
+      //     UA_NODEID_STRING_ALLOC(nameSpace, var.variable_nodeID.data());
       m_writeValue.attributeId = UA_ATTRIBUTEID_VALUE;
     }
 
@@ -292,8 +496,9 @@ Result<bool,RichError> OPCUA_Access::batchSet_UA_Array_StatusCode(int nameSpace,
     //  INIT WRITE UA_VALUE
     auto &m_writeValue = m_batchWriteNodes[index];
     if (m_writeValue.attributeId != UA_ATTRIBUTEID_VALUE) {
-      m_writeValue.nodeId =
-          UA_NODEID_STRING_ALLOC(nameSpace, var.variable_nodeID.data());
+    UA_NodeId_copy(&var.nodeID, &m_writeValue.nodeId);
+      // m_writeValue.nodeId =
+      //     UA_NODEID_STRING_ALLOC(nameSpace, var.variable_nodeID.data());
       m_writeValue.attributeId = UA_ATTRIBUTEID_VALUE;
     }
 
@@ -335,29 +540,38 @@ UA_Client *OPCUA_Access::getClient()
 
 void OPCUA_Access::Set_Read_NodeID(UA_ReadValueId &nodeid,OPCUAModernDataStruct& data_var)
 {
-  nodeid.nodeId = UA_NODEID_STRING_ALLOC(this->m_nameSpace,
-                                         data_var.variable_nodeID.data());
+  if(data_var.buildType == InputFormat::BROWSER)
+  {
+    nodeid.nodeId = UA_NODEID_STRING_ALLOC(this->m_nameSpace,
+                                           uaStringToString(data_var.nodeID.identifier.string).data());
+  }
+  else
+  {
+    nodeid.nodeId = UA_NODEID_STRING_ALLOC(this->m_nameSpace,
+                                           data_var.variable_nodeID.data());
+  }
+
   nodeid.indexRange = UA_STRING_NULL;
   nodeid.attributeId = UA_ATTRIBUTEID_VALUE;
 }
 
-Result<bool,RichError> OPCUA_Access::Read_UA_Variant_From_PLC()
-{
-    Result<bool,RichError> it = this->read();
-    if(it.is_success())
-    {
-        //  RECORD RESPONSE_VALUE
-        for(int i = 0 ; i< m_batchReadNodes.size() ; ++i)
-        {
-          UA_Variant_steal(&m_read_response.results[i].value,
-                           &m_batchReadVariant[i]);
-        }
-        return Result<bool,RichError> (true);
+Result<bool, RichError> OPCUA_Access::Read_UA_Variant_From_PLC() {
+  if (!UA_Variant_isEmpty(&m_batchReadVariant[0])) {
+    Clear_Read_Respondse();
+  }
+  Result<bool, RichError> it = this->read();
+  if (it.is_success()) {
+    //  RECORD RESPONSE_VALUE
+    for (int i = 0; i < m_batchReadNodes.size(); ++i) {
+      UA_Variant_steal(&m_read_response.results[i].value,
+                       &m_batchReadVariant[i]);
     }
-    else
-    {
-        return Result<bool,RichError> (RichError(it.unwrap_err()));
-    }
+
+    return Result<bool, RichError>(true);
+  } else {
+    Clear_Read_Respondse();
+    return Result<bool, RichError>(RichError(it.unwrap_err()));
+  }
 }
 
 // T Function --------- Covert_UA_Scalar_To_Specific  
@@ -850,8 +1064,6 @@ Result<bool, RichError> OPCUA_Access::read() {
        << m_read_response.responseHeader.serviceResult
        << " read_response.resultsSize : " << m_read_response.resultsSize;
 
-    Clear_Read_Respondse();
-
     return Result<bool, RichError>(RichError(ss.str()));
   }
 
@@ -1051,6 +1263,17 @@ bool OPCUA_Access::isSiemensContainer(const std::string& browseName)
                                              " attempts"));
   }
 
+
+ std::vector<UA_Variant>& OPCUA_Access::getReadVariant() 
+ {
+   return m_batchReadVariant;
+ }
+
+ std::vector<UA_WriteValue>& OPCUA_Access::getWriteNodes()
+ {
+   return m_batchWriteNodes;
+ }
+
   Result<bool, RichError>
   OPCUA_Access::waitForSessionActivation(int timeoutMs) {
     auto startTime = std::chrono::steady_clock::now();
@@ -1131,44 +1354,6 @@ bool OPCUA_Access::isSiemensContainer(const std::string& browseName)
     config->outStandingPublishRequests = 1;
 
   }
-
-  // void OPCUA_Access::configureClient() {
-  //   if (!m_client_pointer)
-  //     return;
-
-  //   // 1. 获取配置
-  //   UA_ClientConfig *config = UA_Client_getConfig(m_client_pointer);
-  //   if (!config)
-  //     return;
-
-  //   // 2. 设置默认配置（重要！）
-  //   UA_StatusCode retval = UA_ClientConfig_setDefault(config);
-  //   if (retval != UA_STATUSCODE_GOOD) {
-  //     std::cerr << "Failed to set default client config" << std::endl;
-  //     return;
-  //   }
-
-  //   // 3. 设置超时时间（存在）
-  //   config->timeout = 5000; // 5秒超时
-
-  //   // 4. 设置安全通道生命周期（存在）
-  //   config->secureChannelLifeTime = 30000; // 300秒
-
-  //   // 5. 设置会话超时（存在）
-  //   config->requestedSessionTimeout = 30000; // 300秒
-
-  //   // 6. 重连相关配置（存在的字段）
-  //   config->noReconnect = false;  // 允许重连（默认false）
-  //   config->noNewSession = false; // 允许创建新会话
-  //   config->noSession = false;    // 需要创建会话
-
-  //   // 7. 连接检查间隔（存在）
-  //   config->connectivityCheckInterval = 5000; // 5秒检查一次
-
-  //   // 8.  outstanding Publish 请求数（存在）
-  //   config->outStandingPublishRequests = 1;
-  // }
-
 
 Result<bool,RichError> OPCUA_Access::read_variable_from_device(UA_NodeId &nodeID,bool reverse_direction)
 {
@@ -1307,6 +1492,28 @@ Result<bool,RichError> OPCUA_Access::read_variable_from_device(UA_NodeId &nodeID
     return Result<bool,RichError> (true);
 }
 
+Result<bool, RichError>
+OPCUA_Access::batchReadOPCUADataBlock_FromPLC(OPCUADataBlock *data) {
+  bool success = true;
+  //  CLEAR ELEMEMT EXISTED BEFORE
+  this->PrepareBatchRead(data->getVariabeDataVector());
+
+  //  read data from PLC
+  return (this->Read_UA_Variant_From_PLC());
+}
+
+Result<bool, RichError>
+OPCUA_Access::batchWriteOPCUABlock_ToPLC(OPCUADataBlock *data) {
+  auto result = this->ensureConnection();
+  if (result.is_fail()) {
+    return Result<bool, RichError>(result);
+  }
+
+  auto writeResult = this->batchWrite();
+ 
+  return Result<bool, RichError>(writeResult);
+}
+
 Result<bool,RichError> OPCUA_Access::expandNodeIdToString( UA_ExpandedNodeId &id)
 {
     UA_String tmp;
@@ -1327,12 +1534,6 @@ Result<bool,RichError> OPCUA_Access::expandNodeIdToString( UA_ExpandedNodeId &id
 
 
 Result<bool, RichError> OPCUA_Access::batchWrite() {
-  // 1. 确保连接有效
-  auto connectResult = ensureConnection();
-  if (connectResult.is_fail()) {
-    return Result<bool, RichError>(std::move(connectResult));
-  }
-
   // 2. 准备写入请求
   UA_WriteRequest request;
   UA_WriteRequest_init(&request);

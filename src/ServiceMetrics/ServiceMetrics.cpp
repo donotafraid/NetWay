@@ -39,11 +39,64 @@ void ServiceMetrics::processRequest()
     m_active_request_counter->Decrement();
 }
 
+void ServiceMetrics::processGaugeRequest(const float &data)
+{
+    m_active_request_counter->Set(data);
+}
+
+void ServiceMetrics::graceful_shutdown() {
+  // 1. 停止采集、上报等线程...
+  // 2. 调用Pushgateway清理API
+  std::string delete_url =
+      "http://localhost:9092/metrics/job/my_cpp_app/instance/gateway_1";
+  CURL *curl = curl_easy_init();
+  if (curl) {
+    curl_easy_setopt(curl, CURLOPT_URL, delete_url.c_str());
+    curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "DELETE");
+    // ... 可添加超时设置，防止卡住
+    curl_easy_perform(curl);
+    curl_easy_cleanup(curl);
+  }
+  // 3. 正常退出
+}
+
+bool ServiceMetrics::pushToPushgateway(const float &data) {
+  // 1. 手动构建与你原来 gauge 等价的 Prometheus 文本
+  std::ostringstream body;
+  body << "# HELP myapp_active_requests current active request\n";
+  body << "# TYPE myapp_active_requests gauge\n";
+  body << "myapp_active_requests{service=\"myapp\"} "
+       << data << "\n";
+
+  std::string body_content = body.str();
+
+  // 2. 发送到 Pushgateway（用 POST，避免覆盖其他指标）
+  CURL *curl = curl_easy_init();
+  if (!curl)
+    return false;
+
+  std::string url =
+      "http://localhost:9092/metrics/job/my_cpp_app/instance/gateway_1";
+  curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+  curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body_content.c_str());
+
+  struct curl_slist *headers = nullptr;
+  headers = curl_slist_append(
+      headers, "Content-Type: text/plain; version=0.0.4; charset=utf-8");
+  curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+
+  CURLcode res = curl_easy_perform(curl);
+
+  curl_slist_free_all(headers);
+  curl_easy_cleanup(curl);
+  return res == CURLE_OK;
+}
+
 void ServiceMetrics::simulateConcurrentRequests(int requests)
 {
     if(m_exposer == nullptr)
     {
-        m_exposer = std::make_unique<prometheus::Exposer>("0.0.0.0:9090");
+        m_exposer = std::make_unique<prometheus::Exposer>("172.28.80.94:9090");
         m_exposer->RegisterCollectable(m_registry);
     }
      std::vector<std::future<void>> futures;

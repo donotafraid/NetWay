@@ -35,7 +35,6 @@
 #include <nlohmann/json.hpp>
 #include "spdlog/spdlog.h"
 #include <cassert>
-#include "concurrentqueue.h"
 #include "proto/message_struct.pb.h"
 
 const uint32_t MAGIC = 0xDEADBEEF;
@@ -205,12 +204,5 @@ private:
   }
 };
 
-// 辅助数据结构
-struct SliceRecord {
-  std::string file_id;
-  int slice_index = 0;
-  std::string aes_key; // 32 bytes
-  std::string iv;      // 16 bytes
-  std::string plaintext;
-};
+
 #endif

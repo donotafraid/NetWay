@@ -9,18 +9,21 @@ set(
     SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/TransformS7AndOPCUA.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/OPC_UA.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/OPCUAData.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/OPCUAManager.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/OPCUABrowser.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/SingleDataBlockRebuild.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/OPCUACovert.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/XMLParser.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/OPCUADataBlock.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/OPCUACSV.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/OPCUACSVCovert.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/Modbus.cpp
 )
 
 set (MOC_HEADERS
     ${CMAKE_CURRENT_SOURCE_DIR}/../../include/PLC/TransformS7AndOPCUA.h
     # ${CMAKE_CURRENT_SOURCE_DIR}/../../include/PLC/OPC_UA.h
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../include/PLC/OPCUAData.h
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../include/PLC/SingleDataBlockRebuild.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../include/PLC/OPCUAManager.h
+    # ${CMAKE_CURRENT_SOURCE_DIR}/../../include/PLC/DataBlockView.h
     # ${CMAKE_CURRENT_SOURCE_DIR}/../../include/PLC/XMLParser.h
     # ${CMAKE_CURRENT_SOURCE_DIR}/../../include/PLC/Struct.h
 )

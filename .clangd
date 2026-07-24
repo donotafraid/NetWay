@@ -16,6 +16,8 @@ CompileFlags:
     - -I
     - /root/.conan2/p/b/backwed58a3d05b5f6/p/include
     - -I
+    - /root/.conan2/p/b/libmo557e2fc7a2098/p/include
+    - -I
     - /root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/include/
     - -I
     - /root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/

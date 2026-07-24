@@ -4,13 +4,17 @@
 #include "ProtocolHeader/ProtocolHeader.h"
 // #include "Sqlite_DB/Sqlite_DB.h"
 #include "MainWindows/MainWindow_Rebuild.h"
-#include "PLC/SingleDataBlockRebuild.h"
+// #include "PLC/DataBlockView.h"
 #include "Event_Tracking/Event_Tracking.h"
 #include "GrafanaDashboardManager/ObjectRouter.h"
 #include "GrafanaDashboardManager/GrafanaDashboard.h"
 #include "PLC/Struct.h"
 #include "PLC/XMLParser.h"
 #include "PLC/OPCUACSV.h"
+#include "PLC/Modbus.h"
+#include "PLC_Collector/manager.h"
+#include "PLC/OPCUACSVCovert.h"
+
 
 int main(int argc, char *argv[]) {
   std::string file_path = "PLC_config.txt";
@@ -55,8 +59,8 @@ int main(int argc, char *argv[]) {
       std::make_shared<S7_MainWindows_UI>();
   std::shared_ptr<S7_DeviceManager> windowManager =
       std::make_shared<S7_DeviceManager>();
-  std::shared_ptr<DataBlockManager> dataBlockManager =
-      std::make_shared<DataBlockManager>();
+  std::shared_ptr<OPCUADataBlockManager> dataBlockManager =
+      std::make_shared<OPCUADataBlockManager>();
   std::shared_ptr<OPCUADataBlockManager> OPCUAdataBlockManager =
       std::make_shared<OPCUADataBlockManager>();
 
@@ -91,46 +95,35 @@ int main(int argc, char *argv[]) {
   return rc;
 }
 
-//===========================================try load infromation from csv file
+// ================================try convert xml to csv
 // int main() {
-//   std::string filename = "123.csv";
-
-//   std::cout << "开始解析文件: " << filename << std::endl;
-//   std::cout << std::string(120, '=') << std::endl;
-
-//   OPCUAParser parser;
-
-//   // 1. 从文件读取内容
-//   std::vector<std::string> lines = parser.readCSVFile(filename);
-
-//   if (lines.empty()) {
-//     std::cerr << "错误: 未能读取到任何数据，请检查文件是否存在且格式正确"
-//               << std::endl;
+//   // 解析 XML
+//   OPCUACSVCovert parser("test.PLC_1.OPCUA.xml");
+//   if (!parser.parse()) {
+//     std::cerr << "Failed to parse XML" << std::endl;
 //     return 1;
 //   }
 
-//   // 2. 显示原始数据预览
-//   std::cout << "\n原始数据预览:\n";
-//   std::cout << std::string(80, '-') << std::endl;
-//   for (size_t i = 0; i < std::min(lines.size(), size_t(3)); ++i) {
-//     std::cout << "行 " << (i + 1) << ": " << lines[i] << std::endl;
-//   }
-//   if (lines.size() > 3) {
-//     std::cout << "... 还有 " << (lines.size() - 3) << " 行" << std::endl;
-//   }
-//   std::cout << std::string(80, '-') << std::endl;
+//   const auto &allNodes = parser.getAllNodes();
+//   exportNodesToCSV(allNodes, "user_nodes.csv",true);
+// }
+
+//================================try read csv
+// int main() {
+//   // 解析 XML
+//   std::string file_path{"/root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/bin/user_nodes.csv"};
+//   OPCUACSVParser parser;
+//   // 1. 从文件读取内容
+//     std::vector<std::string> lines = parser.readCSVFile(file_path);
+
+//     if (lines.empty()) {
+//       return 0;
+//     }
 
 //   // 3. 解析数据并填充结构体（hasHeader=true表示跳过第一行标题）
-//   std::vector<OPCUAModernDataStructFromCSV> parsedData =
-//       parser.parseAllData(lines, true);
-
-//   // 4. 输出解析结果
-//   parser.printData(parsedData);
-
-//   // 5. 输出统计信息
-//   parser.printStatistics(parsedData);
-
-//   return 0;
+//     std::vector<OPCUAModernDataStructFromCSV> parsedData =
+//         parser.parseAllData(lines, true);
+//     return 0;
 // }
 
 //===============================================try load variable without any external information
@@ -286,4 +279,103 @@ int main(int argc, char *argv[]) {
 //       spdlog::shutdown();
 //     }
 //     return 0;
+// }
+
+//===========Modbus Simulate==================================
+// int main() {
+//   // 1. 创建中心对象
+//   ModbusMediator mediator;
+
+//   // 2. 建立连接
+//   auto connect_result = mediator.connect("172.28.80.1", 502);
+//   if (connect_result.is_fail()) {
+//     std::cerr << "Connection failed: " << connect_result.unwrap_err().what() << std::endl;
+//     return -1;
+//   }
+
+//   // 设置超时参数（所有业务模块共用）
+//   mediator.setResponseTimeout(1, 500); // 1.5秒
+
+//   // 3. 创建业务模块（都依赖同一个Mediator）
+//   TemperatureMonitor temp_monitor(mediator);
+//   SwitchMonitor switch_monitor(mediator);
+
+//   // 4. 业务逻辑：完全不知道彼此存在
+//   auto temp = temp_monitor.getTemperature(1, 5);
+//   if (temp.is_success()) {
+//     std::cout << "Temperature: " << temp.unwrap_returnLeftValue() << "°C" << std::endl;
+//   }
+
+//   auto result = switch_monitor.getSwitch(1, 5);
+//   if (result.is_success()) {
+//     for (int i = 0; i < 8; ++i) {
+//       int bit = (result.unwrap_returnLeftValue() >> i) & 1;
+//       std::cout << "Bit " << i << ": " << bit << std::endl;
+//     }
+//   }
+
+
+//   return 0;
+// }
+
+// //==========Modbus+Promethues===============================
+// /**
+//  * 全局终止标志（信号处理使用）
+//  */
+// std::atomic<bool> g_terminate(false);
+
+// /**
+//  * 信号处理函数
+//  * 
+//  * 协作点：优雅关闭的触发点
+//  * 收到 SIGINT (Ctrl+C) 或 SIGTERM 时启动关闭流程
+//  */
+// void signalHandler(int signal) {
+//     std::cout << "\n[Signal] Received signal " << signal 
+//              << " (SIG" << (signal == SIGINT ? "INT" : "TERM") << ")" 
+//              << std::endl;
+//     g_terminate.store(true, std::memory_order_release);
+// }
+
+// /**
+//  * 主函数 - 程序入口
+//  * 
+//  * 任务分析产出：
+//  * 1. 注册信号处理（支持优雅关闭）
+//  * 2. 创建系统管理器
+//  * 3. 启动系统
+//  * 4. 等待终止
+//  * 5. 清理资源
+//  */
+// int main() {
+//   // 1. 注册信号处理
+//   signal(SIGINT, signalHandler);
+//   signal(SIGTERM, signalHandler);
+
+//   // 2. 打印启动信息
+//   std::cout << "\n========================================" << std::endl;
+//   std::cout << "   PLC Data Collection System v1.0" << std::endl;
+//   std::cout << "   Press Ctrl+C to stop" << std::endl;
+//   std::cout << "========================================\n" << std::endl;
+
+//   // 3. 创建并启动系统
+//   SystemManager manager;
+//   manager.start();
+
+//   // 4. 等待终止信号
+//   std::cout << "[Main] System running, waiting for signal..." << std::endl;
+//   while (!g_terminate.load(std::memory_order_acquire)) {
+//     std::this_thread::sleep_for(std::chrono::milliseconds(100));
+//   }
+
+//   // 5. 停止系统（优雅关闭）
+//   std::cout << "[Main] Shutting down..." << std::endl;
+//   manager.stop();
+
+//   // 6. 退出
+//   std::cout << "\n========================================" << std::endl;
+//   std::cout << "   System terminated successfully" << std::endl;
+//   std::cout << "========================================\n" << std::endl;
+
+//   return 0;
 // }

@@ -8,7 +8,7 @@ std::once_flag memory_pool::m_once_flag;
 std::unique_ptr<ConnectionWrapper> ConnectionPool::get_SubConnection()
 {
   // 验证并获取最终使用的文件路径
-  std::string actual_path = verify_db_path_memorySize();
+  std::string actual_path = verify_openedPath_memorySize();
 
   // 1. 尝试从池中查找匹配的连接
   for (auto it = m_connection_pool.begin(); it != m_connection_pool.end();
@@ -20,7 +20,7 @@ std::unique_ptr<ConnectionWrapper> ConnectionPool::get_SubConnection()
     }
   }
 
-  return nullptr;
+  return (std::make_unique<ConnectionWrapper>(actual_path));
 }
 
 std::unique_ptr<ConnectionWrapper> ConnectionPool::get_MainConnection(const std::string &mainFilePath)
@@ -35,16 +35,15 @@ std::unique_ptr<ConnectionWrapper> ConnectionPool::get_MainConnection(const std:
     }
   }
 
-  return nullptr;
+  return get_SubConnection();
 }
 
-void ConnectionPool::release_connectionWrapper_ptr(std::unique_ptr<ConnectionWrapper> sqlite3_ptr)
-{
-    {
-        std::lock_guard<std::mutex> lock(m_connection_mutex);
-        m_connection_pool.push_back(std::move(sqlite3_ptr));
-    }
-    m_connection_cv.notify_one();
+
+void ConnectionPool::release_connectionWrapper_ptr(
+    std::unique_ptr<ConnectionWrapper> sqlite3_ptr) {
+  std::lock_guard<std::mutex> lock(m_connection_mutex);
+  m_connection_pool.push_back(std::move(sqlite3_ptr));
+  m_connection_cv.notify_one();
 }
 
 std::string ConnectionPool::return_current_date_string()
@@ -58,29 +57,50 @@ std::string ConnectionPool::return_current_date_string()
     return oss.str();
 }
 
-// 实现数据库文件的自动分片/轮转机制，当单个数据库文件超过大小限制时，自动创建新的文件。
-std::string ConnectionPool::verify_db_path_memorySize()
+std::string ConnectionPool::generateSuffix(int counter)
 {
-    std::string base_name = db_file_pre + return_current_date_string();
-    std::string extension = ".db";
-    std::string db_file_path = base_name + extension;
-    
-    int counter = 0;
-    while(fs::exists(db_file_path))
-    {
-        auto db_file_size = fs::file_size(db_file_path);
-        if(db_file_size <= MAX_DB_FILE_LIMIT)
-        {
-            return db_file_path;  // 现有文件未超限，直接使用
-        }
-        
-        // 文件超限，生成新文件名
-        counter++;
-        std::string suffix = std::string(counter, 'A');  // A, AA, AAA...
-        db_file_path = base_name + suffix + extension;
+  return std::string(counter, 'A'); // A, AA, AAA...
+}
+
+
+// 实现数据库文件的自动分片/轮转机制，当单个数据库文件超过大小限制时，自动创建新的文件。
+std::string ConnectionPool::verify_openedPath_memorySize() {
+  std::string base_name = db_file_pre + return_current_date_string();
+  std::string extension = ".db";
+
+  // 检查当前日期的文件，从无后缀开始
+  for (int counter = 0;; counter++) {
+    std::string suffix = (counter == 0) ? "" : generateSuffix(counter);
+    std::string db_file_path = base_name + suffix + extension;
+
+    if (!fs::exists(db_file_path)) {
+      // 文件不存在，创建它
+      m_connection_pool.push_back(
+          std::make_unique<ConnectionWrapper>(db_file_path));
+      connectFilePathVec.push_back(db_file_path);
+      return db_file_path;
     }
-    
-    return db_file_path;  // 返回新文件路径
+    else
+    {
+        for(auto &item:connectFilePathVec)
+        {
+            if(item == db_file_path)
+            {
+              return db_file_path;
+            }
+        }
+        //  the file exist but not exist in vec , so add it
+        m_connection_pool.push_back(
+            std::make_unique<ConnectionWrapper>(db_file_path));
+        connectFilePathVec.push_back(db_file_path);
+    }
+
+    //  ensure the file exist , judge the freeSpace of file 
+    if (fs::file_size(db_file_path) <= MAX_DB_FILE_LIMIT) {
+      return db_file_path; // 未超限，直接使用
+    }
+    // 超限则继续查找下一个
+  }
 }
 
 ConnectionPool::~ConnectionPool()
@@ -117,6 +137,7 @@ ConnectionWrapper& ConnectionWrapper::operator=(ConnectionWrapper&& other) noexc
 
 void ConnectionWrapper::reset(sqlite3_stmt* stmt) {
   sqlite3_reset(stmt);
+  sqlite3_clear_bindings(stmt);
   db_file_path_.clear();
   in_transaction_ = false;
 }
@@ -145,6 +166,7 @@ int ConnectionWrapper::step(sqlite3_stmt* stmt) {
 void ConnectionWrapper::reset_stmt(sqlite3_stmt* stmt) {
     if (stmt) {
         sqlite3_reset(stmt);
+        sqlite3_clear_bindings(stmt);
     }
 }
 
@@ -209,7 +231,9 @@ bool ConnectionWrapper::open(const std::string &db_file_path) {
   }
 
   db_file_path_ = db_file_path;
-  return true;
+
+  // try create table for this opened file
+  return createTableIfNotExists();
 }
 
 void ConnectionWrapper::close() {
@@ -220,8 +244,13 @@ void ConnectionWrapper::close() {
     db_file_path_.clear();
 }
 
-bool ConnectionWrapper::prepare(const std::string& sql, sqlite3_stmt** stmt) {
-    return sqlite3_prepare_v2(db_ptr_, sql.c_str(), -1, stmt, nullptr) == SQLITE_OK;
+bool ConnectionWrapper::prepare(const std::string &sql, sqlite3_stmt **stmt) {
+  int result = sqlite3_prepare_v2(db_ptr_, sql.c_str(), -1, stmt, nullptr);
+  if (result != SQLITE_OK) {
+    std::cout << "result code : " << result << std::endl;
+  }
+
+  return result;
 }
 
 bool ConnectionWrapper::begin_transaction() {

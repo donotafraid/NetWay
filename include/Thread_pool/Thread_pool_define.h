@@ -9,6 +9,7 @@
 #include <queue>
 #include <functional>
 #include <execution>
+#include "PLC_Collector/concurrentqueue.h"
 
 #include "load_config/load_config.h"
 #include "ConnectionPool.h"

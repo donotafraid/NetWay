@@ -882,6 +882,30 @@ void S7_MainWindows_UI::update_parent_item_color(bool status)
     }
 }
 
+void S7_MainWindows_UI::update_removeTab(const QString &tabTitle) {
+  if (!blankInformationTableView)
+    return;
+
+  if (!m_tabIndexMap.contains(tabTitle))
+    return;
+
+  int oldIndex = m_tabIndexMap[tabTitle];
+
+  // 验证索引有效性
+  if (oldIndex < 0 || oldIndex >= blankInformationTableView->count())
+    return;
+
+  // 删除映射中的旧项
+  blankInformationTableView->removeTab(oldIndex);
+  m_tabIndexMap.remove(tabTitle);
+
+  // 重组：更新所有索引大于 oldIndex 的映射项
+  for (auto it = m_tabIndexMap.begin(); it != m_tabIndexMap.end(); ++it) {
+    if (it.value() > oldIndex) {
+      it.value()--; // 索引前移
+    }
+  }
+}
 //  SystemSetting-------------------------------------------------------------------
 void SystemSetting::display_current_setting()
 {
@@ -961,15 +985,8 @@ void S7_DeviceManager::initalize_scope(std::shared_ptr<Scope> scope) {
         std::cout << "there do not exist ServiceMetric object \n";
     }
     
-    auto find_result = m_scope->getShared<DataBlockManager>();
-    if (find_result) {
-        m_dataBlockManager = find_result.get();
-    } else {
-        std::cout << "there do not exist DataBlockManager object \n";
-    }
-
     auto tmp_result = m_scope->getShared<OPCUADataBlockManager>();
-    if (find_result) {
+    if (tmp_result) {
       m_OPCUAdataBlockManager = tmp_result.get();
     } else {
       std::cout << "there do not exist OPCUADataBlockManager object \n";
@@ -988,18 +1005,18 @@ void S7_DeviceManager::handleMetricSendRequest(int times) {
     std::cout << "handleMetricSendRequest call !\n";
 }
 
-Result<QWidget *, RichError>
-S7_DeviceManager::handleGetViewRequest(const std::string &ip_Address,
-                                       const std::string &dataBlockName) {
-  QWidget *ptr =
-      m_dataBlockManager->getView(QString::fromStdString(ip_Address),
-                                       QString::fromStdString(dataBlockName));
-  if (ptr == nullptr) {
-    return Result<QWidget *, RichError>(
-        RichError{"the dataBlock do not find successfully : " + dataBlockName});
-  }
-  return Result<QWidget *, RichError>(ptr);
-}
+// Result<QWidget *, RichError>
+// S7_DeviceManager::handleGetViewRequest(const std::string &ip_Address,
+//                                        const std::string &dataBlockName) {
+//   QWidget *ptr =
+//       m_dataBlockManager->getView(QString::fromStdString(ip_Address),
+//                                        QString::fromStdString(dataBlockName));
+//   if (ptr == nullptr) {
+//     return Result<QWidget *, RichError>(
+//         RichError{"the dataBlock do not find successfully : " + dataBlockName});
+//   }
+//   return Result<QWidget *, RichError>(ptr);
+// }
 
 void S7_DeviceManager::handleExternalOPCUAConnectRequest(const QString &ip_Address, 
                                                        int nameSpace,
@@ -1016,23 +1033,18 @@ void S7_DeviceManager::handleExternalOPCUAInlineBrowsetRequest(const QString &ip
 void S7_DeviceManager::handleExternalS7ConnectRequest(const QString &ip_Address, 
                                                     int rack,
                                                     int slot) {
-    m_dataBlockManager->buildS7Connect(ip_Address, rack, slot);
+    m_OPCUAdataBlockManager->buildS7Connect(ip_Address, rack, slot);
 }
-
-
 
 bool S7_DeviceManager::handleConnectRequest(const QString &ip_Address,const std::string &connectWay
                                            ) {
-    return m_dataBlockManager->checkConnectToDevice(ip_Address , connectWay );
+    return m_OPCUAdataBlockManager->checkConnectToDevice(ip_Address , connectWay );
 }
 
 bool S7_DeviceManager::handleParseFile(const QString &filePath,
                                        const QString &ip_Address) {
   bool result = false;
   {
-    // bool singleResult =
-    //     m_dataBlockManager->buildDataFromFile(ip_Address, filePath);
-
     bool singleResult =
         m_OPCUAdataBlockManager->buildDataFromFile(ip_Address, filePath);
 

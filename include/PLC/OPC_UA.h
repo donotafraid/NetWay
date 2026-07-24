@@ -12,19 +12,8 @@
 #include <regex>
 #include <iostream>
 #include "Rust_error_deal/error_deal.h"
-#include "PLC/Struct.h"
+#include "PLC/OPCUADataBlock.h"
 
-static const std::unordered_map<S7DataType, UA_DataType*> s7_to_ua_map = {
-    {S7DataType::BOOL,   &UA_TYPES[UA_TYPES_BOOLEAN]},
-    {S7DataType::BYTE,   &UA_TYPES[UA_TYPES_BYTE]},
-    {S7DataType::INT,    &UA_TYPES[UA_TYPES_INT16]},
-    {S7DataType::WORD,   &UA_TYPES[UA_TYPES_UINT16]},
-    {S7DataType::DINT,   &UA_TYPES[UA_TYPES_INT32]},
-    {S7DataType::UDINT,  &UA_TYPES[UA_TYPES_UINT32]},
-    {S7DataType::DWORD,  &UA_TYPES[UA_TYPES_UINT32]},
-    {S7DataType::REAL,   &UA_TYPES[UA_TYPES_FLOAT]},
-    {S7DataType::STRING, &UA_TYPES[UA_TYPES_STRING]}
-};
 
 // 连接状态的枚举（比 bool 更精确）
 enum class ConnectionState {
@@ -41,9 +30,29 @@ class S7_Access
       explicit S7_Access(const std::string ip_Address, int rack, int slot)
           : m_client_var(Cli_Create()), m_ip_Address(ip_Address), m_rack(rack),
             m_slot(slot) {
-             
+            Destbuffer.resize(10000);
             }
             ~S7_Access() { disconnect(); };
+
+            Result<bool, RichError>
+            batchReadS7DataBlock_FromPLC(OPCUADataBlock *data);
+            Result<bool,RichError>
+            batchWriteS7DataBlock_ToPLC(OPCUADataBlock *data);
+          
+          
+            Result<bool, RichError> connect();
+            bool isConnected();
+            void disconnect();
+            S7Object &getClient();
+
+          private:
+            std::vector<uint8_t> Sourcebuffer;
+            std::vector<uint8_t> Destbuffer;
+            std::vector<uint8_t> tmpBuffer;
+            int m_rack;
+            int m_slot;
+            S7Object m_client_var;
+            const std::string m_ip_Address;
 
             Result<bool, RichError> read(int DB_Number, int Start_Position,
                                          int Read_Size,
@@ -51,16 +60,6 @@ class S7_Access
             Result<bool, RichError> write(int DB_Number, int Start_Position,
                                           int Read_Size,
                                           uint8_t *SourceData_var);
-            Result<bool, RichError> connect();
-            bool isConnected();
-            void disconnect();
-            S7Object &getClient();
-
-          private:
-            int m_rack;
-            int m_slot;
-            S7Object m_client_var;
-            const std::string m_ip_Address;
 };
 
 class OPCUA_Access {
@@ -104,6 +103,9 @@ public:
   Result<bool, RichError> read_variable_from_device(UA_NodeId &nodeID,
                                                     bool reverse_direction);
 
+  Result<bool, RichError> batchReadOPCUADataBlock_FromPLC(OPCUADataBlock *data);
+  Result<bool, RichError> batchWriteOPCUABlock_ToPLC(OPCUADataBlock *data);
+
   // trait function
   Result<bool, RichError> expandNodeIdToString(UA_ExpandedNodeId &id);
   Result<bool, RichError> nodeIdToString(std::string &str, UA_NodeId &nodeID);
@@ -138,6 +140,8 @@ public:
   ConnectionState getConnectionState() const;
   Result<bool, RichError> ensureConnection();
   Result<bool, RichError> reconnect(int maxRetries, int retryDelayMs);
+  std::vector<UA_Variant> &getReadVariant();
+  std::vector<UA_WriteValue> &getWriteNodes();
 
   Result<bool, RichError> batchWrite();
 
@@ -169,10 +173,6 @@ public:
                                 std::vector<uint8_t> &m_data_block_buffer);
   Result<bool, RichError>
   batchSet_Normal_To_Write_UA_Scalar(OPCUAModernDataStruct &var, int index);
-  Result<bool, RichError> getValueFromDataPointer(OPCUAModernDataStruct &var);
-
-  // Result<bool, RichError>
-  // batchSet_Normal_To_Write_UA_Scalar(OPCUAModernDataStruct &var, int index);
 
   Result<bool, RichError> ByteDeserialization_To_SpecialType(
       int data_offset, int data_length, S7DataType &data_type_enum,
@@ -216,6 +216,7 @@ public:
                                 OPCUAModernDataStruct &SourceData_var,
                                 T &source_var, int index);
 
+
   void PrepareBatchRead(std::vector<OPCUAModernDataStruct> &data_vars) {
     // 复用 C++ vector
     if (m_batchNodesValid) {
@@ -229,7 +230,10 @@ public:
     m_batchReadVariant.reserve(data_vars.size());
 
     for (auto &var : data_vars) {
-      if (var.filter_reason != "" || var.is_array) {
+      if (var.filter_reason != "" || var.is_array ||
+          var.data_type_enum == S7DataType::UNKNOWN ||
+          !checkDotAndBackslash(
+              uaStringToString(var.nodeID.identifier.string))) {
         continue;
       }
       UA_ReadValueId node;
@@ -259,7 +263,10 @@ public:
     m_batchWriteNodes.reserve(data_vars.size());
 
     for (auto &var : data_vars) {
-      if (var.filter_reason != "" || var.is_array) {
+       if (var.filter_reason != "" || var.is_array ||
+          var.data_type_enum == S7DataType::UNKNOWN ||
+          !checkDotAndBackslash(
+              uaStringToString(var.nodeID.identifier.string))) {
         continue;
       }
 

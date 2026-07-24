@@ -1,13 +1,12 @@
 #pragma once
 
 #include "MainWindows/Struct.h"
-#include "PLC/SingleDataBlockRebuild.h"
+// #include "PLC/DataBlockView.h"
 #include "MainWindows/DropArea.h"
-// #include "MainWindows/Monitor.h"
 #include "ServiceMetrics/serviceMetrics.h"
 #include "GrafanaDashboardManager/ObjectRouter.h"
 #include "MainWindows/LineChartTest.h"
-#include "PLC/OPCUAData.h"
+#include "PLC/OPCUAManager.h"
 
 
 class IS7Controller;
@@ -179,30 +178,7 @@ private:
                                   QTreeWidgetItem *sub_item);
   void update_lastest_folder_path(const std::string &ip_Address);
   void update_parent_item_color(bool status);
-  void update_removeTab(const QString &tabTitle) {
-    if (!blankInformationTableView)
-      return;
-
-    if (!m_tabIndexMap.contains(tabTitle))
-      return;
-
-    int oldIndex = m_tabIndexMap[tabTitle];
-
-    // 验证索引有效性
-    if (oldIndex < 0 || oldIndex >= blankInformationTableView->count())
-      return;
-
-    // 删除映射中的旧项
-    blankInformationTableView->removeTab(oldIndex);
-    m_tabIndexMap.remove(tabTitle);
-
-    // 重组：更新所有索引大于 oldIndex 的映射项
-    for (auto it = m_tabIndexMap.begin(); it != m_tabIndexMap.end(); ++it) {
-      if (it.value() > oldIndex) {
-        it.value()--; // 索引前移
-      }
-    }
-  }
+  void update_removeTab(const QString &tabTitle); 
 
   //  create folder
   Result<QString, RichError> create_device_folder(const QString &ipAddress);
@@ -229,9 +205,7 @@ public:
 
   // 业务方法
   void handleMetricSendRequest(int times);
-  Result<QWidget *, RichError>
-  handleGetViewRequest(const std::string &ip_Address,
-                            const std::string &dataBlockName);
+ 
   void handleExternalOPCUAConnectRequest(const QString &ip_Address, int nameSpace,
                                        int port);
   void handleExternalOPCUAInlineBrowsetRequest(const QString &ip_Address,
@@ -253,7 +227,6 @@ private:
 
   // 设备相关
   S7_MainWindows_UI *m_UI = nullptr;
-  DataBlockManager *m_dataBlockManager = nullptr;
   OPCUADataBlockManager *m_OPCUAdataBlockManager = nullptr;
 
   // 文件路径相关

@@ -13,6 +13,7 @@ sqlite3/3.47.0
 backward-cpp/1.6
 boost/1.85.0
 concurrentqueue/1.0.3
+libmodbus/3.1.10
 
 # 基础工具链
 openssl/[3.5.2]

@@ -32,6 +32,63 @@ public:
     void close();
     bool is_open() const { return db_ptr_ != nullptr; }
     void reset(sqlite3_stmt *stmt); // 重置所有状态
+    bool createTableIfNotExists() {
+      // 开始事务
+      begin_transaction();
+
+      bool success = true;
+
+      // 创建表
+      const char *create_table_sql =
+          "CREATE TABLE IF NOT EXISTS cache ("
+          "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+          "timestamp INTEGER NOT NULL,"
+          "tag_name TEXT NOT NULL," // 改为 TEXT
+          "value REAL NOT NULL,"
+          "raw_metric TEXT NOT NULL," // 改为 TEXT
+          //-- 新增状态管理字段
+          "status INTEGER DEFAULT 0,"  //-- 0: 待发送, 1: 发送中, 2: 已成功, 3: 永久失败
+          "retry_count INTEGER DEFAULT 0,"
+          "last_attempt_time INTEGER,"
+          "created_at INTEGER DEFAULT (strftime('%s', 'now')),"
+          "updated_at INTEGER DEFAULT (strftime('%s', 'now'))"
+          ")";
+
+      if (!execute(create_table_sql)) {
+        success = false;
+      }
+
+      // 创建索引（使用 IF NOT EXISTS 避免重复）
+      if (success) {
+        const char *create_index1_sql =
+            "CREATE INDEX IF NOT EXISTS idx_timestamp ON "
+            "cache(timestamp)";
+        if (!execute(create_index1_sql)) {
+          success = false;
+        }
+      }
+
+      if (success) {
+        const char *create_index2_sql =
+            "CREATE INDEX IF NOT EXISTS idx_tagname ON "
+            "cache(tag_name)";
+        if (!execute(create_index2_sql)) {
+          success = false;
+        }
+      }
+
+      if (success) {
+        const char *create_index2_sql =
+            "CREATE INDEX  IF NOT EXISTS idx_cache_status_created ON "
+            "cache(status, created_at)";
+        if (!execute(create_index2_sql)) {
+          success = false;
+        }
+      }
+
+      // 提交或回滚事务
+      return commit_transaction();
+    }
 
     // === 底层执行能力 ===
     bool execute(const std::string& sql);
@@ -52,8 +109,10 @@ public:
     int get_changes() const;
     std::string get_db_file_path() const { return db_file_path_; }
     
-    // 谨慎暴露：仅供需要直接sqlite3操作的场景
-    sqlite3* raw_DBhandle() { return db_ptr_; }
+     // === 新增：获取预编译语句（由上层管理） ===
+    bool prepareStatement(const std::string& sql, sqlite3_stmt** stmt) {
+        return prepare(sql, stmt);
+    }
 };
 
 class ConnectionPool
@@ -66,15 +125,18 @@ class ConnectionPool
         void release_connectionWrapper_ptr(std::unique_ptr<ConnectionWrapper> Wrapper_ptr);
         void close_db_file_opened();
         // 实现数据库连接的池化管理
-        std::string verify_db_path_memorySize();
+        std::string verify_openedPath_memorySize();
         std::string return_current_date_string();
         std::string db_file_pre = "./DownloadFileManagement/";
-        
-    private:
+
+        // trim function
+        std::string generateSuffix(int counter);
+
+      private:
+        std::vector<std::string> connectFilePathVec;
         std::deque<std::unique_ptr<ConnectionWrapper>> m_connection_pool;
         std::mutex m_connection_mutex;
         std::condition_variable m_connection_cv;
-        std::unordered_set<std::string> m_db_file_paths_set;
 };
 
 class memory_pool

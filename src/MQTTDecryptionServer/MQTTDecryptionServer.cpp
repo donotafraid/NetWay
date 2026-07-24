@@ -192,25 +192,30 @@ int MqttServer::DecryptSharedData(const std::vector<uint8_t> &ciphertext, const 
 
 void MqttServer::delivery_complete(mqtt::delivery_token_ptr mqtt_token)
 {
-    m_buffer_ptr->m_buffer_size.fetch_add(-1,std::memory_order_release);
-    m_sender_condition.notify_one();
+    m_buffer_ptr->m_inflight_size.fetch_add(-1,std::memory_order_release);
+    m_completion_count.fetch_add(1, std::memory_order_release);
+    if(m_buffer_ptr->m_inflight_size.load(std::memory_order_acquire)<=m_max_inflight_number/2)
+    {
+      std::lock_guard<std::mutex> lock(m_message_qeueu_mutex);
+      m_sender_condition.notify_one();
+    }
     std::cout<<"delivery complete , there is many inflight_message : "<<m_client->get_pending_delivery_tokens().size()<<std::endl;
 }
 
 void MqttServer::message_arrived(mqtt::const_message_ptr mqtt_msg) 
 {
-    if(mqtt_msg->get_topic() != "file/respond" && mqtt_msg->get_topic().find("ack")== std::string::npos)
-    {
-        std::lock_guard<std::mutex> lock(m_message_qeueu_mutex);
-        m_message_queue.push(mqtt_msg);
+  if (mqtt_msg->get_topic() != "file/respond" &&
+      mqtt_msg->get_topic().find("ack") == std::string::npos) {
+    std::unique_lock lock(m_message_qeueu_mutex);
+    bool was_empty = m_message_queue.empty();
+    m_message_queue.push(mqtt_msg);
+    if (m_is_active.load() ||
+        (m_buffer_ptr->m_inflight_size.load(std::memory_order_acquire) <=
+         m_max_inflight_number / 2) &&
+            was_empty) {
+      m_sender_condition.notify_one();
     }
-
-    // {
-    //     m_process_string_condition.notify_one();
-    // }
-    {
-        m_sender_condition.notify_one();
-    }
+  }
 } 
 
 //  处理字符串任务
@@ -220,11 +225,15 @@ int MqttServer::process_string_to_task()
     {
         return 1;
     }
-    std::string msg = m_message_queue.front()->to_string();
-    m_message_queue.pop();
 
     request_message request;
-    request.ParseFromString(msg);
+    {
+      std::unique_lock lock(m_message_qeueu_mutex);
+      std::string msg = m_message_queue.front()->to_string();
+      m_message_queue.pop();
+      request.ParseFromString(msg);
+    }
+
 
     std::string input_file_path = request.input_file_path();
     std::string missing_index_vector = request.missing_slices_index_json();
@@ -256,27 +265,41 @@ void MqttServer::start_send_reponse_to_client()
     std::thread([this](){
         while(true)
         {
+            std::cout << "thread ready send_reponse to client , and "
+            "message_queue is empty ?  "
+            << m_message_queue.empty()
+            << " , inflight_size is exceed limitation ? "
+            << (m_buffer_ptr->m_inflight_size.load(
+                std::memory_order_acquire) >=
+                m_max_inflight_number / 2)
+                << std::endl;
+
             {
-                std::unique_lock<std::mutex> lock(m_sender_mutex);
-                m_sender_condition.wait(lock,[this]{
-                    std::cout<<"thread ready send_reponse to client , and message_queue is empty ?  "<<m_message_queue.empty()<<" , inflight_size is exceed limitation ? "
-                    <<(m_buffer_ptr->m_inflight_size.load(std::memory_order_acquire)>=m_max_inflight_number/2)<<std::endl;
+              // std::unique_lock<std::mutex> lock(m_sender_mutex);
+              std::unique_lock lock(m_message_qeueu_mutex);
 
-                    // {
-                    //     return  !m_is_active.load() || !m_responding_queue.empty()&&(m_buffer_ptr->m_inflight_size.load()<=m_max_inflight_number/2);
-                    // }
+              // ✅ 如果有完成事件，消耗掉（但不一定发送）
+              if (m_completion_count.load(std::memory_order_acquire) > 0) {
+                m_completion_count.fetch_sub(1, std::memory_order_release);
+                // 继续循环，重新检查条件
+                continue;
+              }
 
-                    // 这句话不放在这里，会导致线程卡死（比如放在send_reponse_to_client）
-                    //  换句话说，决定线程是否继续运行，应该放在这里更新
-                    m_buffer_ptr->m_inflight_size.store(m_client->get_pending_delivery_tokens().size(),std::memory_order_release);
-                    {
-                        return  !m_is_active.load() || !m_message_queue.empty()&&(m_buffer_ptr->m_inflight_size.load(std::memory_order_acquire)<=m_max_inflight_number/2);
-                    }
-                });
-                if(!m_is_active.load())
+              m_sender_condition.wait(lock, [this] {
+                // 这句话不放在这里，会导致线程卡死（比如放在send_reponse_to_client）
+                //  换句话说，决定线程是否继续运行，应该放在这里更新
+                // m_buffer_ptr->m_inflight_size.store(m_client->get_pending_delivery_tokens().size(),std::memory_order_release);
                 {
-                    return;
+                  return m_is_active.load() ||
+                         (!m_message_queue.empty() &&
+                          m_buffer_ptr->m_inflight_size.load(std::memory_order_acquire) <=
+                              m_max_inflight_number / 2) ||
+                         m_completion_count.load(std::memory_order_acquire) > 0;
                 }
+              });
+              if (!m_is_active.load()) {
+                return;
+              }
             }
             send_reponse_to_client();
             std::this_thread::sleep_for(std::chrono::milliseconds(5));
@@ -306,35 +329,32 @@ void MqttServer::start_process_string_to_task()
     }).detach();
 }
 
-void MqttServer::send_reponse_to_client()
-{
-    {
-        auto message_ptr = m_message_queue.front();
-        m_message_queue.pop();
-        
-        mqtt::message_ptr r_msg = mqtt::make_message(respond_topic, 
-            message_ptr.get()->get_payload().data(),
-            message_ptr->get_payload().size(),
-            m_qos, 
-            m_retained);
+void MqttServer::send_reponse_to_client() {
+  std::unique_lock lock(m_message_qeueu_mutex);
+  // 重新验证所有条件
+  if (m_message_queue.empty()) {
+    return;
+  }
 
-        // std::string proto_msg = this->m_parse_info->return_task_from_queue();
+  if (m_buffer_ptr->m_inflight_size.load(std::memory_order_acquire) >
+      m_max_inflight_number / 2) {
+    return;
+  }
 
-        // mqtt::message_ptr r_msg = mqtt::make_message(respond_topic, 
-        //     proto_msg.data(),
-        //     proto_msg.size(),
-        //     m_qos, 
-        //     m_retained);
-        
-        {
-            std::lock_guard<std::mutex> lock(m_token_mutex);
-            auto token = m_client->publish(r_msg);
-            std::cout<<"in waiting time, there is "<<m_client->get_pending_delivery_tokens().size()<<std::endl;
-        }
-        
-        m_buffer_ptr->m_buffer_size.fetch_add(1,std::memory_order_release);
-        std::cout<<"server publish message to client"<<std::endl;
-    }
+  auto message_ptr = m_message_queue.front();
+  m_message_queue.pop();
+  m_buffer_ptr->m_inflight_size.fetch_add(1, std::memory_order_release);
+  lock.unlock(); // 尽早释放
+
+  mqtt::message_ptr r_msg =
+      mqtt::make_message(respond_topic, message_ptr.get()->get_payload().data(),
+                         message_ptr->get_payload().size(), m_qos, m_retained);
+
+  {
+    auto token = m_client->publish(r_msg);
+    std::cout << "in waiting time, there is "
+              << m_client->get_pending_delivery_tokens().size() << std::endl;
+  }
 }
 
 std::vector<uint8_t> MqttServer::get_file_data_vector(const std::string& db_file_path)

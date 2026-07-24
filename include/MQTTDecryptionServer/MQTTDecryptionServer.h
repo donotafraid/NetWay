@@ -75,6 +75,7 @@ class MqttServer : public virtual mqtt::callback
         std::condition_variable m_process_string_condition;
         std::condition_variable m_sender_condition;
         std::atomic<bool> m_is_active = true;
+        std::atomic<int> m_completion_count{0};
         buffer_administrator* m_buffer_ptr;
 
     public:

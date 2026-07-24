@@ -194,6 +194,7 @@ void OPCUAXMLParser::parse_uavariable(const std::string& var_tag) {
     var.browse_name = get_attribute(var_tag, "BrowseName");
     var.data_type = get_attribute(var_tag, "DataType");
     var.raw_data_type = var.data_type;
+    var.buildType = InputFormat::XML;
     
     // 解析访问级别
     std::string access_level_str = get_attribute(var_tag, "AccessLevel");
@@ -207,7 +208,7 @@ void OPCUAXMLParser::parse_uavariable(const std::string& var_tag) {
         var.is_array = true;
         std::string array_dim = get_attribute(var_tag, "ArrayDimensions");
         if (!array_dim.empty()) {
-            var.array_dimension = std::stoi(array_dim);
+            var.arrayDimensions = array_dim;
         }
     }
     

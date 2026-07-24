@@ -30,6 +30,7 @@ PRIVATE
 prometheus_push
 prometheus_pull
 prometheus_core
+third_party_deps
 )
 
 #为该库创建一个别名
