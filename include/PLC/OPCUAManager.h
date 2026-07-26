@@ -123,7 +123,18 @@ private:
   extractVariableNameWithIndex(const std::string &input); 
   std::string extractLastPartWithoutIndexForArray(const std::string &input); 
   std::string extractLastPartWithoutIndexForNormal(const std::string &input); 
-  std::string extractLastPartWithoutIndexForNormal(const OPCUAModernDataStruct &data); 
+  std::string extractLastPartWithoutIndexForNormal(const OPCUAModernDataStruct &data);
+  int getChildSize(TreeNode *node) const  {
+    int size = 1;
+    if (node->children.size() == 0) {
+      return 1;
+    } else {
+      for (auto &element : node->children) {
+        size += getChildSize(element);
+      }
+    }
+    return size;
+  }
 };
 
 //  OPCUA Device Reader
@@ -344,7 +355,6 @@ private slots:
   bool eventFilter(QObject *obj, QEvent *event) override;
 
   //  trim function for Index
-  QModelIndex manualIndexAt(const QPoint &pos);
   QModelIndex findIndexByNode(TreeNode *node, int column) const;
   QModelIndex findIndexByY(const QModelIndex &parent, int &currentY,
                            int targetY, int targetX);
@@ -386,6 +396,7 @@ private:
   int headerHeight = -1;
   QModelIndex lastSelectIdx;
   bool initializeStatus = false;
+  QPoint lastClickLocation;
 };
 
 class SpecialTreeView : public QTreeView {
@@ -445,10 +456,14 @@ public:
   QTreeView *getTableView() { return this; }
   QWidget *getView() { return this; }
   int getGlobalIndex(){return globalRowPassager;}
+
   //  set function
   void setHeaderHeight(int height);
 
+  // override part
   QModelIndex indexAt(const QPoint &pos) const override;
+  
+  // check click location
   int calculateColumnAtX(int x) const;
 
   // 缓存检查 - 返回 Result<QModelIndex, RichError>
@@ -478,12 +493,13 @@ public:
   // 查找索引
   Result<QModelIndex, RichError> findIndexByNode(const FindRelativeIndex &item) const; 
 
+  // build external connection
+  void buildConnect();
 private:
   int headerHeight = -1;
   OPCUADataBlockModel *m_model = nullptr;
   OPCUADataDelegate *m_delegate = nullptr;
  
-
   mutable QPoint m_cachedPos;
   mutable QModelIndex m_cachedIndex;
   mutable qint64 m_lastCacheTime = 0;

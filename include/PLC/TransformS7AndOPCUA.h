@@ -110,7 +110,7 @@ class Dynamic_Value{
 
     template<typename T>
     const T& get() const{
-        return *(static_cast<T*>(ptr));
+        return *(static_cast<T *>(ptr));
     }
 
     Dynamic_Value(Dynamic_Value&& otehr) noexcept:

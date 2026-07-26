@@ -1018,6 +1018,7 @@ QModelIndex OPCUADataBlockModel::indexFromNode(TreeNode *node,
   if (row < 0)
     return QModelIndex();
 
+  //  return son node with location in parent node
   return createIndex(row, column, node); // 存储节点指针作为内部ID
 }
 
@@ -1044,7 +1045,8 @@ void OPCUADataBlockModel::buildVisualRowMapRecursive(TreeNode *node,
   //  root无条件进行递归
   //  其余节点判断：是否处于展开状态 && 是否有子节点
   //  递归处理子节点
-  if(!node->isExpanded && node != m_rootNode.get())
+  // !node->isExpanded &&
+  if(currentRow != 0 && node == m_rootNode.get())
   {
     return ;
   }
@@ -1054,10 +1056,45 @@ void OPCUADataBlockModel::buildVisualRowMapRecursive(TreeNode *node,
 }
 
 TreeNode *OPCUADataBlockModel::getNodeByVisualRow(int visualRow) const {
-  if (!m_visualRowMapValid) {
+  if (!m_visualRowMapValid || visualRow > m_visualRowMap.size()) {
     return nullptr;
   }
-  return m_visualRowMap.value(visualRow, nullptr);
+  if(visualRow==0)
+  {
+    return m_visualRowMap.value(visualRow, nullptr);
+  }
+
+  int effectiveRow=0;
+  while(1) 
+  {
+    if(visualRow == 0)
+    {
+      return m_visualRowMap.value(effectiveRow, nullptr);
+    }
+
+    if (m_visualRowMap.value(effectiveRow, nullptr)->children.size() == 0) {
+      // normal variable member
+      --visualRow;
+      ++effectiveRow;
+      continue;
+    } else {
+      //  current member belong to   struct or array variable member
+      if(m_visualRowMap.value(effectiveRow, nullptr)->isExpanded)
+      {
+        // need find the final not expand member
+        ++effectiveRow;
+      }
+      else
+      {
+        {
+        // add now struct or array member children size and then update point to new member
+        effectiveRow +=
+            getChildSize(m_visualRowMap.value(effectiveRow, nullptr));
+        }
+      }
+        --visualRow;
+    }
+  }
 }
 
 TreeNode *OPCUADataBlockModel::getRootNode()
@@ -1082,15 +1119,15 @@ void OPCUADataBlockModel::buildTree(TreeNode *parent) {
 
     std::string parentName{};
     //  ensure the parent node ID of element in Map
-    parentName = getParentName(element);
+    // parentName = getParentName(element);
     // DB....Test,Motor,Array_Template
-    auto it = m_parentNodeIDMap.find(QString::fromStdString(parentName));
+    auto it = m_parentNodeIDMap.find(QString::fromStdString(element.parent_nodeID));
     if (it != m_parentNodeIDMap.end()) {
       //  find it !
       parent = it.value();
     } else {
       //  can not find it ! mean we need build parent Node in Map fisrt
-      parent = createPlaceholderNode(parentName);
+      parent = createPlaceholderNode(element.parent_nodeID);
     }
 
     TreeNode *varNode = new TreeNode();
@@ -1103,7 +1140,7 @@ void OPCUADataBlockModel::buildTree(TreeNode *parent) {
 
     //  build parent-son relationship
     parent->children.append(varNode);
-    m_parentNodeIDMap[varNode->displayName] = varNode;
+    m_parentNodeIDMap[QString::fromStdString(element.variable_nodeID)] = varNode;
     // Resize the varNode parent array according to child sizes.
     if(parent->m_dataBlock != nullptr)
     {
@@ -1114,28 +1151,32 @@ void OPCUADataBlockModel::buildTree(TreeNode *parent) {
 }
 
 TreeNode *
-OPCUADataBlockModel::createPlaceholderNode(const std::string &parentName) {
-  if (m_parentNodeIDMap.find(QString::fromStdString(parentName)) !=
+OPCUADataBlockModel::createPlaceholderNode(const std::string &parent_nodeID) {
+  if (m_parentNodeIDMap.find(QString::fromStdString(parent_nodeID)) !=
       m_parentNodeIDMap.end()) {
     //  mean the parent node has exist
     return nullptr;
   }
 
   TreeNode *placeholder = new TreeNode();
+  std::string parentName{extractLastPartWithoutIndexForNormal(parent_nodeID)};
   placeholder->displayName = QString::fromStdString(parentName);
-  m_parentNodeIDMap[placeholder->displayName] = placeholder;
+  m_parentNodeIDMap[QString::fromStdString(parent_nodeID)] = placeholder;
 
   //  get parent data block
-  auto parentPointer = findOPCUADataStruct(parentName);
+  auto parentPointer = findOPCUADataStruct(parent_nodeID);
+ 
   if (parentPointer) {
     //  generate parent node by parent data block when the parent node do not
     //  exist in parent map
     auto gradParentPointer =
-        createPlaceholderNode(getParentName(*parentPointer));
+        createPlaceholderNode(parentPointer->parent_nodeID);
     if (!gradParentPointer) {
       //  mean the gradparent node has exist , need find by map
+      // placeholder->parent = m_parentNodeIDMap[QString::fromStdString(
+      //     getParentName(*parentPointer))];
       placeholder->parent = m_parentNodeIDMap[QString::fromStdString(
-          getParentName(*parentPointer))];
+          parentPointer->parent_nodeID)];
     } else {
       placeholder->parent = gradParentPointer;
     }
@@ -1152,7 +1193,7 @@ OPCUAModernDataStruct *
 OPCUADataBlockModel::findOPCUADataStruct(const std::string &parent_nodeID) {
   for(auto &element : m_OPCUADataBlock->getVariabeDataVector()) 
   {
-    if(element.parent_nodeID == parent_nodeID)
+    if(element.variable_nodeID == parent_nodeID)
     {
       return &element;
     }
@@ -2285,7 +2326,8 @@ bool OPCUADataBlockView::eventFilter(QObject *obj, QEvent *event) {
       }
 
       QMouseEvent *mouseEvent = static_cast<QMouseEvent *>(event);
-      QModelIndex idx = treeView->indexAt(mouseEvent->pos());
+      lastClickLocation = mouseEvent->pos();
+      QModelIndex idx = treeView->indexAt(lastClickLocation);
       TreeNode *node = static_cast<TreeNode *>(idx.internalPointer());
       // ✅ 第0列：让 Qt 正常处理（展开/折叠、选择等）
       if (!idx.isValid() || node == nullptr || node->m_dataBlock == nullptr) {
@@ -2329,71 +2371,6 @@ bool OPCUADataBlockView::eventFilter(QObject *obj, QEvent *event) {
   }
 
   return QWidget::eventFilter(obj, event);
-}
-
-QModelIndex OPCUADataBlockView::manualIndexAt(const QPoint &pos) {
-  if (headerHeight == -1) {
-    headerHeight = treeView->header()->height();
-    treeView->setHeaderHeight(headerHeight);
-  }
-  qDebug()<<"========OPCUADataBlockView::manualIndexAt===================";
-  qDebug() << "pos->X :" << pos.x() << "  pos->Y : " << pos.y();
-  // ✅ 获取滚动偏移
-  int scrollValue = treeView->verticalScrollBar()->value() ;
-  int rowHeight = treeView->fontMetrics().height() ;
-
-  //  滚动偏移 = 0 时 ， 坐标 低于 Header 高度，视为点击 Header
-  if (pos.y() < headerHeight) {
-    return QModelIndex();
-  }
-
-  // 计算全局行号
-  int relativeY;
-  relativeY = pos.y();
-  
-  //  calculate row position of mouse where is in
-  //  upperLimition should >=1
-  int upperLimition = 1;
-  while(1)
-  {
-    if(relativeY < headerHeight)
-    {
-      break;
-    } else {
-      if (upperLimition * rowHeight <= (relativeY-headerHeight)) {
-        ++upperLimition;
-      } else {
-        ++upperLimition;
-        break;
-      }
-    }
-  }
-
-  int visualRow = upperLimition - 1;               // 视口中的行号
-  int globalRow = scrollValue + visualRow; // 全局行号
-  qDebug() << "relativeY:" << relativeY << "pos.y():" << pos.y()
-           << "rowHeight:" << rowHeight<<"HeaderHeight:"<<headerHeight;
-  qDebug() << "scrollValue:" << scrollValue << "visualRow:" << visualRow
-           << "globalRow:" << globalRow;
- 
-
-  // 通过映射表获取节点
-  TreeNode *node = m_model->getNodeByVisualRow(globalRow);
-  qDebug() << "select item :" << node->displayName
-           << " and its parent name :" << node->parent->displayName;
-  if (!node) {
-    qDebug() << "No node found for visual row:" << globalRow;
-    return QModelIndex();
-  }
-
-  // ✅ 动态计算列号
-  int col = calculateColumnAtX(pos.x());
-  if (col < 0) {
-    return QModelIndex();
-  }
-
-  QModelIndex returnIdx = findIndexByNode(node, col);
-  return returnIdx;
 }
 
 
@@ -2558,51 +2535,45 @@ void OPCUADataBlockView::buildConnection()
   connect(m_searchEdit, &QLineEdit::textChanged, this,
           &OPCUADataBlockView::onFilterChanged);
 
-  // connect(m_tableView, &QTableView::doubleClicked, this,
-  //         &OPCUADataBlockView::onRowdoubleClicked);
   connect(treeView, &QTreeView::doubleClicked, this,
           &OPCUADataBlockView::onRowdoubleClicked);
-  connect(treeView, &QTreeView::expanded, this, [this](const QModelIndex &index) {
-    // 获取当前节点的父节点索引
-    QModelIndex parentIndex = index.parent();
-    TreeNode *Node = nullptr;
-    if(parentIndex.isValid())
-    {
-      TreeNode *parentNode = nullptr;
-      parentNode = this->m_model->getNodeByVisualRow(parentIndex.row());
-      Node = parentNode->getChildNode(index.row());
-    } else {
-      Node = this->m_model->getNodeByVisualRow(index.row());
-    }
-    if(!Node || Node->children.size() == 0)
-    {
-      return;
-    }
-    Node->isExpanded = true;
-    this->m_model->rebuildVisualRowMap();
-    qDebug() << "节点已展开:" << index.data().toString();
-    treeView->expand(index);
-  });
-  connect(treeView, &QTreeView::collapsed, this, [this](const QModelIndex &index) {
-    // 获取当前节点的父节点索引
-    QModelIndex parentIndex = index.parent();
-    TreeNode *Node = nullptr;
-    if (parentIndex.isValid()) {
-      TreeNode *parentNode = nullptr;
-      parentNode = this->m_model->getNodeByVisualRow(parentIndex.row());
-      Node = parentNode->getChildNode(index.row());
-    } else {
-      Node = this->m_model->getNodeByVisualRow(index.row());
-    }
-    if (!Node || Node->children.size() == 0) {
-      return;
-    }
+  connect(treeView, &QTreeView::expanded, this,
+          [this](const QModelIndex &index) {
+            auto result = this->treeView->getGlobalRow(lastClickLocation)
+                              .and_then([this](int row) {
+                                return this->treeView->getNodeByGlobalRow(row);
+                              });
+            if (result.is_fail()) {
+              return;
+            }
+            TreeNode *Node = result.unwrap_returnLeftValue();
+            if (!Node || Node->children.size() == 0) {
+              return;
+            }
+            Node->isExpanded = true;
+            // this->m_model->rebuildVisualRowMap();
+            qDebug() << "节点已展开:" << index.data().toString();
+            treeView->expand(index);
+          });
+  connect(treeView, &QTreeView::collapsed, this,
+          [this](const QModelIndex &index) {
+            auto result = this->treeView->getGlobalRow(lastClickLocation)
+                              .and_then([this](int row) {
+                                return this->treeView->getNodeByGlobalRow(row);
+                              });
+            if (result.is_fail()) {
+              return;
+            }
+            TreeNode *Node = result.unwrap_returnLeftValue();
+            if (!Node || Node->children.size() == 0) {
+              return;
+            }
 
-    Node->isExpanded = false;
-    this->m_model->rebuildVisualRowMap();
-    qDebug() << "节点已折叠:" << index.data().toString();
-    treeView->collapse(index);
-  });
+            Node->isExpanded = false;
+            // this->m_model->rebuildVisualRowMap();
+            qDebug() << "节点已折叠:" << index.data().toString();
+            treeView->collapse(index);
+          });
 
   treeView->viewport()->installEventFilter(this);
  
@@ -3268,88 +3239,6 @@ QModelIndex SpecialTreeView::indexAt(const QPoint &pos) const {
     return QModelIndex();
   }
 }
-
-// QModelIndex SpecialTreeView::indexAt(const QPoint &pos) const {
-//   {
-//     qint64 currentTime = QDateTime::currentMSecsSinceEpoch();
-
-//     // 缓存策略：同一位置 100ms 内直接返回缓存
-//     if (std::abs(pos.y() - m_cachedPos.y()) <= 3 &&
-//         std::abs(pos.x() - m_cachedPos.x()) <= 3 &&
-//         (currentTime - m_lastCacheTime) < 1000) {
-//       m_hitCount++;
-//       if (m_hitCount % 10 == 0) {
-//         qDebug() << "indexAt cache hit:" << m_hitCount << "times";
-//       }
-//       return m_cachedIndex;
-//     }
-
-//     // 实际计算
-//     m_hitCount = 0;
-//     m_cachedPos = pos;
-//     m_lastCacheTime = currentTime;
-//   }
-
-//   qDebug() << "======SpecialTreeView::indexAt=================";
-//   qDebug() << "pos->X :" << pos.x();
-//   // ✅ 获取滚动偏移
-//   int scrollValue = this->verticalScrollBar()->value();
-//   int rowHeight = this->fontMetrics().height();
-
-//   // 计算全局行号
-//   int relativeY;
-//   relativeY = pos.y();
-
-//   //  calculate row position of mouse where is in
-//   //  upperLimition should >=1
-//   int upperLimition = 1;
-//   while (1) {
-//     if (relativeY < headerHeight) {
-//       break;
-//     } else {
-//       if (upperLimition * rowHeight <= (relativeY - headerHeight)) {
-//         ++upperLimition;
-//       } else {
-//         ++upperLimition;
-//         break;
-//       }
-//     }
-//   }
-
-//   int visualRow = upperLimition - 1;       // 视口中的行号
-//   int globalRow = scrollValue + visualRow; // 全局行号
-//   globalRowPassager = globalRow;
-//   qDebug() << "pos.y():" << pos.y() << "rowHeight:" << rowHeight
-//            << "HeaderHeight:" << headerHeight;
-//   qDebug() << "scrollValue:" << scrollValue << "visualRow:" << visualRow
-//            << "globalRow:" << globalRow;
-
-//   // 通过映射表获取节点
-//   TreeNode *node = m_model->getNodeByVisualRow(globalRow);
-//   if (!node) {
-//     qDebug() << "No node found for visual row:" << globalRow;
-//     return QModelIndex();
-//   }
-//   qDebug() << "select item :" << node->displayName
-//            << " and its parent name :" << node->parent->displayName;
-
-//   // ✅ 动态计算列号
-//   int col = calculateColumnAtX(pos.x());
-//   if (col < 0) {
-//     qDebug() << "calculateColumnAtx is fail";
-//     return QModelIndex();
-//   }
-
-//   //  return opposite coordinate by parent node
-//   QModelIndex returnIdx = findIndexByNode(node, col);
-//   if (returnIdx.isValid()) {
-//     m_cachedIndex = returnIdx;
-//   } else {
-//     qDebug() << "findIndexByNode is fail";
-//   }
-//   return returnIdx;
-// }
-
 
 int SpecialTreeView::calculateColumnAtX(int x) const {
   int offset = 0;

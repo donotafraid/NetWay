@@ -33,6 +33,8 @@ static std::string nodeIdToString(const UA_NodeId *nodeId) {
     return result;
 }
 
+
+
 /**
  * 检查字符串中是否存在小数点以及小数点后面是否存在反斜杠
  * @param str 要检查的字符串
@@ -386,7 +388,38 @@ struct OPCUAModernDataStruct {
   }
 
   // ==================== CSV 导入方法 ====================
-  
+  static const void initializeDataPointer(OPCUAModernDataStruct &item) {
+    // 第三步：根据类型打印值
+    bool success = true;
+
+    if (item.data_type_enum == S7DataType::BOOL) {
+      item.data_pointer->Reset_Value(bool{0});
+    } else if (item.data_type_enum == S7DataType::BYTE) {
+      item.data_type_enum = S7DataType::BYTE;
+      item.data_pointer->Reset_Value(uint8_t{0});
+
+    } else if (item.data_type_enum == S7DataType::BYTE) {
+      item.data_pointer->Reset_Value(uint8_t{0});
+
+    } else if (item.data_type_enum == S7DataType::INT) {
+      item.data_pointer->Reset_Value(int16_t{0});
+    } else if (item.data_type_enum == S7DataType::WORD) {
+      item.data_pointer->Reset_Value(uint16_t{0});
+    } else if (item.data_type_enum == S7DataType::DINT) {
+      item.data_pointer->Reset_Value(int32_t{0});
+    } else if (item.data_type_enum == S7DataType::UDINT) {
+      item.data_pointer->Reset_Value(uint32_t{0});
+    } else if (item.data_type_enum == S7DataType::REAL) {
+      item.data_pointer->Reset_Value(float{0});
+    } else if (item.data_type_enum == S7DataType::STRING) {
+      item.data_pointer->Reset_Value(std::string{0});
+    } else {
+      // 未知类型
+      item.data_type_enum = S7DataType::UNKNOWN;
+      item.data_pointer->Reset_Value(std::string{0});
+    }
+  }
+
   // 从 CSV 结构体导入数据
   void fromCSVImport(const OPCUAModernDataStructFromCSV &csvData) {
       // 1. 直接映射字段
@@ -403,6 +436,7 @@ struct OPCUAModernDataStruct {
     auto it = typeMap.find(raw_data_type);
     if (it != typeMap.end()) {
       data_type_enum = it->second;
+      initializeDataPointer(*this);
     } else {
       data_type_enum = S7DataType::UNKNOWN;
     }
