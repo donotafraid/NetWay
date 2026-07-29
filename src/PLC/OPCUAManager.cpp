@@ -358,8 +358,6 @@ void OPCUADataBlockModel::setOPCUADataBlock(const std::shared_ptr<OPCUADataBlock
     rebuildVisualRowMap();
     printTreeNode(m_rootNode.get());
     endResetModel(); // View 会自动重新读取所有数据
-    // 在你的代码中调用
-    // simulateTreeViewCalls();
 }
 
 // ==================== QAbstractTableModel 接口 ====================
@@ -1117,10 +1115,6 @@ void OPCUADataBlockModel::buildTree(TreeNode *parent) {
     }
     TreeNode *parent = nullptr;
 
-    std::string parentName{};
-    //  ensure the parent node ID of element in Map
-    // parentName = getParentName(element);
-    // DB....Test,Motor,Array_Template
     auto it = m_parentNodeIDMap.find(QString::fromStdString(element.parent_nodeID));
     if (it != m_parentNodeIDMap.end()) {
       //  find it !
@@ -1134,6 +1128,11 @@ void OPCUADataBlockModel::buildTree(TreeNode *parent) {
     if (element.arrayDimensions == "" && element.data_type_enum != S7DataType::UNKNOWN) {
       varNode->m_dataBlock = &element;
     }
+    if(!varNode->m_dataBlock)
+    {
+      element.data_type_enum = S7DataType::UNKNOWN;
+    }
+
     //  Array_Template do not need set m_dataBlock
     varNode->parent = parent;
     varNode->displayName = QString::fromStdString(element.variable_name);
@@ -1147,6 +1146,7 @@ void OPCUADataBlockModel::buildTree(TreeNode *parent) {
       parent->m_dataBlock->s7_data_array_length = parent->children.size(); 
       parent->m_dataBlock->is_array = true;
     }
+   
   }
 }
 
@@ -2727,6 +2727,13 @@ void OPCUADataBlockController::onSaveOPCUAParseResult(const std::shared_ptr<OPCU
     m_model->setOPCUADataBlock(m_OPCUADataBlock);
     m_view->setModel();
     m_view->setDelegate();
+    if (m_reader->getIdentifier().is_fail()) {
+
+    } else if (m_reader->getIdentifier().unwrap_returnRightValue().find(
+                   "OPC_UA") != std::string::npos) {
+    } else {
+      calculate_data_block_size(m_OPCUADataBlock->getVariabeDataVector());
+    }
   } else {
     std::cout << "onSaveOPCUAParseResult : dataBlock is nullptr" << std::endl;
   }
@@ -2739,6 +2746,17 @@ void OPCUADataBlockController::onSaveOPCUADataBlock(const std::shared_ptr<OPCUAD
     m_model->setOPCUADataBlock(dataBlock);
     m_view->setModel();
     m_view->setDelegate();
+    if(m_reader->getIdentifier().is_fail())
+    {
+
+    }
+    else if(m_reader->getIdentifier().unwrap_returnRightValue() .find("OPC_UA") != std::string::npos)
+    {
+    }
+    else
+    {
+      calculate_data_block_size(dataBlock->getVariabeDataVector());
+    }
   } else {
     std::cout << "onSaveOPCUADataBlock : dataBlock is nullptr" << std::endl;
   }
@@ -2969,11 +2987,7 @@ bool OPCUADataBlockManager::buildOPCUAConnect(const QString &ipAddress, int name
     auto reader = std::make_shared<OPCUADeviceReader>();
     bool result =
         reader->onRequestBuildOPCUA(ipAddress.toStdString(), nameSpace, port);
-    if (result) {
-      m_readerVector.push_back(std::move(reader));
-    } else {
-      return false;
-    }
+    m_readerVector.push_back(std::move(reader));
 
     return true;
   }
@@ -3074,7 +3088,7 @@ bool OPCUADataBlockManager::buildDataFromFile(const QString &ip_Address,const QS
         else
         {
           //  create dataBlock for filling contextt into model
-          return context->controller->onbuildOPCUADataBlockFromDBFile(
+          return context->controller->onbuildOPCUADataBlockFromXMLFile(
               filePath, ip_Address.toStdString());
         }
       }
@@ -3205,8 +3219,8 @@ Result<int, RichError> SpecialTreeView::getGlobalRow(const QPoint &pos) const {
 
   int globalRow = scrollValue + visualRow;
   globalRowPassager = globalRow;
-  qDebug() << "pos.y():" << pos.y() << "rowHeight:" << rowHeight
-           << "HeaderHeight:" << headerHeight;
+  qDebug() << "pos.x():" << pos.x() << "pos.y():" << pos.y()
+           << "rowHeight:" << rowHeight << "HeaderHeight:" << headerHeight;
   qDebug() << "scrollValue:" << scrollValue << "visualRow:" << visualRow
            << "globalRow:" << globalRow;
   return Result<int, RichError>(globalRow);
@@ -3242,14 +3256,17 @@ QModelIndex SpecialTreeView::indexAt(const QPoint &pos) const {
 
 int SpecialTreeView::calculateColumnAtX(int x) const {
   int offset = 0;
+  int scrollValue = this->horizontalScrollBar()->value();
+
   int columnCount = m_model->columnCount();
 
   for (int col = 0; col < columnCount; col++) {
     int colWidth = this->columnWidth(col);
-    if (x >= offset && x < offset + colWidth) {
+    if (x + scrollValue >= offset && x + scrollValue < offset + colWidth) {
       return col;
     }
     offset += colWidth;
+    qDebug()<<"col:"<<col<<" colWidth:"<<colWidth<<" offset:"<<offset;
   }
 
   return -1; // 没有找到对应的列

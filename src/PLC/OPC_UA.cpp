@@ -182,9 +182,15 @@ S7Object& S7_Access::getClient()
 Result<bool, RichError>
 S7_Access::batchReadS7DataBlock_FromPLC(OPCUADataBlock *data) {
   bool success = true;
+  Destbuffer.clear();
+  Destbuffer.resize(10000);
   for (auto &var : data->getVariabeDataVector()) {
+    if (var.data_type_enum == S7DataType::UNKNOWN) {
+      continue;
+    }
     Sourcebuffer.clear();
     Sourcebuffer.resize(var.s7_data_type_length);
+
     {
       auto result = this->read(1, var.bytes_offset, var.s7_data_type_length,
                                Sourcebuffer.data());
@@ -215,6 +221,10 @@ S7_Access::batchWriteS7DataBlock_ToPLC(OPCUADataBlock *data) {
       bool success = true;
       for (auto &var : data->getVariabeDataVector()) {
         {
+          if(var.data_type_enum == S7DataType::UNKNOWN)
+          {
+            continue;
+          }
           tmpBuffer.clear();
           tmpBuffer.resize(var.s7_data_type_length);
           {
@@ -265,6 +275,24 @@ Result<bool,RichError> S7_Access::read(int DB_Number,int Start_Position,int Read
         return Result<bool, RichError>(RichError{error_text});
     }
     return Result<bool,RichError> (true);
+}
+
+Result<int, RichError> S7_Access::meastureStringObjectLength(int startPos,OPCUAModernDataStruct &var) {
+  int stringLength = 1;
+  {
+    Sourcebuffer.clear();
+    Sourcebuffer.resize(500);
+    {
+      auto result = this->read(1, startPos, stringLength, Sourcebuffer.data());
+      if (result.is_fail()) {
+        return Result<int, RichError>(result.unwrap_err());
+      } 
+    }
+  }
+  int16_t value = 0;
+  std::memcpy(&value, Sourcebuffer.data(),
+              sizeof(int16_t));
+  return Result<int, RichError>(value);
 }
 
  Result<bool,RichError> S7_Access::write(int DB_Number,int Start_Position,int Read_Size,uint8_t *SourceData_var) 
@@ -547,12 +575,31 @@ void OPCUA_Access::Set_Read_NodeID(UA_ReadValueId &nodeid,OPCUAModernDataStruct&
   }
   else
   {
-    nodeid.nodeId = UA_NODEID_STRING_ALLOC(this->m_nameSpace,
-                                           data_var.variable_nodeID.data());
+    auto result{extractPureNodeIdRobust(data_var.variable_nodeID)};
+    nodeid.nodeId =
+        UA_NODEID_STRING_ALLOC(std::stoi(result.first), result.second.data());
   }
 
   nodeid.indexRange = UA_STRING_NULL;
   nodeid.attributeId = UA_ATTRIBUTEID_VALUE;
+}
+
+std::pair<std::string, std::string> OPCUA_Access::extractPureNodeIdRobust(const std::string &input) {
+  {
+    // 正则表达式结构：
+    // 匹配部分: ^ns=    [0-9]+    ;s=
+    // 读取部分:         ([0-9]+)       (.*)
+    //         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    //         描述特征             描述内容
+    std::regex pattern("^ns=([0-9]+);s=(.*)");
+    std::smatch match;
+    if (std::regex_search(input, match, pattern)) {
+      // match[1] = "3"
+      // match[2] = "DB111_EdgeGatewayTest" (不包含引号)
+      return {match[1].str(), match[2].str()};
+    }
+  }
+  return {"", input};
 }
 
 Result<bool, RichError> OPCUA_Access::Read_UA_Variant_From_PLC() {

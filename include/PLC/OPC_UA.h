@@ -30,15 +30,17 @@ class S7_Access
       explicit S7_Access(const std::string ip_Address, int rack, int slot)
           : m_client_var(Cli_Create()), m_ip_Address(ip_Address), m_rack(rack),
             m_slot(slot) {
-            Destbuffer.resize(10000);
+            Destbuffer.reserve(10000);
+            Sourcebuffer.reserve(10000);
             }
+            
             ~S7_Access() { disconnect(); };
 
             Result<bool, RichError>
             batchReadS7DataBlock_FromPLC(OPCUADataBlock *data);
             Result<bool,RichError>
             batchWriteS7DataBlock_ToPLC(OPCUADataBlock *data);
-          
+            Result<int,RichError> meastureStringObjectLength(int startPos,OPCUAModernDataStruct &var);
           
             Result<bool, RichError> connect();
             bool isConnected();
@@ -303,6 +305,7 @@ public:
 
     m_batchWriteNodesValid = false;
   }
+  std::pair<std::string, std::string>  extractPureNodeIdRobust(const std::string &input);
   std::unordered_set<std::string> m_hasRead_var_set;
 
 private:

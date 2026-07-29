@@ -17,6 +17,26 @@ class OPCUADataCovert {
 public:
   OPCUADataCovert() = default;
   ~OPCUADataCovert() = default;
+    // extract function
+  std::pair<std::string, std::string>
+  extractPureNodeIdRobust(const std::string &input) {
+    {
+      // 正则表达式结构：
+      // 匹配部分: ^ns=    [0-9]+    ;s=
+      // 读取部分:         ([0-9]+)       (.*)
+      //         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+      //         描述特征             描述内容
+      std::regex pattern("^ns=([0-9]+);s=(.*)");
+      std::smatch match;
+      if (std::regex_search(input, match, pattern)) {
+        // match[1] = "3"
+        // match[2] = "DB111_EdgeGatewayTest" (不包含引号)
+        return {match[1].str(), match[2].str()};
+      }
+    }
+    return {"", input};
+  }
+
   // OPCUA
   // UA->Normal
   Result<bool, RichError>

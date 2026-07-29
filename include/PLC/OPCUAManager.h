@@ -135,6 +135,8 @@ private:
     }
     return size;
   }
+
+ 
 };
 
 //  OPCUA Device Reader
@@ -158,6 +160,9 @@ public:
     Result<bool, RichError>
     batchReadOPCUADataBlock_FromPLC(OPCUADataBlock *data);
     Result<bool, RichError> batchReadS7DataBlock_FromPLC(OPCUADataBlock *data);
+    Result<int,RichError>  meastureStringObjectLength(int startPostion,OPCUAModernDataStruct &var){
+      return m_s7Acess->meastureStringObjectLength(startPostion,var);
+    }
 
     // 写入数据方法
     Result<bool, RichError> WriteDataToPLC(OPCUADataBlock *data);
@@ -200,6 +205,7 @@ private:
     Result<bool, RichError> convertDataPointerToOPCUA(OPCUADataBlock *data);
     Result<bool, RichError> convertS7ToDataPointer(OPCUADataBlock *data);
     Result<bool, RichError> convertDataPointerToS7(OPCUADataBlock *data);
+   
 };
 
 // 职责：从定义构建OPCUADataBlock
@@ -376,7 +382,6 @@ private:
 
   // QTreeView *treeView;
   SpecialTreeView *treeView;
-  QTableView *m_tableView;
   QPushButton *m_refreshBtn;
   QPushButton *m_writeBtn;
   QPushButton *m_exportBtn;
@@ -629,6 +634,150 @@ public:
     std::shared_ptr<OPCUADataBlock> m_OPCUADataBlock = nullptr;
     std::shared_ptr<OPCUAParseResult> m_OPCUAParseResult = nullptr;
     SCL_Parser m_DBParser;
+
+    Result<bool, RichError>
+    calculate_data_block_size(std::vector<OPCUAModernDataStruct> &varVector) {
+      //  RECORD LAST USEABLE POSITION
+      int last_free_byte_offset = 0;
+      //  RECORD LAST USED POSITION
+      float last_used_var_byte_offset = -1;
+      int current_bit_quality = 0;
+      bool is_effective_calculate = true;
+      S7DataType last_data_S7_type = S7DataType::UNKNOWN;
+      for (auto &var : varVector) {
+        if (var.data_type_enum == S7DataType::UNKNOWN) {
+          continue;
+        }
+        is_effective_calculate &=
+            calculate_variable_offset(
+                var, last_free_byte_offset, current_bit_quality,
+                last_used_var_byte_offset, last_data_S7_type)
+                .is_success();
+        last_used_var_byte_offset = var.bytes_offset;
+      }
+
+      if (is_effective_calculate) {
+        return Result<bool, RichError>(true);
+      } else {
+        return Result<bool, RichError>(
+            RichError("calculate data block size failed"));
+      }
+    }
+
+    Result<bool, RichError> calculate_variable_offset(
+        OPCUAModernDataStruct &var, int &last_free_byte_offset,
+        int &current_bit_quality, float &last_used_var_byte_offset,
+        S7DataType &last_data_S7_type) {
+      // update the latest byte position to be allocated
+      switch (var.data_type_enum) {
+      case S7DataType::BOOL:
+        //  CHECK THE EXISTENCE OF CONTINUOUS BOLL VARIABLE
+        if (last_data_S7_type == S7DataType::BOOL) {
+          //  IN S7 , VARIABLE_OFFSET DECIMAL PART IS EQUAL TO OR LESS THAN 7
+          int used_decimal_part = last_used_var_byte_offset * 10 -
+                                  std::floor(last_used_var_byte_offset) * 10;
+          if (used_decimal_part < 7) {
+            var.bytes_offset = last_used_var_byte_offset + 0.1;
+            var.bit_offset = used_decimal_part + 1;
+          } else {
+            var.bytes_offset = std::floor(last_used_var_byte_offset) + 1;
+            var.bit_offset = 0;
+          }
+          //  float PART CAN UPDATE BY VAR.BYTES_OFFSET , BECAUSE
+          last_free_byte_offset = (std::floor(var.bytes_offset) + 1);
+        } else {
+          var.bytes_offset = last_free_byte_offset;
+          var.bit_offset = 0;
+          last_free_byte_offset = var.bytes_offset + 1;
+        }
+        last_data_S7_type = S7DataType::BOOL;
+        //  AVOID THE RUNNING OF ASSIGNMENT OF IS_CONTINUOUS_BOOL TO FALSE
+        return Result<bool, RichError>(true);
+      case S7DataType::BYTE:
+        last_data_S7_type = S7DataType::BYTE;
+        var.bytes_offset = last_free_byte_offset;
+        last_free_byte_offset = var.bytes_offset + 1;
+        break;
+      case S7DataType::INT:
+        last_data_S7_type = S7DataType::INT;
+        if (last_free_byte_offset % 2 == 0) {
+          var.bytes_offset = last_free_byte_offset;
+        } else {
+          var.bytes_offset = last_free_byte_offset + 1;
+        }
+        last_free_byte_offset = var.bytes_offset + 2;
+        break;
+      case S7DataType::WORD:
+        last_data_S7_type = S7DataType::WORD;
+        if (last_free_byte_offset % 2 == 0) {
+          var.bytes_offset = last_free_byte_offset;
+        } else {
+          var.bytes_offset = last_free_byte_offset + 1;
+        }
+        last_free_byte_offset = var.bytes_offset + 2;
+        break;
+      case S7DataType::DWORD:
+        last_data_S7_type = S7DataType::DWORD;
+        if (last_free_byte_offset % 2 == 0) {
+          var.bytes_offset = last_free_byte_offset;
+        } else {
+          var.bytes_offset = last_free_byte_offset + 1;
+        }
+        last_free_byte_offset = var.bytes_offset + 4;
+        break;
+      case S7DataType::UDINT:
+        last_data_S7_type = S7DataType::UDINT;
+        if (last_free_byte_offset % 2 == 0) {
+          var.bytes_offset = last_free_byte_offset;
+        } else {
+          var.bytes_offset = last_free_byte_offset + 1;
+        }
+        last_free_byte_offset = var.bytes_offset + 4;
+        break;
+      case S7DataType::DINT:
+        last_data_S7_type = S7DataType::DINT;
+        if (last_free_byte_offset % 2 == 0) {
+          var.bytes_offset = last_free_byte_offset;
+        } else {
+          var.bytes_offset = last_free_byte_offset + 1;
+        }
+        last_free_byte_offset = var.bytes_offset + 4;
+        break;
+      case S7DataType::REAL:
+        last_data_S7_type = S7DataType::REAL;
+        if (last_free_byte_offset % 2 == 0) {
+          var.bytes_offset = last_free_byte_offset;
+        } else {
+          var.bytes_offset = last_free_byte_offset + 1;
+        }
+        last_free_byte_offset = var.bytes_offset + 4;
+        break;
+      case S7DataType::STRING: {
+        last_data_S7_type = S7DataType::STRING;
+        var.bytes_offset = last_free_byte_offset;
+        auto result = meastureStringObjectLength(last_free_byte_offset,var);
+        if (result.is_fail())
+        {
+          var.s7_data_type_length = 2;
+        }
+        else
+        {
+          var.s7_data_type_length = result.unwrap_returnLeftValue() + 2;
+        }
+        last_free_byte_offset += (var.s7_data_type_length) % 2
+                                     ? (var.s7_data_type_length / 2 + 1) * 2
+                                     : var.s7_data_type_length;
+      } break;
+      default:
+        return Result<bool, RichError>(RichError("unknown data type"));
+      }
+      return Result<bool, RichError>(true);
+    }
+
+    Result<int, RichError>
+    meastureStringObjectLength(int last_free_byte_offset,OPCUAModernDataStruct &var) {
+      return Result<int, RichError>(m_reader->meastureStringObjectLength(last_free_byte_offset,var));
+    }
 };
 
 struct OPCUADataBlockKey {

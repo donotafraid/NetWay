@@ -301,6 +301,11 @@ public:
       return Result<bool, RichError>(RichError("bytes vector is empty"));
     }
 
+    // 检查对象是否有效
+    if (type == S7DataType::UNKNOWN) {
+      return Result<bool, RichError>(RichError("object type is UNKNOWN"));
+    }
+
     // 检查偏移量是否越界
     if (offset < 0 || offset >= static_cast<int>(bytes.size())) {
       return Result<bool, RichError>(RichError("Offset out of range"));

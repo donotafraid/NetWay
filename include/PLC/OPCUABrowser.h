@@ -205,8 +205,6 @@ static bool readAndPrintVariable(UA_Client *client, const UA_NodeId &nodeId,
         item.data_pointer->Reset_Value(float{0});
         
     } else if (value.type == &UA_TYPES[UA_TYPES_STRING]) {
-        // UA_String* str = (UA_String*)value.data;
-        // std::string strValue = uaStringToString(*str);
         spdlog::info("{}{} = {}", indent, "DataType", value.type->typeName);
         item.data_type_enum = S7DataType::STRING;
         item.data_pointer->Reset_Value(std::string{0});
@@ -724,6 +722,7 @@ struct OPCUAInlineBrowse {
         OPCUAModernDataStruct item;
         UA_NodeId_copy(&ref->nodeId.nodeId, &item.nodeID);
         item.variable_name = childBrowseName;
+        item.variable_nodeID = childNodeId;
         item.namespace_index = ref->nodeId.nodeId.namespaceIndex;
         item.parent_nodeID = extractParentNodeId(childNodeId);
 
@@ -766,16 +765,16 @@ struct OPCUAInlineBrowse {
 
     std::string parentId;
 
-    size_t bracketPos = nodeId.rfind('[');
-    if (bracketPos != std::string::npos) {
-      // 检查是否是数组元素（不是字符串内容的一部分）
-      // 方法1：检查 [ 前面是否是引号（说明是字符串内的内容，不是数组索引）
-      // 方法2：直接认为是数组索引，因为 OPC UA 节点名中不包含 [ 字符
+    // size_t bracketPos = nodeId.rfind('[');
+    // if (bracketPos != std::string::npos) {
+    //   // 检查是否是数组元素（不是字符串内容的一部分）
+    //   // 方法1：检查 [ 前面是否是引号（说明是字符串内的内容，不是数组索引）
+    //   // 方法2：直接认为是数组索引，因为 OPC UA 节点名中不包含 [ 字符
 
-      // 推荐：直接认为是数组索引（OPC UA 节点名不会包含 '[' 字符）
-      parentId = nodeId.substr(0, bracketPos);
-      return parentId;
-    }
+    //   // 推荐：直接认为是数组索引（OPC UA 节点名不会包含 '[' 字符）
+    //   parentId = nodeId.substr(0, bracketPos);
+    //   return parentId;
+    // }
 
     // 2. 如果不是数组元素，查找最后一个 '.' 的位置
     if (parentId.empty()) {
@@ -784,12 +783,17 @@ struct OPCUAInlineBrowse {
         return ""; // 没有父节点
       }
 
-      // 确保这个 '.' 是成员分隔符（不是 namespace 定义中的）
-      if (lastDotPos > 3 && nodeId.substr(lastDotPos - 3, 3) == "ns=") {
-        return ""; // 这是 namespace 定义，不是成员分隔符
+      size_t lastDoubleQuotationPos = nodeId.rfind('\"');
+      size_t lastSquareBracketPos = nodeId.rfind('[');
+      if (lastSquareBracketPos - lastDoubleQuotationPos == 1 &&
+          lastSquareBracketPos != std::string::npos) {
+            //  mean \"xxxx.xxxx.xxxx.xxx\"[y]
+        parentId = nodeId.substr(0, lastSquareBracketPos);
+      } else {
+        // do not find square or the square exist in front of .
+        //  mean \"xxx.xxx\"
+        parentId = nodeId.substr(0, lastDotPos);
       }
-
-      parentId = nodeId.substr(0, lastDotPos);
     }
 
     // parentId = eliminateSpareSymbol(parentId);

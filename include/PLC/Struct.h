@@ -1,6 +1,5 @@
 #pragma once
 
-#include "PLC/TransformS7AndOPCUA.h"
 #include <cstdlib>
 #include <cstring>
 #include <algorithm>
@@ -32,8 +31,6 @@ static std::string nodeIdToString(const UA_NodeId *nodeId) {
     UA_String_clear(&str);
     return result;
 }
-
-
 
 /**
  * 检查字符串中是否存在小数点以及小数点后面是否存在反斜杠
@@ -394,29 +391,42 @@ struct OPCUAModernDataStruct {
 
     if (item.data_type_enum == S7DataType::BOOL) {
       item.data_pointer->Reset_Value(bool{0});
-    } else if (item.data_type_enum == S7DataType::BYTE) {
-      item.data_type_enum = S7DataType::BYTE;
-      item.data_pointer->Reset_Value(uint8_t{0});
-
+      item.s7_data_type_length = 1; // BOOL 占 1 位，但 S7 中通常按 1 字节处理
     } else if (item.data_type_enum == S7DataType::BYTE) {
       item.data_pointer->Reset_Value(uint8_t{0});
-
+      item.s7_data_type_length = 1; // 1 字节
     } else if (item.data_type_enum == S7DataType::INT) {
       item.data_pointer->Reset_Value(int16_t{0});
+      item.s7_data_type_length = 2; // 2 字节
     } else if (item.data_type_enum == S7DataType::WORD) {
       item.data_pointer->Reset_Value(uint16_t{0});
+      item.s7_data_type_length = 2; // 2 字节
     } else if (item.data_type_enum == S7DataType::DINT) {
       item.data_pointer->Reset_Value(int32_t{0});
+      item.s7_data_type_length = 4; // 4 字节
+    } else if (item.data_type_enum == S7DataType::DWORD) {
+      item.data_pointer->Reset_Value(uint32_t{0});
+      item.s7_data_type_length = 4; // 4 字节
     } else if (item.data_type_enum == S7DataType::UDINT) {
       item.data_pointer->Reset_Value(uint32_t{0});
+      item.s7_data_type_length = 4; // 4 字节
     } else if (item.data_type_enum == S7DataType::REAL) {
       item.data_pointer->Reset_Value(float{0});
+      item.s7_data_type_length = 4; // 4 字节
     } else if (item.data_type_enum == S7DataType::STRING) {
-      item.data_pointer->Reset_Value(std::string{0});
+      item.data_pointer->Reset_Value(std::string{});
+      item.s7_data_type_length = 0; // 字符串长度可变，由具体内容决定
+    } else if (item.data_type_enum == S7DataType::ARRAY) {
+      // 数组类型，长度需要额外处理
+      item.s7_data_type_length = 0; // 由数组大小和元素类型决定
+    } else if (item.data_type_enum == S7DataType::STRUCT) {
+      // 结构体类型，长度需要额外计算
+      item.s7_data_type_length = 0; // 由结构体成员决定
     } else {
       // 未知类型
       item.data_type_enum = S7DataType::UNKNOWN;
-      item.data_pointer->Reset_Value(std::string{0});
+      item.data_pointer->Reset_Value(std::string{});
+      item.s7_data_type_length = 0;
     }
   }
 
@@ -424,20 +434,20 @@ struct OPCUAModernDataStruct {
   void fromCSVImport(const OPCUAModernDataStructFromCSV &csvData) {
       // 1. 直接映射字段
     variable_name = csvData.displayName;          // displayName -> variable_name
-    variable_nodeID = csvData.nodeId;             // nodeId -> variable_nodeID
+    variable_nodeID = removeBackslashes(csvData.nodeId);             // nodeId -> variable_nodeID
     data_type = csvData.dataType;                 // dataType -> data_type
     raw_data_type = csvData.dataType;             // dataType -> raw_data_type
     description = csvData.description;            // description -> description
-    parent_nodeID = csvData.parentNodeId;         // parentNodeId -> parent_nodeID
+    parent_nodeID = removeBackslashes(csvData.parentNodeId);         // parentNodeId -> parent_nodeID
     arrayDimensions = csvData.arrayDimensions;    // arrayDimensions -> arrayDimensions
     browse_name = csvData.browseName;             // browseName -> browse_name
 
     //  data type enum  transform
     auto it = typeMap.find(raw_data_type);
-    if (it != typeMap.end()) {
+    if (it != typeMap.end() ) {
       data_type_enum = it->second;
       initializeDataPointer(*this);
-    } else {
+    } else  {
       data_type_enum = S7DataType::UNKNOWN;
     }
 
@@ -456,6 +466,13 @@ struct OPCUAModernDataStruct {
     isOPCUAType = true;
     isFromCSV = true;
     buildType = InputFormat::CSV; // 标记为 CSV 导入
+  }
+
+  // 使用erase-remove惯用法（最简洁）
+  std::string removeBackslashes(const std::string &input) {
+    std::string result = input;
+    result.erase(std::remove(result.begin(), result.end(), '\\'), result.end());
+    return result;
   }
 };
 

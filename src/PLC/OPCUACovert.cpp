@@ -47,8 +47,9 @@ Result<bool, RichError> OPCUADataCovert::batchSet_UA_Scalar_StatusCode(
     }
     else
     {
-      m_writeValue.nodeId = UA_NODEID_STRING_ALLOC(
-          nameSpace, var.variable_nodeID.data());
+      auto result{extractPureNodeIdRobust(var.variable_nodeID)};
+      m_writeValue.nodeId =
+          UA_NODEID_STRING_ALLOC(std::stoi(result.first), result.second.data());
     }
     m_writeValue.attributeId = UA_ATTRIBUTEID_VALUE;
   }
@@ -88,8 +89,9 @@ Result<bool, RichError> OPCUADataCovert::batchSet_UA_Scalar_StatusCode(
     }
     else
     {
-      m_writeValue.nodeId = UA_NODEID_STRING_ALLOC(
-          nameSpace, var.variable_nodeID.data());
+      auto result{extractPureNodeIdRobust(var.variable_nodeID)};
+      m_writeValue.nodeId =
+          UA_NODEID_STRING_ALLOC(std::stoi(result.first), result.second.data());
     }
     m_writeValue.attributeId = UA_ATTRIBUTEID_VALUE;
   }
@@ -426,6 +428,11 @@ Result<bool, RichError> OPCUADataCovert::batchSet_Uint8_t_To_Dynamic(
   auto &SourceData_var = data->getVariabeDataVector();
   auto &dataBuffer = data->getVariableDataBuffer();
   for (auto &var : SourceData_var) {
+    if(var.data_type_enum== S7DataType::UNKNOWN)
+    {
+      continue;
+    }
+
     auto result = DataTypeMapper::TransformBytesToDynamicValue(
         var.data_type_enum, dataBuffer, var.bytes_offset, 0, var.bit_offset,
         var.data_pointer.get());

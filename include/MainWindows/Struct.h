@@ -1,8 +1,8 @@
 #pragma once
 
 #include "load_config/Qt_library.h"
+#include "load_config/load_config.h"
 #include <iostream>
-#include <load_config/load_config.h>
 
 enum class Log_Level { DEBUG, INFO, ERROR,UNKNOWN};
 enum class Log_OUTPUT_FORMAT {TXT,JSON,UNKNOWN};
