@@ -460,7 +460,7 @@ public:
         ByteOrderCoverter::to_bigEndian(intValue, &dataBuffer[offset], 2);
         break;
       } else {
-        std::cout << "Byte value is mismatch range in model !\n ";
+        spdlog::warn("Byte value is mismatch range in model !");
       }
     }
     case S7DataType::DINT: {
@@ -469,7 +469,7 @@ public:
         ByteOrderCoverter::to_bigEndian(longValue, &dataBuffer[offset], 4);
         break;
       } else {
-        std::cout << "Byte value is mismatch range in model !\n ";
+        spdlog::warn("Byte value is mismatch range in model !");
       }
     }
     case S7DataType::REAL: {
@@ -485,7 +485,7 @@ public:
         ByteOrderCoverter::to_bigEndian(intValue, &dataBuffer[offset], 2);
         break;
       } else {
-        std::cout << "Byte value is mismatch range in model !\n ";
+        spdlog::warn("Byte value is mismatch range in model !");
       }
     }
     case S7DataType::DWORD:
@@ -495,7 +495,7 @@ public:
         ByteOrderCoverter::to_bigEndian(uintValue, &dataBuffer[offset], 4);
         break;
       } else {
-        std::cout << "Byte value is mismatch range in model !\n ";
+        spdlog::warn("Byte value is mismatch range in model !");
       }
     }
     case S7DataType::STRING: {

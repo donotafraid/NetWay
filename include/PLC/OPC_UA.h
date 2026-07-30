@@ -101,17 +101,11 @@ public:
   };
 
   Result<bool, RichError> read();
-  Result<bool, RichError> read_nameSpace();
-  Result<bool, RichError> read_variable_from_device(UA_NodeId &nodeID,
-                                                    bool reverse_direction);
 
   Result<bool, RichError> batchReadOPCUADataBlock_FromPLC(OPCUADataBlock *data);
   Result<bool, RichError> batchWriteOPCUABlock_ToPLC(OPCUADataBlock *data);
 
   // trait function
-  Result<bool, RichError> expandNodeIdToString(UA_ExpandedNodeId &id);
-  Result<bool, RichError> nodeIdToString(std::string &str, UA_NodeId &nodeID);
-  bool isSiemensContainer(const std::string &browseName);
   Result<bool, RichError> waitForSessionActivation(int timeoutMs);
   void UA_Variant_steal(UA_Variant *src, UA_Variant *dst) {
     // 1. 初始化目标 Variant
@@ -147,76 +141,11 @@ public:
 
   Result<bool, RichError> batchWrite();
 
-  template <typename T>
-  Result<bool, RichError> write_by_vector(OPCUAModernDataStruct &var,
-                                          std::vector<T> &src_vector);
-  template <typename T>
-  Result<bool, RichError> write_by_scalar(OPCUAModernDataStruct &var,
-                                          T &src_vector);
-
   Result<bool, RichError> Read_UA_Variant_From_PLC();
-
-  Result<bool, RichError>
-  Set_UA_To_Read_Normal_Scalar(const S7DataType &S7_type, Dynamic_Value &value,
-                               int i);
-
-  Result<bool, RichError>
-  Set_Read_UA_Array(std::vector<OPCUAModernDataStruct> &var_map,
-                    OPCUAModernDataStruct &var, int &index);
-  Result<bool, RichError>
-  Set_Normal_To_Write_UA_Vector(OPCUAModernDataStruct &var,
-                                std::vector<uint8_t> &m_data_block_buffer);
-  Result<bool, RichError>
-  batchSet_Normal_To_Write_UA_Vector(OPCUAModernDataStruct &var,
-                                     std::vector<uint8_t> &m_data_block_buffer,
-                                     int index);
-  Result<bool, RichError>
-  Set_Normal_To_Write_UA_Scalar(OPCUAModernDataStruct &var,
-                                std::vector<uint8_t> &m_data_block_buffer);
-  Result<bool, RichError>
-  batchSet_Normal_To_Write_UA_Scalar(OPCUAModernDataStruct &var, int index);
-
-  Result<bool, RichError> ByteDeserialization_To_SpecialType(
-      int data_offset, int data_length, S7DataType &data_type_enum,
-      std::vector<uint8_t> &m_data_block_buffer, Dynamic_Value &value);
-
-  template <typename T> void Covert_UA_Scalar_To_Specific(T &value, int i);
-  template <typename T>
-  void Covert_Uint8_Vector_To_Normal_Vector(
-      OPCUAModernDataStruct &var, std::vector<uint8_t> &m_data_block_buffer,
-      std::vector<T> &dest_vector);
-  template <typename T>
-  void Covert_Uint8_t_Vector_To_Normal_Scalar(
-      OPCUAModernDataStruct &var, std::vector<uint8_t> &m_data_block_buffer,
-      T &dest_vector);
-
-  template <typename T>
-  void ByteDeserialization_memcpy(T &value, const std::vector<uint8_t> &src,
-                                  int data_offset, int data_length);
 
   Result<bool, RichError> connect();
   bool isConnected();
   void Set_Read_NodeID(UA_ReadValueId &nodeID, OPCUAModernDataStruct &node);
-
-  template <typename T>
-  Result<bool, RichError>
-  Set_UA_Array_StatusCode(int nameSpace, OPCUAModernDataStruct &SourceData_var,
-                          std::vector<T> &source_vector);
-  template <typename T>
-  Result<bool, RichError>
-  Set_UA_Scalar_StatusCode(int nameSpace, OPCUAModernDataStruct &SourceData_var,
-                           T &source_var);
-
-  template <typename T>
-  Result<bool, RichError>
-  batchSet_UA_Array_StatusCode(int nameSpace,
-                               OPCUAModernDataStruct &SourceData_var,
-                               std::vector<T> &source_vector, int index);
-  template <typename T>
-  Result<bool, RichError>
-  batchSet_UA_Scalar_StatusCode(int nameSpace,
-                                OPCUAModernDataStruct &SourceData_var,
-                                T &source_var, int index);
 
 
   void PrepareBatchRead(std::vector<OPCUAModernDataStruct> &data_vars) {

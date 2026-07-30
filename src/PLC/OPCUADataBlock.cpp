@@ -1,4 +1,5 @@
 #include "PLC/OPCUADataBlock.h"
+#include <spdlog/spdlog.h>
 
 //OPCUADataBlock--------------------------------------------------
 OPCUADataBlock::OPCUADataBlock(const std::string& name, const std::string& ip)
@@ -146,8 +147,9 @@ void OPCUADataBlock::updateBufferFromS7ModernStructByMSB(std::vector<OPCUAModern
              intValue, &dataBuffer[VariableItem.bytes_offset], 1);
          break;
        } else {
-            std::cout<<"Byte value is mismatch range in model !\n ";
+         spdlog::warn("Byte value is mismatch range in model (BYTE), value: {}", intValue);
        }
+       break;
      }
 
      case S7DataType::INT: {
@@ -157,8 +159,9 @@ void OPCUADataBlock::updateBufferFromS7ModernStructByMSB(std::vector<OPCUAModern
              intValue, &dataBuffer[VariableItem.bytes_offset], 2);
          break;
        } else {
-            std::cout<<"Byte value is mismatch range in model !\n ";
+         spdlog::warn("Byte value is mismatch range in model (INT), value: {}", intValue);
        }
+       break;
      }
 
      case S7DataType::DINT: {
@@ -168,8 +171,9 @@ void OPCUADataBlock::updateBufferFromS7ModernStructByMSB(std::vector<OPCUAModern
              longValue, &dataBuffer[VariableItem.bytes_offset], 4);
          break;
        } else {
-            std::cout<<"Byte value is mismatch range in model !\n ";
+         spdlog::warn("Byte value is mismatch range in model (DINT), value: {}", longValue);
        }
+       break;
      }
 
      case S7DataType::WORD: {
@@ -179,20 +183,18 @@ void OPCUADataBlock::updateBufferFromS7ModernStructByMSB(std::vector<OPCUAModern
              intValue, &dataBuffer[VariableItem.bytes_offset], 2);
          break;
        } else {
-         std::cout << "Byte value is mismatch range in model !\n ";
+         spdlog::warn("Byte value is mismatch range in model (WORD), value: {}", intValue);
        }
+       break;
      }
 
      case S7DataType::DWORD:
      case S7DataType::UDINT: {
        uint32_t uintValue = VariableItem.data_pointer->get<uint32_t>();
-       if (1) {
-         ByteOrderCoverter::to_bigEndian(
-             uintValue, &dataBuffer[VariableItem.bytes_offset], 4);
-         break;
-       } else {
-            std::cout<<"Byte value is mismatch range in model !\n ";
-       }
+       // 无符号类型始终在有效范围内，无需范围检查
+       ByteOrderCoverter::to_bigEndian(
+           uintValue, &dataBuffer[VariableItem.bytes_offset], 4);
+       break;
      }
 
      case S7DataType::REAL: {
@@ -223,11 +225,10 @@ void OPCUADataBlock::updateBufferFromS7ModernStructByMSB(std::vector<OPCUAModern
 
      default: {
        // 未知类型，直接存储
+       spdlog::debug("Unknown S7 data type encountered in updateBufferFromS7ModernStructByMSB");
        break;
      }
      }
-
-    
    }
 }
 
@@ -259,8 +260,9 @@ void OPCUADataBlock::updateBufferFromS7ModernStructByLSB(std::vector<OPCUAModern
              intValue, &dataBuffer[VariableItem.bytes_offset], 1);
          break;
        } else {
-            std::cout<<"Byte value is mismatch range in model !\n ";
+         spdlog::warn("Byte value is mismatch range in model (BYTE), value: {}", intValue);
        }
+       break;
      }
 
      case S7DataType::INT: {
@@ -270,8 +272,9 @@ void OPCUADataBlock::updateBufferFromS7ModernStructByLSB(std::vector<OPCUAModern
              intValue, &dataBuffer[VariableItem.bytes_offset], 2);
          break;
        } else {
-            std::cout<<"Byte value is mismatch range in model !\n ";
+         spdlog::warn("Byte value is mismatch range in model (INT), value: {}", intValue);
        }
+       break;
      }
 
      case S7DataType::DINT: {
@@ -281,8 +284,9 @@ void OPCUADataBlock::updateBufferFromS7ModernStructByLSB(std::vector<OPCUAModern
              longValue, &dataBuffer[VariableItem.bytes_offset], 4);
          break;
        } else {
-            std::cout<<"Byte value is mismatch range in model !\n ";
+         spdlog::warn("Byte value is mismatch range in model (DINT), value: {}", longValue);
        }
+       break;
      }
 
      case S7DataType::WORD: {
@@ -292,20 +296,18 @@ void OPCUADataBlock::updateBufferFromS7ModernStructByLSB(std::vector<OPCUAModern
              intValue, &dataBuffer[VariableItem.bytes_offset], 2);
          break;
        } else {
-         std::cout << "Byte value is mismatch range in model !\n ";
+         spdlog::warn("Byte value is mismatch range in model (WORD), value: {}", intValue);
        }
+       break;
      }
 
      case S7DataType::DWORD:
      case S7DataType::UDINT: {
        uint32_t uintValue = VariableItem.data_pointer->get<uint32_t>();
-       if (1) {
-         ByteOrderCoverter::to_littleEndian(
-             uintValue, &dataBuffer[VariableItem.bytes_offset], 4);
-         break;
-       } else {
-            std::cout<<"Byte value is mismatch range in model !\n ";
-       }
+       // 无符号类型始终在有效范围内，无需范围检查
+       ByteOrderCoverter::to_littleEndian(
+           uintValue, &dataBuffer[VariableItem.bytes_offset], 4);
+       break;
      }
 
      case S7DataType::REAL: {
@@ -336,10 +338,10 @@ void OPCUADataBlock::updateBufferFromS7ModernStructByLSB(std::vector<OPCUAModern
 
      default: {
        // 未知类型，直接存储
+       spdlog::debug("Unknown S7 data type encountered in updateBufferFromS7ModernStructByLSB");
        break;
      }
      }
-    
    }
 }
 

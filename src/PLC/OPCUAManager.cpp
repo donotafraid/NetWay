@@ -1,4 +1,5 @@
 #include "PLC/OPCUAManager.h"
+#include <spdlog/spdlog.h>
 
 //OPCUADataReader-------------------------------------------------------------
 // ==================== 构造函数 ====================
@@ -140,10 +141,10 @@ bool OPCUADeviceReader::onRequestBuildOPCUA(const std::string& ip_Address,
     
     auto result = m_opcUA->reconnect(1, 1000);
     if (result.is_fail()) {
-        std::cout << "OPCUA Connect fail , reason : " << result.unwrap_err().what() << std::endl;
+        spdlog::error("OPCUA Connect fail , reason : {}", result.unwrap_err().what());
         return false;
     } else {
-        std::cout << "OPCUA Connect successfully \n";
+        spdlog::info("OPCUA Connect successfully");
         return true;
     }
 }
@@ -169,10 +170,10 @@ bool OPCUADeviceReader::onRequestBuildS7(const std::string &ip_Address,
   m_s7Acess = std::make_unique<S7_Access>(ip_Address, rack, slot);
   auto result = m_s7Acess->connect();
   if (result.is_fail()) {
-    std::cout << result.unwrap_err().what() << std::endl;
+    spdlog::error("{}", result.unwrap_err().what());
     return false;
   } else {
-    std::cout << "S7 Offset Connect successfully \n";
+    spdlog::info("S7 Offset Connect successfully");
     return true;
   }
 }
@@ -211,11 +212,11 @@ bool OPCUADeviceReader::validateDataBlock(OPCUADataBlock* data) const {
 }
 
 void OPCUADeviceReader::logError(const std::string& function, const std::string& error) const {
-    std::cerr << "[OPCUADeviceReader::" << function << "] Error: " << error << std::endl;
+    spdlog::error("[OPCUADeviceReader::{}] Error: {}", function, error);
 }
 
 void OPCUADeviceReader::logInfo(const std::string& message) const {
-    std::cout << "[OPCUADeviceReader] Info: " << message << std::endl;
+    spdlog::info("[OPCUADeviceReader] Info: {}", message);
 }
 
 Result<bool, RichError> OPCUADeviceReader::convertS7ToOPCUA(const std::vector<uint8_t>& s7_data,
@@ -663,8 +664,7 @@ bool OPCUADataBlockModel::setData(const QModelIndex& index, const QVariant& valu
             node->m_dataBlock->data_pointer->Reset_Value(floatValue);
 
             float savedValue = node->m_dataBlock->data_pointer->get<float>();
-            std::cout << "Saved REAL value: " << savedValue
-                      << ", expected: " << floatValue << std::endl;
+            spdlog::debug("Saved REAL value: {}, expected: {}", savedValue, floatValue);
             break;
         }
         
@@ -998,7 +998,7 @@ bool OPCUADataBlockModel::setVariableValue(OPCUAModernDataStruct& var,
         // 临时实现
         return true;
     } catch (const std::exception& e) {
-        qWarning() << "Failed to set variable value:" << e.what();
+        spdlog::error("Failed to set variable value: {}", e.what());
         return false;
     }
 }
@@ -1888,7 +1888,7 @@ OPCUADataBlockView::OPCUADataBlockView(QWidget *parent) {
 };
 
 OPCUADataBlockView::~OPCUADataBlockView() {
-  std::cout << "~OPCUADataBlockView call" << std::endl;
+  spdlog::debug("~OPCUADataBlockView call");
 }
 
 void OPCUADataBlockView::getModel(OPCUADataBlockModel *model) {
@@ -1928,12 +1928,6 @@ void OPCUADataBlockView::setupUI() {
     m_typeFilter->addItem("String");
     
     // 表格视图
-    // m_tableView = new QTableView();
-    // m_tableView->setAlternatingRowColors(true);
-    // m_tableView->setSelectionBehavior(QAbstractItemView::SelectRows);
-    // m_tableView->setEditTriggers(QAbstractItemView::EditKeyPressed);
-    // m_tableView->setSelectionMode(QAbstractItemView::ExtendedSelection);
-    // m_tableView->setSortingEnabled(true);
     treeView = new SpecialTreeView();
     treeView->setUniformRowHeights(true); // 优化性能
     treeView->setRootIsDecorated(true);   // 显示展开/折叠图标
@@ -2011,64 +2005,7 @@ void OPCUADataBlockView::importFile() {
 }
 
 void OPCUADataBlockView::onRowdoubleClicked(const QModelIndex &idx) {
-  // {
-  //   TreeNode *node = this->m_model->getGlobalNode(idx);
-  //   if (node == nullptr || node->m_dataBlock == nullptr) {
-  //     qDebug() << "node:" << node << "node->m_dataBlock:";
-  //     return ;
-  //   }
-
-  //   // ✅ 关键验证：检查 column>0 时，parent() 是否能正确返回
-  //   if (idx.column() > 0) {
-  //     // 测试：通过这个索引获取父节点
-  //     QModelIndex parentCheck = idx.parent();
-  //     qDebug() << "=== index() final validation ===";
-  //     qDebug() << "  idx.isValid()=" << idx.isValid();
-  //     qDebug() << "  idx.row()=" << idx.row();
-  //     qDebug() << "  idx.column()=" << idx.column();
-  //     qDebug() << "  parentCheck.isValid()=" << parentCheck.isValid();
-  //     if (parentCheck.isValid()) {
-  //       qDebug() << "  parentCheck.row()=" << parentCheck.row();
-  //       qDebug() << "  parentCheck.column()=" << parentCheck.column();
-  //       qDebug() << "  parentCheck.data()=" << parentCheck.data().toString();
-  //     }
-
-  //     // 测试：通过这个索引获取数据
-  //     QVariant data = idx.data(Qt::DisplayRole);
-  //     qDebug() << "  data()=" << data.toString();
-  //   }
-
-  //   if (idx.column() == 3 || idx.column() == 4) {
-  //     // 调用 edit() 创建编辑器
-  //     treeView->edit(idx);
-  //     QModelIndex parentIndex = idx.parent();
-  //     if(!parentIndex.isValid())
-  //     {
-  //       return;
-  //     }
-  //     //  创建该行的第0列Index
-  //     QModelIndex idxCol0 = m_model->index(idx.row(), 0, idx.parent());
-
-  //     // 立即修正编辑器位置
-  //     QTimer::singleShot(100, this, [this, idx, idxCol0]() {
-  //       QWidget *editor = treeView->indexWidget(idx);
-  //       if (editor) {
-  //         // 基于第0列计算正确位置
-  //         QRect baseRect = treeView->visualRect(idxCol0);
-
-  //         if (baseRect.isValid()) {
-  //           int x = treeView->columnViewportPosition(idx.column());
-  //           int w = treeView->columnWidth(idx.column());
-  //           editor->setGeometry(x, baseRect.y(), w, baseRect.height());
-  //           qDebug() << "Fixed editor geometry to:" << editor->geometry();
-  //         }
-  //       }
-  //     });
-  //     // return true;
-  //   }
-
-  //   // return true; // 阻止信号继续传播
-  // }
+ 
 }
 
 void OPCUADataBlockView::validateTreeStructure() {
@@ -2202,20 +2139,6 @@ void OPCUADataBlockView::validateTreeStructure() {
 }
 
 void OPCUADataBlockView::printCallStack() {
-  // {
-  //   // 1. 创建堆栈跟踪对象
-  //   backward::StackTrace st;
-
-  //   // 2. 捕获当前堆栈，最多捕获32帧
-  //   st.load_here(32);
-
-  //   // 3. 创建打印器
-  //   backward::Printer p;
-
-  //   // 4. 打印到控制台 (qDebug也可以，但直接打印更清晰)
-  //   p.print(st);
-  // }
-
    // 1. 创建堆栈跟踪对象
     backward::StackTrace st;
     st.load_here(32);
@@ -2607,14 +2530,14 @@ void OPCUADataBlockController::initialize(Scope *scope) {
   } else {
     std::shared_ptr<OPCUADataBlockModel> model = scope->getShared<OPCUADataBlockModel>();
     if (!model) {
-      std::cout << "OPCUADataBlockModel getSharedPtr is fail " << std::endl;
+      spdlog::error("OPCUADataBlockModel getSharedPtr is fail");
     } else {
       m_model = std::move(model);
     }
 
     std::shared_ptr<OPCUADeviceReader> reader = scope->getShared<OPCUADeviceReader>();
     if (!reader) {
-      std::cout << "OPCUADeviceReader getSharedPtr is fail " << std::endl;
+      spdlog::error("OPCUADeviceReader getSharedPtr is fail");
     } else {
       m_reader = std::move(reader);
     }
@@ -2629,7 +2552,7 @@ void OPCUADataBlockController::initializeView(OPCUADataBlockView *view)
 {
   if(!view)
   {
-    std::cout<<"initialize vie fail : view is nullptr "<<std::endl;
+    spdlog::error("initialize view fail : view is nullptr");
     return ;
   }
   else
@@ -2676,16 +2599,14 @@ void OPCUADataBlockController::onViewReadRequested() {
   {
     auto result = m_reader->batchReadOPCUADataBlock_FromPLC(m_OPCUADataBlock.get());
     if (result.is_fail()) {
-      std::cout << "onViewReadRequested fail : " << result.unwrap_err().what()
-                << std::endl;
+      spdlog::error("onViewReadRequested fail : {}", result.unwrap_err().what());
     }
   }
   else
   {
     auto result = m_reader->batchReadS7DataBlock_FromPLC(m_OPCUADataBlock.get());
     if (result.is_fail()) {
-      std::cout << "onViewReadRequested fail : " << result.unwrap_err().what()
-                << std::endl;
+      spdlog::error("onViewReadRequested fail : {}", result.unwrap_err().what());
     }
   }
 
@@ -2704,16 +2625,14 @@ void OPCUADataBlockController::onViewWriteRequested() {
   {
     auto result = m_reader->batchWriteOPCUABlock_ToPLC(m_OPCUADataBlock.get());
     if (result.is_fail()) {
-      std::cout << "onViewWriteRequested fail : " << result.unwrap_err().what()
-                << std::endl;
+      spdlog::error("onViewWriteRequested fail : {}", result.unwrap_err().what());
     }
   }
   else
   {
     auto result = m_reader->batchWriteS7DataBlock_ToPLC(m_OPCUADataBlock.get());
     if (result.is_fail()) {
-      std::cout << "onViewWriteRequested fail : " << result.unwrap_err().what()
-                << std::endl;
+      spdlog::error("onViewWriteRequested fail : {}", result.unwrap_err().what());
     }
   }
   
@@ -2735,7 +2654,7 @@ void OPCUADataBlockController::onSaveOPCUAParseResult(const std::shared_ptr<OPCU
       calculate_data_block_size(m_OPCUADataBlock->getVariabeDataVector());
     }
   } else {
-    std::cout << "onSaveOPCUAParseResult : dataBlock is nullptr" << std::endl;
+    spdlog::error("onSaveOPCUAParseResult : dataBlock is nullptr");
   }
 }
 
@@ -2758,7 +2677,7 @@ void OPCUADataBlockController::onSaveOPCUADataBlock(const std::shared_ptr<OPCUAD
       calculate_data_block_size(dataBlock->getVariabeDataVector());
     }
   } else {
-    std::cout << "onSaveOPCUADataBlock : dataBlock is nullptr" << std::endl;
+    spdlog::error("onSaveOPCUADataBlock : dataBlock is nullptr");
   }
 }
 
@@ -2974,7 +2893,7 @@ bool OPCUADataBlockManager::buildS7Connect(
     return true;
   }
 
-  std::cout << ipAddress.data() << " has exist " << std::endl;
+  spdlog::info("{} has exist", ipAddress.toStdString());
   return context->onRequestOPCUACheckConnect();
 }
 
@@ -2992,7 +2911,7 @@ bool OPCUADataBlockManager::buildOPCUAConnect(const QString &ipAddress, int name
     return true;
   }
 
-  std::cout << ipAddress.data() << " has exist " << std::endl;
+  spdlog::info("{} has exist", ipAddress.toStdString());
   return context->onRequestOPCUACheckConnect();
 }
 
@@ -3143,7 +3062,7 @@ SpecialTreeView::SpecialTreeView(QWidget *parent) {
 };
 
 SpecialTreeView::~SpecialTreeView() {
-  std::cout << "~SpecialTreeView call" << std::endl;
+  spdlog::debug("~SpecialTreeView call");
 }
 
 Result<QModelIndex, RichError>
@@ -3249,7 +3168,7 @@ QModelIndex SpecialTreeView::indexAt(const QPoint &pos) const {
   if (result.is_success()) {
     return result.unwrap_returnLeftValue();
   } else {
-    std::cout << result.unwrap_err().what() << std::endl;
+    spdlog::error("{}", result.unwrap_err().what());
     return QModelIndex();
   }
 }

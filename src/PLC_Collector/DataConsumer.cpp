@@ -3,6 +3,7 @@
 // ============================================================
 
 #include "PLC_Collector/DataConsumer.h"
+#include <spdlog/spdlog.h>
 #include <chrono>
 #include <thread>
 #include <iostream>
@@ -119,7 +120,7 @@ bool DataConsumer::consumeBatch(const std::vector<PLCData>& batch) {
         return true;
     } else {
         error_count_ += batch.size();
-        logWarn(+ result.unwrap_err().what());
+        logWarn(result.unwrap_err().what());
         
         // 降级：逐条重试
         size_t success_count = 0;
@@ -159,16 +160,16 @@ bool DataConsumer::qualityCheck(const PLCData& data) const {
 }
 
 void DataConsumer::logInfo(const std::string &msg) const {
-    std::cout<<msg<<std::endl;
+    spdlog::info(msg);
 }
 void DataConsumer::logWarn(const std::string &msg) const {
-    std::cout<<msg<<std::endl;
+    spdlog::warn(msg);
 }
 void DataConsumer::logError(const std::string &msg) const {
-    std::cout<<msg<<std::endl;
+    spdlog::error(msg);
 }
 void DataConsumer::logDebug(const std::string &msg) const {
-    std::cout<<msg<<std::endl;
+    spdlog::debug(msg);
 }
 
 bool DataConsumer::isHealthy() const {
@@ -198,17 +199,16 @@ void DataConsumer::printStatistics() const {
     auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
         now - start_time_).count();
     
-    std::cout << "\n=== DataConsumer Statistics ===" << std::endl;
-    std::cout << "Processed: " << processed_count_.load() << std::endl;
-    std::cout << "Errors: " << error_count_.load() << std::endl;
-    std::cout << "Dropped: " << dropped_count_.load() << std::endl;
-    std::cout << "Batches: " << batch_count_ << std::endl;
-    std::cout << "Elapsed: " << elapsed << "s" << std::endl;
+    spdlog::info("\n=== DataConsumer Statistics ===");
+    spdlog::info("Processed: {}", processed_count_.load());
+    spdlog::info("Errors: {}", error_count_.load());
+    spdlog::info("Dropped: {}", dropped_count_.load());
+    spdlog::info("Batches: {}", batch_count_);
+    spdlog::info("Elapsed: {}s", elapsed);
     if (elapsed > 0) {
-        std::cout << "Throughput: " << (processed_count_.load() / elapsed) 
-                  << " msg/s" << std::endl;
+        spdlog::info("Throughput: {} msg/s", (processed_count_.load() / elapsed));
     }
-    std::cout << "================================" << std::endl;
+    spdlog::info("================================");
 }
 
 // ============================================================

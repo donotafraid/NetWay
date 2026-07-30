@@ -1,5 +1,5 @@
 #include "PLC_Collector/collector.h"
-#include <iostream>
+#include <spdlog/spdlog.h>
 
 /**
  * 采集线程实现
@@ -22,21 +22,17 @@ CollectorThread::CollectorThread(
     // 2. 建立连接
     auto connect_result = mediator.connect("172.28.80.1", 502);
     if (connect_result.is_fail()) {
-      std::cerr << "Connection failed: " << connect_result.unwrap_err().what()
-                << std::endl;
+      spdlog::error("Connection failed: {}", connect_result.unwrap_err().what());
     }
 
     // 设置超时参数（所有业务模块共用）
     mediator.setResponseTimeout(1, 500); // 1.5秒
-
-    // 3. 创建业务模块（都依赖同一个Mediator）
-    TemperatureMonitor monitor(mediator);
   }
     // 启动线程（构造函数中自动启动）
     m_thread = std::thread(&CollectorThread::run, this);
     
     if (m_config.enableLogging) {
-        std::cout << "[Collector " << m_threadId << "] Created" << std::endl;
+        spdlog::info("[Collector {}] Created", m_threadId);
     }
 }
 
@@ -46,15 +42,14 @@ CollectorThread::~CollectorThread() {
         m_thread.join();
     }
     if (m_config.enableLogging) {
-        std::cout << "[Collector " << m_threadId << "] Destroyed "
-                 << "(success=" << m_successCount 
-                 << ", fail=" << m_failCount << ")" << std::endl;
+        spdlog::info("[Collector {}] Destroyed (success={}, fail={})", 
+                     m_threadId, m_successCount, m_failCount);
     }
 }
 
 void CollectorThread::run() {
   if (m_config.enableLogging) {
-    std::cout << "[Collector " << m_threadId << "] Started" << std::endl;
+    spdlog::info("[Collector {}] Started", m_threadId);
   }
 
   // 采集主循环
@@ -76,7 +71,7 @@ void CollectorThread::run() {
   }
 
   if (m_config.enableLogging) {
-    std::cout << "[Collector " << m_threadId << "] Stopped" << std::endl;
+    spdlog::info("[Collector {}] Stopped", m_threadId);
   }
 }
 
@@ -109,8 +104,7 @@ bool CollectorThread::tryEnqueue(const PLCData& data) {
     bool success = m_queue.enqueue(data);
     
     if (!success && m_config.enableLogging) {
-        std::cerr << "[Collector " << m_threadId 
-                 << "] Queue full, data lost: " << data.toString() << std::endl;
+        spdlog::warn("[Collector {}] Queue full, data lost: {}", m_threadId, data.toString());
     }
     
     return success;

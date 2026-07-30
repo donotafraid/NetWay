@@ -1,4 +1,5 @@
 #include "PLC_Collector/manager.h"
+#include <spdlog/spdlog.h>
 #include <iostream>
 #include <thread>
 #include <chrono>
@@ -41,7 +42,7 @@ SystemManager::SystemManager() : m_running(false), m_config() {
   // 5. 设置连接状态回调（由Reporter触发）
   // 这里需要在Reporter中集成连接状态检测
 
-  std::cout << "SystemManager initialized with database support" << std::endl;
+  spdlog::info("SystemManager initialized with database support");
 }
 
 SystemManager::~SystemManager() {
@@ -61,11 +62,11 @@ SystemManager::~SystemManager() {
  */
 void SystemManager::start() {
     if (m_running.load()) {
-        std::cout << "[Manager] System already running" << std::endl;
+        spdlog::info("[Manager] System already running");
         return;
     }
     
-    std::cout << "[Manager] Starting system..." << std::endl;
+    spdlog::info("[Manager] Starting system...");
     
     // Step 1: 设置运行标志（先于所有线程）
     m_running.store(true, std::memory_order_release);
@@ -86,8 +87,8 @@ void SystemManager::start() {
     
     m_metrics.startTime = std::chrono::steady_clock::now();
     
-    std::cout << "[Manager] System started with " 
-             << m_collectors.size() << " collectors, 1 reporter" << std::endl;
+    spdlog::info("[Manager] System started with {} collectors, 1 reporter", 
+                 m_collectors.size());
 }
 
 
@@ -105,25 +106,25 @@ void SystemManager::stop() {
         return;
     }
     
-    std::cout << "\n[Manager] Stopping system..." << std::endl;
+    spdlog::info("\n[Manager] Stopping system...");
     
     // Step 1: 发送停止信号（所有线程会检测到）
     m_running.store(false, std::memory_order_release);
-    std::cout << "[Manager] Stop signal sent" << std::endl;
+    spdlog::info("[Manager] Stop signal sent");
     
     // Step 2: 等待采集线程退出（生产者先停）
     for (auto& collector : m_collectors) {
         collector.reset();  // 自动join
     }
     m_collectors.clear();
-    std::cout << "[Manager] All collectors stopped" << std::endl;
+    spdlog::info("[Manager] All collectors stopped");
     
     // Step 3: 上报线程会自动清空队列后退出
     // 这里需要等待上报线程处理完所有数据
     if(dataConsumer_)
     {
       dataConsumer_.reset();
-      std::cout << "[Manager] dataConsumer stopped" << std::endl;
+      spdlog::info("[Manager] dataConsumer stopped");
     }
     
     // Step 4: 停止监控线程
@@ -138,7 +139,7 @@ void SystemManager::stop() {
     // Step 5: 打印统计
     printStatistics();
     
-    std::cout << "[Manager] System stopped" << std::endl;
+    spdlog::info("[Manager] System stopped");
 }
 
 
@@ -175,26 +176,24 @@ void SystemManager::monitorLoop() {
         
         // 告警检查
         if (queueSize > static_cast<size_t>(m_config.maxQueueSize * 0.8)) {
-            std::cerr << "[Monitor] WARNING: Queue size " << queueSize 
-                     << " exceeds 80% limit!" << std::endl;
+            spdlog::warn("[Monitor] WARNING: Queue size {} exceeds 80% limit!", queueSize);
         }
         
         if (isHealthy()) {
-            std::cout << "[Monitor] System healthy: queue=" << queueSize 
-                     << ", throughput=" << std::fixed << std::setprecision(1)
-                     << m_metrics.throughputPerSecond << " items/s" << std::endl;
+            spdlog::info("[Monitor] System healthy: queue={}, throughput={:.1f} items/s", 
+                         queueSize, m_metrics.throughputPerSecond);
         } else {
-            std::cerr << "[Monitor] System unhealthy!" << std::endl;
+            spdlog::error("[Monitor] System unhealthy!");
         }
     }
 }
 
 void SystemManager::onPushGetWayConnected() {
-    std::cout << "[System] PushGetWay connected" << std::endl;
+    spdlog::info("[System] PushGetWay connected");
 }
 
 void SystemManager::onPushGetWayDisconnected() {
-    std::cout << "[System] PushGetWay disconnected" << std::endl;
+    spdlog::info("[System] PushGetWay disconnected");
 }
 
 size_t SystemManager::getBacklogCount() const {
@@ -221,12 +220,12 @@ bool SystemManager::isHealthy() const {
 
 
 void SystemManager::printStatistics() const {
-    std::cout << "\n=== System Statistics ===" << std::endl;
+    spdlog::info("\n=== System Statistics ===");
     
     // 队列统计
     size_t queueSize = m_queue.size_approx();
-    std::cout << "[Queue] Size: " << queueSize << std::endl;
-    std::cout << "[Queue] Max size: " << m_metrics.maxQueueSize << std::endl;
+    spdlog::info("[Queue] Size: {}", queueSize);
+    spdlog::info("[Queue] Max size: {}", m_metrics.maxQueueSize);
     
     // 处理统计
     if (dataConsumer_) {
@@ -238,20 +237,20 @@ void SystemManager::printStatistics() const {
     for (const auto& collector : m_collectors) {
         totalCollected += collector->getSequenceCount();
     }
-    std::cout << "[Collectors] Total collected: " << totalCollected << std::endl;
+    spdlog::info("[Collectors] Total collected: {}", totalCollected);
     
     // 计算总时间
     auto now = std::chrono::steady_clock::now();
     auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
         now - m_metrics.startTime
     ).count();
-    std::cout << "[System] Uptime: " << elapsed << "s" << std::endl;
+    spdlog::info("[System] Uptime: {}s", elapsed);
     
-    std::cout << "==========================\n" << std::endl;
+    spdlog::info("==========================");
 }
 
 
 void SystemManager::printStatus() const {
-    std::cout << "\n[Status] Running: " << (m_running.load() ? "Yes" : "No")
-             << ", Queue: " << m_queue.size_approx() << std::endl;
+    spdlog::info("\n[Status] Running: {}, Queue: {}", 
+                 (m_running.load() ? "Yes" : "No"), m_queue.size_approx());
 }

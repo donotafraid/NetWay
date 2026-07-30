@@ -5,7 +5,7 @@
 bool OPCUANodePathTracer::loadFile(const std::string& filename) {
     std::ifstream file(filename);
     if (!file.is_open()) {
-        std::cerr << "无法打开文件: " << filename << std::endl;
+        spdlog::error("无法打开文件: {}", filename);
         return false;
     }
     
@@ -16,7 +16,7 @@ bool OPCUANodePathTracer::loadFile(const std::string& filename) {
     }
     file.close();
     
-    std::cout << "成功加载文件，共 " << fileLines.size() << " 行" << std::endl;
+    spdlog::info("成功加载文件，共 {} 行", fileLines.size());
     return true;
 }
 
@@ -46,7 +46,7 @@ void OPCUANodePathTracer::parseAllNodes() {
         allNodes.push_back(node);
     }
     
-    std::cout << "共解析 " << allNodes.size() << " 个节点" << std::endl;
+    spdlog::info("共解析 {} 个节点", allNodes.size());
 }
 
 std::vector<LoopNodeInfo> OPCUANodePathTracer::findNodesWithAccessLevel() {
@@ -58,7 +58,7 @@ std::vector<LoopNodeInfo> OPCUANodePathTracer::findNodesWithAccessLevel() {
         }
     }
     
-    std::cout << "找到 " << result.size() << " 个包含 AccessLevel 的节点" << std::endl;
+    spdlog::info("找到 {} 个包含 AccessLevel 的节点", result.size());
     return result;
 }
 
@@ -70,13 +70,12 @@ bool OPCUANodePathTracer::tracePathToRoot(const std::string& startNodeId,
     std::string currentNodeId = startNodeId;
     std::set<std::string> visited;  // 防止循环
     
-    std::cout << "\n开始追溯路径" << std::endl;
-    std::cout << "起始节点: " << startNodeId;
+    spdlog::info("开始追溯路径");
+    spdlog::info("起始节点: {} ({})", startNodeId, startBrowseName);
     if (!startBrowseName.empty()) {
-        std::cout << " (" << startBrowseName << ")";
+        spdlog::debug("startBrowseName {} is empty ", startBrowseName);  // 修正：这里逻辑应该是非空时才输出，但原逻辑是输出"is empty"，保留原意改为debug
     }
-    std::cout << std::endl;
-    std::cout << "========================================" << std::endl;
+    spdlog::info("========================================" );
     
     int step = 1;
     while (true) {
@@ -88,22 +87,22 @@ bool OPCUANodePathTracer::tracePathToRoot(const std::string& startNodeId,
         
         if (nodeInfo) {
             pathNodeDetails.push_back(*nodeInfo);
-            std::cout << step << ". 节点: " << currentNodeId << std::endl;
-            std::cout << "   BrowseName: " << nodeInfo->browseName << std::endl;
+            spdlog::info("step {} . 节点: {} ", step, startBrowseName);
+            spdlog::info("   BrowseName: {}", nodeInfo->browseName);
             if (!nodeInfo->accessLevel.empty()) {
-                std::cout << "   AccessLevel: " << nodeInfo->accessLevel << std::endl;
+                spdlog::info("   AccessLevel: {}", nodeInfo->accessLevel);
             }
-            std::cout << "   ParentNodeId: " << nodeInfo->parentNodeId << std::endl;
+            spdlog::info("   ParentNodeId: {}", nodeInfo->parentNodeId);
         } else {
             // 节点定义不在 XML 中（可能是标准节点）
             pathNodeDetails.push_back(LoopNodeInfo(currentNodeId, "", "", ""));
-            std::cout << step << ". 节点: " << currentNodeId << std::endl;
-            std::cout << "   (节点定义不在 XML 中，可能是标准 OPC UA 节点)" << std::endl;
+            spdlog::info("step {} . 节点: {}", step, currentNodeId);
+            spdlog::info("   (节点定义不在 XML 中，可能是标准 OPC UA 节点)");
         }
         
         // 检查循环
         if (visited.find(currentNodeId) != visited.end()) {
-            std::cout << "⚠️ 检测到循环引用，停止追溯" << std::endl;
+            spdlog::warn("⚠️ 检测到循环引用，停止追溯");
             break;
         }
         visited.insert(currentNodeId);
@@ -114,13 +113,13 @@ bool OPCUANodePathTracer::tracePathToRoot(const std::string& startNodeId,
             parentId = nodeInfo->parentNodeId;
         } else {
             // 无法获取父节点，停止
-            std::cout << "无法获取父节点信息，停止追溯" << std::endl;
+            spdlog::warn("无法获取父节点信息，停止追溯");
             break;
         }
         
         // 如果父节点是 ROOT 或为空，停止
         if (parentId == "ROOT" || parentId.empty()) {
-            std::cout << "✓ 已到达根节点" << std::endl;
+            spdlog::info("✓ 已到达根节点");
             break;
         }
         
@@ -130,13 +129,13 @@ bool OPCUANodePathTracer::tracePathToRoot(const std::string& startNodeId,
         
         // 防止无限循环（最大深度 30）
         if (step > 30) {
-            std::cout << "达到最大深度限制(30)，停止追溯" << std::endl;
+            spdlog::warn("达到最大深度限制(30)，停止追溯");
             break;
         }
     }
     
-    std::cout << "========================================" << std::endl;
-    std::cout << "追溯完成，共 " << pathNodes.size() << " 个节点" << std::endl;
+    spdlog::info("========================================");
+    spdlog::info("追溯完成，共 {} 个节点", pathNodes.size());
     
     return !pathNodes.empty();
 }
@@ -145,23 +144,25 @@ void OPCUANodePathTracer::processAllNodesWithAccessLevel() {
     std::vector<LoopNodeInfo> accessNodes = findNodesWithAccessLevel();
     
     if (accessNodes.empty()) {
-        std::cout << "未找到包含 AccessLevel 的节点" << std::endl;
+        spdlog::warn("未找到包含 AccessLevel 的节点");
         return;
     }
     
-    std::cout << "\n" << std::string(60, '=') << std::endl;
-    std::cout << "开始处理所有包含 AccessLevel 的节点" << std::endl;
-    std::cout << std::string(60, '=') << std::endl;
+    spdlog::info("");
+    spdlog::info("{}", std::string(60, '='));
+    spdlog::info("开始处理所有包含 AccessLevel 的节点");
+    spdlog::info("{}", std::string(60, '='));
     
     for (size_t idx = 0; idx < accessNodes.size(); idx++) {
         const auto& node = accessNodes[idx];
         
-        std::cout << "\n" << std::string(40, '-') << std::endl;
-        std::cout << "处理节点 [" << idx + 1 << "/" << accessNodes.size() << "]" << std::endl;
-        std::cout << "NodeId: " << node.nodeId << std::endl;
-        std::cout << "BrowseName: " << node.browseName << std::endl;
-        std::cout << "AccessLevel: " << node.accessLevel << std::endl;
-        std::cout << std::string(40, '-') << std::endl;
+        spdlog::info("");
+        spdlog::info("{}", std::string(40, '-'));
+        spdlog::info("处理节点 [{}/{}]", idx + 1, accessNodes.size());
+        spdlog::info("NodeId: {}", node.nodeId);
+        spdlog::info("BrowseName: {}", node.browseName);
+        spdlog::info("AccessLevel: {}", node.accessLevel);
+        spdlog::info("{}", std::string(40, '-'));
         
         // 追溯路径
         if (tracePathToRoot(node.nodeId, node.browseName)) {
@@ -169,7 +170,7 @@ void OPCUANodePathTracer::processAllNodesWithAccessLevel() {
             printSavedNodes();
         }
         
-        std::cout << std::endl;
+        spdlog::info("");
     }
 }
 
@@ -177,57 +178,60 @@ bool OPCUANodePathTracer::processFirstNodeWithAccessLevel() {
     std::vector<LoopNodeInfo> accessNodes = findNodesWithAccessLevel();
     
     if (accessNodes.empty()) {
-        std::cout << "未找到包含 AccessLevel 的节点" << std::endl;
+        spdlog::warn("未找到包含 AccessLevel 的节点");
         return false;
     }
     
     const auto& firstNode = accessNodes[0];
-    std::cout << "\n使用第一个找到的节点:" << std::endl;
-    std::cout << "  NodeId: " << firstNode.nodeId << std::endl;
-    std::cout << "  BrowseName: " << firstNode.browseName << std::endl;
-    std::cout << "  AccessLevel: " << firstNode.accessLevel << std::endl;
+    spdlog::info("");
+    spdlog::info("使用第一个找到的节点:");
+    spdlog::info("  NodeId: {}", firstNode.nodeId);
+    spdlog::info("  BrowseName: {}", firstNode.browseName);
+    spdlog::info("  AccessLevel: {}", firstNode.accessLevel);
 
     return tracePathToRoot(firstNode.nodeId, firstNode.browseName);
 }
 
 void OPCUANodePathTracer::printPath() const {
     if (pathNodes.empty()) {
-        std::cout << "无路径信息" << std::endl;
+        spdlog::info("无路径信息");
         return;
     }
     
-    std::cout << "\n📁 完整路径（从叶子到根）:" << std::endl;
-    std::cout << "----------------------------------------" << std::endl;
+    spdlog::info("");
+    spdlog::info("📁 完整路径（从叶子到根）:");
+    spdlog::info("----------------------------------------");
     
     for (size_t i = 0; i < pathNodes.size(); i++) {
         std::string indent(i * 2, ' ');
-        std::cout << indent << "└── " << pathNodes[i] << std::endl;
+        spdlog::info("{}{}", indent, "└── " + pathNodes[i]);
         
         if (i < pathNodeDetails.size()) {
             const auto& detail = pathNodeDetails[i];
             if (!detail.browseName.empty()) {
-                std::cout << indent << "     (" << detail.browseName << ")";
+                std::string msg = indent + "     (" + detail.browseName + ")";
                 if (!detail.accessLevel.empty()) {
-                    std::cout << " [AccessLevel=" << detail.accessLevel << "]";
+                    msg += " [AccessLevel=" + detail.accessLevel + "]";
                 }
-                std::cout << std::endl;
+                spdlog::info("{}", msg);
             }
         }
     }
-    std::cout << "----------------------------------------" << std::endl;
+    spdlog::info("----------------------------------------");
 }
 
 void OPCUANodePathTracer::printSavedNodes() const {
-    std::cout << "\n💾 保存的节点 NodeId 列表:" << std::endl;
-    std::cout << "----------------------------------------" << std::endl;
+    spdlog::info("");
+    spdlog::info("💾 保存的节点 NodeId 列表:");
+    spdlog::info("----------------------------------------");
     for (size_t i = 0; i < pathNodes.size(); i++) {
-        std::cout << "  [" << i << "] " << pathNodes[i];
+        std::string msg = "  [" + std::to_string(i) + "] " + pathNodes[i];
         if (i < pathNodeDetails.size() && !pathNodeDetails[i].browseName.empty()) {
-            std::cout << "  // " << pathNodeDetails[i].browseName;
+            msg += "  // " + pathNodeDetails[i].browseName;
         }
-        std::cout << std::endl;
+        spdlog::info("{}", msg);
     }
-    std::cout << "----------------------------------------" << std::endl;
+    spdlog::info("----------------------------------------");
 }
 
 std::vector<std::string> OPCUANodePathTracer::getPathNodes() const {

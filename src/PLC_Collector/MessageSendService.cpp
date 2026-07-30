@@ -3,6 +3,7 @@
 // ============================================================
 
 #include "PLC_Collector/MessageSendService.h"
+#include <spdlog/spdlog.h>
 #include <chrono>
 
 MessageSendService::MessageSendService(
@@ -13,22 +14,22 @@ MessageSendService::MessageSendService(
     , gateway_(gateway)
     , config_(config) {
     
-    std::cout << "Enter MessageSendService::MessageSendService" << std::endl;
+    spdlog::debug("Enter MessageSendService::MessageSendService");
     
     if (!repository_) {
-        std::cout << "Leave MessageSendService::MessageSendService (error: repository is null)" << std::endl;
+        spdlog::debug("Leave MessageSendService::MessageSendService (error: repository is null)");
         throw std::invalid_argument("Repository cannot be null");
     }
     if (!gateway_) {
-        std::cout << "Leave MessageSendService::MessageSendService (error: gateway is null)" << std::endl;
+        spdlog::debug("Leave MessageSendService::MessageSendService (error: gateway is null)");
         throw std::invalid_argument("Gateway cannot be null");
     }
     
     // 注册网关连接状态回调
     gateway_->setConnectionCallback(
         [this](IPushGateway::ConnectionState state) {
-            std::cout << "Enter MessageSendService::connectionCallback (state: " 
-                      << static_cast<int>(state) << ")" << std::endl;
+            spdlog::debug("Enter MessageSendService::connectionCallback (state: {})", 
+                          static_cast<int>(state));
             if (state == IPushGateway::ConnectionState::CONNECTED) {
                 logInfo("Gateway connected, checking backlog...");
                 if (getBacklogCount()) {
@@ -40,18 +41,18 @@ MessageSendService::MessageSendService(
                 updateState(SendState::BACKOFF);
                 stopBacklogProcessor();
             }
-            std::cout << "Leave MessageSendService::connectionCallback" << std::endl;
+            spdlog::debug("Leave MessageSendService::connectionCallback");
         }
     );
     
     logInfo("MessageSendService initialized");
     
-    std::cout << "Leave MessageSendService::MessageSendService" << std::endl;
+    spdlog::debug("Leave MessageSendService::MessageSendService");
 }
 
 Result<bool,RichError> MessageSendService::handleNewData(const SliceRecord& record) {
-    std::cout << "Enter MessageSendService::handleNewData (tag: " << record.tag_name 
-              << ", time: " << record.timestamp << ")" << std::endl;
+    spdlog::debug("Enter MessageSendService::handleNewData (tag: {}, time: {})", 
+                  record.tag_name, record.timestamp);
     
     stats_.total_received++;
     
@@ -59,16 +60,18 @@ Result<bool,RichError> MessageSendService::handleNewData(const SliceRecord& reco
     if (gateway_->getConnectionState() != IPushGateway::ConnectionState::CONNECTED) {
         logDebug("Gateway disconnected, saving to repository");
         auto result = saveToRepository(record);
-        std::cout << "Leave MessageSendService::handleNewData (gateway disconnected, saved to repo)" << std::endl;
+        spdlog::debug("Leave MessageSendService::handleNewData (gateway disconnected, saved to repo)");
         return result;
     }
     
     // ---- 决策2：积压检查 ----
-    if (backlog_count_.load(std::memory_order_acquire)) {
-        logDebug("Has backlog (" + std::to_string(backlog_count_.load(std::memory_order_acquire)) + 
-                 "), saving to repository");
+    int result = backlog_count_.load(std::memory_order_acquire);
+    if (result) {
+        std::string info{"Has backlog ({}), saving to repository",
+                         static_cast<std::size_t>(result)};
+        logDebug(info);
         auto result = saveToRepository(record);
-        std::cout << "Leave MessageSendService::handleNewData (has backlog, saved to repo)" << std::endl;
+        spdlog::debug("Leave MessageSendService::handleNewData (has backlog, saved to repo)");
         return result;
     }
     
@@ -77,43 +80,43 @@ Result<bool,RichError> MessageSendService::handleNewData(const SliceRecord& reco
         auto result = sendDirectly(record);
         if (result.is_success()) {
             stats_.total_sent_direct++;
-            std::cout << "Leave MessageSendService::handleNewData (direct send success)" << std::endl;
+            spdlog::debug("Leave MessageSendService::handleNewData (direct send success)");
             return result;
         } else {
             // 发送失败，存入仓储
             logWarn("Direct send failed, saving to repository");
-            std::cout << "failed reason: " << result.unwrap_err().what() << std::endl;
+            spdlog::debug("failed reason: {}", result.unwrap_err().what());
             auto save_result = saveToRepository(record);
-            std::cout << "Leave MessageSendService::handleNewData (direct send failed, saved to repo)" << std::endl;
+            spdlog::debug("Leave MessageSendService::handleNewData (direct send failed, saved to repo)");
             return save_result;
         }
     }
     
     // ---- 默认：存入仓储 ----
-    std::cout << "Leave MessageSendService::handleNewData (default: saved to repository)" << std::endl;
+    spdlog::debug("Leave MessageSendService::handleNewData (default: saved to repository)");
     return saveToRepository(record);
 }
 
 Result<bool,RichError> MessageSendService::handleNewDataBatch(const std::vector<SliceRecord>& records) {
-    std::cout << "Enter MessageSendService::handleNewDataBatch (records count: " << records.size() << ")" << std::endl;
+    spdlog::debug("Enter MessageSendService::handleNewDataBatch (records count: {})", records.size());
     
     for(auto &record: records)
     {
       auto result = this->handleNewData(record);
       if(result.is_fail())
       {
-        std::cout << "Leave MessageSendService::handleNewDataBatch (error at record: " 
-                  << record.tag_name << ")" << std::endl;
+        spdlog::debug("Leave MessageSendService::handleNewDataBatch (error at record: {})", 
+                      record.tag_name);
         return Result<bool,RichError>(result);
       }
     }
     
-    std::cout << "Leave MessageSendService::handleNewDataBatch (success)" << std::endl;
+    spdlog::debug("Leave MessageSendService::handleNewDataBatch (success)");
     return Result<bool, RichError>(true);
 }
 
 Result<bool,RichError> MessageSendService::saveToRepository(const SliceRecord& record) {
-    std::cout << "Enter MessageSendService::saveToRepository (tag: " << record.tag_name << ")" << std::endl;
+    spdlog::debug("Enter MessageSendService::saveToRepository (tag: {})", record.tag_name);
     
     auto result = repository_->insert(record);
     
@@ -121,19 +124,19 @@ Result<bool,RichError> MessageSendService::saveToRepository(const SliceRecord& r
         onBacklogCreated();
     } 
     
-    std::cout << "Leave MessageSendService::saveToRepository (success: " << result.is_success() << ")" << std::endl;
+    spdlog::debug("Leave MessageSendService::saveToRepository (success: {})", result.is_success());
     return result;
 }
 
 Result<bool,RichError> MessageSendService::sendDirectly(const SliceRecord& record) {
-    std::cout << "Enter MessageSendService::sendDirectly (tag: " << record.tag_name 
-              << ", max_retries: " << config_.max_retries << ")" << std::endl;
+    spdlog::debug("Enter MessageSendService::sendDirectly (tag: {}, max_retries: {})", 
+                  record.tag_name, config_.max_retries);
     
     // 带重试的发送
     for (int retry = 0; retry < config_.max_retries; ++retry) {
         auto result = gateway_->send(record);
         if (result.is_success()) {
-            std::cout << "Leave MessageSendService::sendDirectly (success on retry " << retry << ")" << std::endl;
+            spdlog::debug("Leave MessageSendService::sendDirectly (success on retry {})", retry);
             return result;
         }
         
@@ -145,40 +148,40 @@ Result<bool,RichError> MessageSendService::sendDirectly(const SliceRecord& recor
         }
     }
 
-    std::cout << "Leave MessageSendService::sendDirectly (failed after " 
-              << config_.max_retries << " retries)" << std::endl;
+    spdlog::debug("Leave MessageSendService::sendDirectly (failed after {} retries)", 
+                  config_.max_retries);
     return Result<bool, RichError>(
         RichError{"Failed to send after " +
                   std::to_string(config_.max_retries) + " retries"});
 }
 
 void MessageSendService::processBacklog() {
-    std::cout << "Enter MessageSendService::processBacklog" << std::endl;
+    spdlog::debug("Enter MessageSendService::processBacklog");
     
     if (!getBacklogCount()) {
-        std::cout<<"call onBackLogCleared for !getBacklogCount()"<<std::endl;
+        spdlog::debug("call onBackLogCleared for !getBacklogCount()");
         onBacklogCleared();
-        std::cout << "Leave MessageSendService::processBacklog (no backlog count)" << std::endl;
+        spdlog::debug("Leave MessageSendService::processBacklog (no backlog count)");
         return;
     }
     
     // 1. 从仓储获取积压数据
     auto result = repository_->selectByNum(0, config_.batch_size);
     if (result.is_fail()) {
-      std::cout << "Failed to fetch backlog:" << result.unwrap_err().what()<<std::endl;
-      std::cout << "Leave MessageSendService::processBacklog (failed to fetch)" << std::endl;
+      spdlog::error("Failed to fetch backlog: {}", result.unwrap_err().what());
+      spdlog::debug("Leave MessageSendService::processBacklog (failed to fetch)");
       return;
     }
     
     auto records = result.unwrap_returnLeftValue();
     if (records.empty()) {
-        std::cout<<"call onBackLogCleared for records.empty()"<<std::endl;
+        spdlog::debug("call onBackLogCleared for records.empty()");
         onBacklogCleared();
-        std::cout << "Leave MessageSendService::processBacklog (records empty)" << std::endl;
+        spdlog::debug("Leave MessageSendService::processBacklog (records empty)");
         return;
     }
 
-    std::cout << "processBacklog: fetched " << records.size() << " records" << std::endl;
+    spdlog::debug("processBacklog: fetched {} records", records.size());
 
     // update status for removed data
     repository_->updateBatchStatus(0, 1, config_.batch_size);
@@ -200,9 +203,9 @@ void MessageSendService::processBacklog() {
       auto delete_result = repository_->updateBatchStatus(1, 2, config_.batch_size);
       if (delete_result.is_success()) {
         stats_.total_sent_backlog += records.size();
-        logDebug("Sent " + std::to_string(records.size()) +
-                 " backlog records, remaining: " +
-                 std::to_string(getBacklogCount()));
+        std::string info{"Sent {} backlog records, remaining: {}",
+                         records.size(), getBacklogCount()};
+        logDebug(info);
       } else {
         logError(delete_result.unwrap_err().what());
       }
@@ -210,35 +213,35 @@ void MessageSendService::processBacklog() {
 
     // 4. 检查是否清空
     if (!getBacklogCount()) {
-        std::cout<<"call onBackLogCleared for !getBacklogCount()"<<std::endl;
+        spdlog::debug("call onBackLogCleared for !getBacklogCount()");
         onBacklogCleared();
     }
     
-    std::cout << "Leave MessageSendService::processBacklog (all_sent: " << all_sent << ")" << std::endl;
+    spdlog::debug("Leave MessageSendService::processBacklog (all_sent: {})", all_sent);
 }
 
 void MessageSendService::start() {
-    std::cout << "Enter MessageSendService::start" << std::endl;
+    spdlog::debug("Enter MessageSendService::start");
     stop_processing_ = false;
     logInfo("MessageSendService started");
-    std::cout << "Leave MessageSendService::start" << std::endl;
+    spdlog::debug("Leave MessageSendService::start");
 }
 
 void MessageSendService::stop() {
-    std::cout << "Enter MessageSendService::stop" << std::endl;
+    spdlog::debug("Enter MessageSendService::stop");
     stopBacklogProcessor();
     logInfo("MessageSendService stopped");
-    std::cout << "Leave MessageSendService::stop" << std::endl;
+    spdlog::debug("Leave MessageSendService::stop");
 }
 
 // ========== 后台处理 ==========
 
 void MessageSendService::startBacklogProcessor() {
-    std::cout << "Enter MessageSendService::startBacklogProcessor" << std::endl;
+    spdlog::debug("Enter MessageSendService::startBacklogProcessor");
     std::lock_guard<std::mutex> lock(processor_mutex_);
     
     if (processor_thread_ && processor_thread_->joinable()) {
-        std::cout << "Leave MessageSendService::startBacklogProcessor (processor already running)" << std::endl;
+        spdlog::debug("Leave MessageSendService::startBacklogProcessor (processor already running)");
         return;
     }
     
@@ -247,11 +250,11 @@ void MessageSendService::startBacklogProcessor() {
         &MessageSendService::backlogProcessorLoop, this
     );
     
-    std::cout << "Leave MessageSendService::startBacklogProcessor (processor started)" << std::endl;
+    spdlog::debug("Leave MessageSendService::startBacklogProcessor (processor started)");
 }
 
 void MessageSendService::stopBacklogProcessor() {
-    std::cout << "Enter MessageSendService::stopBacklogProcessor" << std::endl;
+    spdlog::debug("Enter MessageSendService::stopBacklogProcessor");
     
     stop_processing_ = true;
     processor_cv_.notify_one();
@@ -260,21 +263,21 @@ void MessageSendService::stopBacklogProcessor() {
         // 检查是否当前线程就是 processor 线程
         if (std::this_thread::get_id() != processor_thread_->get_id()) {
             processor_thread_->join(); // 只有不同线程才 join
-            std::cout << "stopBacklogProcessor: joined processor thread" << std::endl;
+            spdlog::debug("stopBacklogProcessor: joined processor thread");
         } else {
             // 自身调用，detach 并等待退出
             processor_thread_->detach();
-            std::cout << "stopBacklogProcessor: detached processor thread (self)" << std::endl;
+            spdlog::debug("stopBacklogProcessor: detached processor thread (self)");
         }
     }
 
     processor_thread_.reset();
     
-    std::cout << "Leave MessageSendService::stopBacklogProcessor" << std::endl;
+    spdlog::debug("Leave MessageSendService::stopBacklogProcessor");
 }
 
 void MessageSendService::backlogProcessorLoop() {
-    std::cout << "Enter MessageSendService::backlogProcessorLoop" << std::endl;
+    spdlog::debug("Enter MessageSendService::backlogProcessorLoop");
     logInfo("Backlog processor started");
     
     while (!stop_processing_) {
@@ -283,56 +286,56 @@ void MessageSendService::backlogProcessorLoop() {
     }
     
     logInfo("Backlog processor stopped");
-    std::cout << "Leave MessageSendService::backlogProcessorLoop" << std::endl;
+    spdlog::debug("Leave MessageSendService::backlogProcessorLoop");
 }
 
 // ==============日志==================
 void MessageSendService::logInfo(const std::string &msg) const
 {
-    std::cout << "[INFO] " << msg << std::endl;
+    spdlog::info(msg);
 }
 void MessageSendService::logWarn(const std::string &msg) const
 {
-    std::cout << "[WARN] " << msg << std::endl;
+    spdlog::warn(msg);
 }
 void MessageSendService::logError(const std::string &msg) const
 {
-    std::cout << "[ERROR] " << msg << std::endl;
+    spdlog::error(msg);
 }
 void MessageSendService::logDebug(const std::string &msg) const
 {
-    std::cout << "[DEBUG] " << msg << std::endl;
+    spdlog::debug(msg);
 }
 
 // ========== 状态管理 ==========
 
 void MessageSendService::updateState(SendState new_state) {
-    std::cout << "Enter MessageSendService::updateState (new_state: " 
-              << static_cast<int>(new_state) << ")" << std::endl;
+    spdlog::debug("Enter MessageSendService::updateState (new_state: {})", 
+                  static_cast<int>(new_state));
     
     SendState old = state_.exchange(new_state);
     if (old != new_state) {
-        logDebug("State: " + std::to_string(static_cast<int>(old)) + 
-                 " -> " + std::to_string(static_cast<int>(new_state)));
+      std::string info{"State: {} -> {}", static_cast<size_t>(old),
+                       static_cast<size_t>(new_state)};
+      logDebug(info);
     }
     
-    std::cout << "Leave MessageSendService::updateState (old: " 
-              << static_cast<int>(old) << ")" << std::endl;
+    spdlog::debug("Leave MessageSendService::updateState (old: {})", static_cast<int>(old));
 }
 
 void MessageSendService::onBacklogCleared() {
-    std::cout << "Enter MessageSendService::onBacklogCleared" << std::endl;
+    spdlog::debug("Enter MessageSendService::onBacklogCleared");
     
     backlog_count_.store(0, std::memory_order_release);
     updateState(SendState::DIRECT);
     stopBacklogProcessor();
     logInfo("Backlog cleared, switched to DIRECT mode");
     
-    std::cout << "Leave MessageSendService::onBacklogCleared" << std::endl;
+    spdlog::debug("Leave MessageSendService::onBacklogCleared");
 }
 
 void MessageSendService::onBacklogCreated() {
-    std::cout << "Enter MessageSendService::onBacklogCreated" << std::endl;
+    spdlog::debug("Enter MessageSendService::onBacklogCreated");
     
     if (gateway_->getConnectionState() == IPushGateway::ConnectionState::CONNECTED &&
         state_.load() == SendState::DIRECT) {
@@ -340,11 +343,11 @@ void MessageSendService::onBacklogCreated() {
         startBacklogProcessor();
     }
     
-    std::cout << "Leave MessageSendService::onBacklogCreated" << std::endl;
+    spdlog::debug("Leave MessageSendService::onBacklogCreated");
 }
 
 bool MessageSendService::shouldDirectSend() const {
-    std::cout << "Enter MessageSendService::shouldDirectSend" << std::endl;
+    spdlog::debug("Enter MessageSendService::shouldDirectSend");
     
     bool result = gateway_->getConnectionState() ==
              IPushGateway::ConnectionState::CONNECTED &&
@@ -352,16 +355,16 @@ bool MessageSendService::shouldDirectSend() const {
          backlog_count_.load(std::memory_order_acquire) <
              config_.drain_threshold;
     
-    std::cout << "Leave MessageSendService::shouldDirectSend (result: " << result << ")" << std::endl;
+    spdlog::debug("Leave MessageSendService::shouldDirectSend (result: {})", result);
     return result;
 }
 
 bool MessageSendService::isHealthy() const {
-    std::cout << "Enter MessageSendService::isHealthy" << std::endl;
+    spdlog::debug("Enter MessageSendService::isHealthy");
     
     bool result = gateway_->isHealthy() &&
            state_.load() != SendState::BACKOFF;
     
-    std::cout << "Leave MessageSendService::isHealthy (result: " << result << ")" << std::endl;
+    spdlog::debug("Leave MessageSendService::isHealthy (result: {})", result);
     return result;
 }

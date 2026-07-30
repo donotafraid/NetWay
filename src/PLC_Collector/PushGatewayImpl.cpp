@@ -1,4 +1,5 @@
 #include "PLC_Collector/PushGatewayImpl.h"
+#include <spdlog/spdlog.h>
 
 PushGatewayImpl::PushGatewayImpl(
     const std::string &pushgateway_url,
@@ -9,22 +10,21 @@ PushGatewayImpl::PushGatewayImpl(
       instance_name_(instance_name), service_(service),
       connection_state_(ConnectionState::UNKNOWN), callback_(nullptr) {
     
-    std::cout << "Enter PushGatewayImpl::PushGatewayImpl (url: " << pushgateway_url 
-              << ", job: " << job_name << ", instance: " << instance_name 
-              << ", service: " << service << ")" << std::endl;
+    spdlog::debug("Enter PushGatewayImpl::PushGatewayImpl (url: {}, job: {}, instance: {}, service: {})",
+                  pushgateway_url, job_name, instance_name, service);
 
     // 初始化CURL全局环境（仅一次）
     static std::once_flag curl_initialized;
     std::call_once(curl_initialized, []() { 
-        std::cout << "Initializing CURL global environment" << std::endl;
+        spdlog::debug("Initializing CURL global environment");
         curl_global_init(CURL_GLOBAL_ALL); 
     });
 
     auto callback = [](ConnectionState state) {
         if (state == ConnectionState::CONNECTED) {
-            std::cout << "PushGateway connected" << std::endl;
+            spdlog::info("PushGateway connected");
         } else {
-            std::cout << "PushGateway disconnected" << std::endl;
+            spdlog::info("PushGateway disconnected");
         }
     };
     setConnectionCallback(callback);
@@ -32,12 +32,12 @@ PushGatewayImpl::PushGatewayImpl(
     // 初始连接检查
     checkConnection();
     
-    std::cout << "Leave PushGatewayImpl::PushGatewayImpl" << std::endl;
+    spdlog::debug("Leave PushGatewayImpl::PushGatewayImpl");
 }
 
 Result<bool, RichError> PushGatewayImpl::send(const SliceRecord &slicerecord) {
-    std::cout << "Enter PushGatewayImpl::send (tag: " << slicerecord.tag_name 
-              << ", value: " << slicerecord.value << ")" << std::endl;
+    spdlog::debug("Enter PushGatewayImpl::send (tag: {}, value: {})", 
+                  slicerecord.tag_name, slicerecord.value);
     
     PushGetWaySlice record = convertToPushGetWaySlice(slicerecord);
     try {
@@ -81,28 +81,28 @@ Result<bool, RichError> PushGatewayImpl::send(const SliceRecord &slicerecord) {
 
             if (success) {
                 connection_state_ = ConnectionState::CONNECTED;
-                std::cout << "Leave PushGatewayImpl::send (success)" << std::endl;
+                spdlog::debug("Leave PushGatewayImpl::send (success)");
                 return Result<bool, RichError>{true};
             } else {
                 connection_state_ = ConnectionState::DISCONNECTED;
-                std::cout << "Leave PushGatewayImpl::send (failed to push metrics)" << std::endl;
+                spdlog::debug("Leave PushGatewayImpl::send (failed to push metrics)");
                 return Result<bool, RichError>{RichError{"Failed to push metrics"}};
             }
         }
 
     } catch (const std::exception &e) {
         connection_state_ = ConnectionState::DISCONNECTED;
-        std::cout << "Leave PushGatewayImpl::send (exception: " << e.what() << ")" << std::endl;
+        spdlog::error("Leave PushGatewayImpl::send (exception: {})", e.what());
         return Result<bool, RichError>{RichError{e.what()}};
     }
 }
 
 Result<bool, RichError>
 PushGatewayImpl::sendBatch(const std::vector<SliceRecord> &records) {
-    std::cout << "Enter PushGatewayImpl::sendBatch (records count: " << records.size() << ")" << std::endl;
+    spdlog::debug("Enter PushGatewayImpl::sendBatch (records count: {})", records.size());
     
     if (records.empty()) {
-        std::cout << "Leave PushGatewayImpl::sendBatch (records empty)" << std::endl;
+        spdlog::debug("Leave PushGatewayImpl::sendBatch (records empty)");
         return Result<bool, RichError>{RichError{"Records list is empty"}};
     }
 
@@ -147,8 +147,8 @@ PushGatewayImpl::sendBatch(const std::vector<SliceRecord> &records) {
                     connection_state_ = ConnectionState::CONNECTED;
                 } else {
                     connection_state_ = ConnectionState::DISCONNECTED;
-                    std::cout << "Leave PushGatewayImpl::sendBatch (failed at index " << idx 
-                              << ", tag: " << slicerecord.tag_name << ")" << std::endl;
+                    spdlog::debug("Leave PushGatewayImpl::sendBatch (failed at index {}, tag: {})", 
+                                  idx, slicerecord.tag_name);
                     return Result<bool, RichError>{
                         RichError{"Failed to push batch metrics at index " + std::to_string(idx)}};
                 }
@@ -156,28 +156,27 @@ PushGatewayImpl::sendBatch(const std::vector<SliceRecord> &records) {
 
         } catch (const std::exception &e) {
             connection_state_ = ConnectionState::DISCONNECTED;
-            std::cout << "Leave PushGatewayImpl::sendBatch (exception at index " << idx 
-                      << ": " << e.what() << ")" << std::endl;
+            spdlog::error("Leave PushGatewayImpl::sendBatch (exception at index {}: {})", 
+                          idx, e.what());
             return Result<bool, RichError>{RichError{e.what()}};
         }
     }
     
-    std::cout << "Leave PushGatewayImpl::sendBatch (success)" << std::endl;
+    spdlog::debug("Leave PushGatewayImpl::sendBatch (success)");
     return Result<bool, RichError>{true};
 }
 
 IPushGateway::ConnectionState PushGatewayImpl::getConnectionState() const {
-    std::cout << "Enter PushGatewayImpl::getConnectionState" << std::endl;
+    spdlog::debug("Enter PushGatewayImpl::getConnectionState");
     std::lock_guard<std::mutex> lock(mutex_);
     checkConnection();
-    std::cout << "Leave PushGatewayImpl::getConnectionState (state: " 
-              << static_cast<int>(connection_state_) << ")" << std::endl;
+    spdlog::debug("Leave PushGatewayImpl::getConnectionState (state: {})", 
+                  static_cast<int>(connection_state_));
     return connection_state_;
 }
 
 PushGetWaySlice PushGatewayImpl::convertToPushGetWaySlice(const SliceRecord &record) {
-    std::cout << "Enter PushGatewayImpl::convertToPushGetWaySlice (tag: " 
-              << record.tag_name << ")" << std::endl;
+    spdlog::debug("Enter PushGatewayImpl::convertToPushGetWaySlice (tag: {})", record.tag_name);
     
     PushGetWaySlice data;
     data.metric_name = record.tag_name;
@@ -185,21 +184,21 @@ PushGetWaySlice PushGatewayImpl::convertToPushGetWaySlice(const SliceRecord &rec
     data.help_text = record.help_text;
     data.value = record.value;
     
-    std::cout << "Leave PushGatewayImpl::convertToPushGetWaySlice" << std::endl;
+    spdlog::debug("Leave PushGatewayImpl::convertToPushGetWaySlice");
     return data;
 }
 
 bool PushGatewayImpl::isHealthy() const {
-    std::cout << "Enter PushGatewayImpl::isHealthy" << std::endl;
+    spdlog::debug("Enter PushGatewayImpl::isHealthy");
     std::lock_guard<std::mutex> lock(mutex_);
     bool result = checkConnection();
-    std::cout << "Leave PushGatewayImpl::isHealthy (result: " << result << ")" << std::endl;
+    spdlog::debug("Leave PushGatewayImpl::isHealthy (result: {})", result);
     return result;
 }
 
 // 转义标签值中的特殊字符
 std::string PushGatewayImpl::escapeLabel(const std::string &value) {
-    std::cout << "Enter PushGatewayImpl::escapeLabel (value: " << value << ")" << std::endl;
+    spdlog::debug("Enter PushGatewayImpl::escapeLabel (value: {})", value);
     
     std::string escaped;
     for (char c : value) {
@@ -218,17 +217,17 @@ std::string PushGatewayImpl::escapeLabel(const std::string &value) {
         }
     }
     
-    std::cout << "Leave PushGatewayImpl::escapeLabel (escaped length: " << escaped.length() << ")" << std::endl;
+    spdlog::debug("Leave PushGatewayImpl::escapeLabel (escaped length: {})", escaped.length());
     return escaped;
 }
 
 // 实际的HTTP推送逻辑
 bool PushGatewayImpl::pushMetrics(const std::string &body_content) {
-    std::cout << "Enter PushGatewayImpl::pushMetrics (body length: " << body_content.size() << ")" << std::endl;
+    spdlog::debug("Enter PushGatewayImpl::pushMetrics (body length: {})", body_content.size());
     
     CURL *curl = curl_easy_init();
     if (!curl) {
-        std::cout << "Leave PushGatewayImpl::pushMetrics (failed to init CURL)" << std::endl;
+        spdlog::debug("Leave PushGatewayImpl::pushMetrics (failed to init CURL)");
         return false;
     }
 
@@ -236,7 +235,7 @@ bool PushGatewayImpl::pushMetrics(const std::string &body_content) {
     std::string url = pushgateway_url_ + "/metrics/job/" + job_name_ +
                       "/instance/" + instance_name_;
     
-    std::cout << "pushMetrics: URL = " << url << std::endl;
+    spdlog::debug("pushMetrics: URL = {}", url);
 
     curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
     curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body_content.c_str());
@@ -269,40 +268,40 @@ bool PushGatewayImpl::pushMetrics(const std::string &body_content) {
     // 检查结果
     bool success = (res == CURLE_OK && (http_code == 200 || http_code == 202));
     
-    std::cout << "pushMetrics: curl result = " << res << ", http_code = " << http_code 
-              << ", success = " << success << std::endl;
+    spdlog::debug("pushMetrics: curl result = {}, http_code = {}, success = {}", 
+                  res, http_code, success);
 
     // 触发回调
     if (callback_ && !success) {
-        std::cout << "pushMetrics: triggering disconnect callback" << std::endl;
+        spdlog::debug("pushMetrics: triggering disconnect callback");
         callback_(ConnectionState::DISCONNECTED);
     }
 
-    std::cout << "Leave PushGatewayImpl::pushMetrics (success: " << success << ")" << std::endl;
+    spdlog::debug("Leave PushGatewayImpl::pushMetrics (success: {})", success);
     return success;
 }
 
 bool PushGatewayImpl::checkConnection() const {
-    std::cout << "Enter PushGatewayImpl::checkConnection" << std::endl;
+    spdlog::debug("Enter PushGatewayImpl::checkConnection");
     
     CURL *curl = curl_easy_init();
     if (!curl) {
-        std::cout << "Leave PushGatewayImpl::checkConnection (failed to init CURL)" << std::endl;
+        spdlog::debug("Leave PushGatewayImpl::checkConnection (failed to init CURL)");
         return false;
     }
 
     // 构建健康检查URL
     std::string url = pushgateway_url_ + "/-/healthy";
     
-    std::cout << "checkConnection: URL = " << url << std::endl;
+    spdlog::debug("checkConnection: URL = {}", url);
 
     curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, 5L);
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 3L);
 
-    std::cout << "before curl_easy_perform(curl)" << std::endl;
+    spdlog::debug("before curl_easy_perform(curl)");
     CURLcode res = curl_easy_perform(curl);
-    std::cout << "after curl_easy_perform(curl)" << std::endl;
+    spdlog::debug("after curl_easy_perform(curl)");
 
     long http_code = 0;
     if (res == CURLE_OK) {
@@ -314,22 +313,21 @@ bool PushGatewayImpl::checkConnection() const {
 
     bool connected = (res == CURLE_OK && http_code == 200);
     
-    std::cout << "checkConnection: curl result = " << res << ", http_code = " << http_code 
-              << ", connected = " << connected << std::endl;
+    spdlog::debug("checkConnection: curl result = {}, http_code = {}, connected = {}", 
+                  res, http_code, connected);
 
     // 如果状态变化，触发回调
     if (callback_) {
         ConnectionState new_state = connected ? ConnectionState::CONNECTED
                                               : ConnectionState::DISCONNECTED;
         if (connection_state_ != new_state) {
-            std::cout << "checkConnection: state changing from " 
-                      << static_cast<int>(connection_state_) << " to " 
-                      << static_cast<int>(new_state) << std::endl;
+            spdlog::debug("checkConnection: state changing from {} to {}", 
+                          static_cast<int>(connection_state_), static_cast<int>(new_state));
             const_cast<PushGatewayImpl *>(this)->connection_state_ = new_state;
             callback_(new_state);
         }
     }
 
-    std::cout << "Leave PushGatewayImpl::checkConnection (connected: " << connected << ")" << std::endl;
+    spdlog::debug("Leave PushGatewayImpl::checkConnection (connected: {})", connected);
     return connected;
 }
