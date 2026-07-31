@@ -20,7 +20,6 @@ public:
     const std::string& getBlocktName() const;
     std::vector<OPCUAModernDataStruct>& getVariabeDataVector();
     bool hasVariable(const std::string& path) const;
-    OPCUAParseResult* getVariable(const std::string& path);
     const int getVariableVectorSize() const;
     std::vector<uint8_t>& getVariableDataBuffer();
     

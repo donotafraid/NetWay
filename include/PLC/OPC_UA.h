@@ -13,6 +13,7 @@
 #include <iostream>
 #include "Rust_error_deal/error_deal.h"
 #include "PLC/OPCUADataBlock.h"
+#include <snap7.h>
 
 
 // 连接状态的枚举（比 bool 更精确）
@@ -43,6 +44,7 @@ class S7_Access
             Result<int,RichError> meastureStringObjectLength(int startPos,OPCUAModernDataStruct &var);
           
             Result<bool, RichError> connect();
+            Result<bool, RichError> reconnect(int maxRetries, int retryDelayMs);
             bool isConnected();
             void disconnect();
             S7Object &getClient();

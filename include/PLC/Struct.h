@@ -1,18 +1,188 @@
 #pragma once
 
-#include <cstdlib>
-#include <cstring>
+#include "load_config/Qt_library.h"
 #include <algorithm>
 #include <cctype>
+#include <cstdlib>
+#include <cstring>
+#include <typeindex> // defines std::type_index
+#include <typeinfo>  // defines typeid and std::type_info
 #include <unordered_set>
-#include "load_config/Qt_library.h"
-#include "PLC/TransformS7AndOPCUA.h"
+#include "Rust_error_deal/error_deal.h"
 
 #include <open62541/nodeids.h>
 #include <open62541/client.h>
 #include <open62541/config.h>
 #include <open62541/client_highlevel.h>
 #include <open62541/client_config_default.h>
+
+// 通用数据值类型 - 支持所有PLC数据类型
+using NormalDataType = std::variant<
+    bool,                    // BOOL
+    uint8_t,                 // BYTE
+    int16_t,                 // INT
+    uint16_t,                // WORD  
+    int32_t,                 // DINT
+    uint32_t,                // UDINT,DWORD
+    float,                   // REAL
+    std::string              // STRING
+>;
+
+enum class S7DataType
+{
+    BOOL,  //QCheckBox 
+    BYTE,   //QSpinBox
+    INT,    //QSpinBox
+    WORD,   //QSpinBox
+    DINT,   //QSpinBox
+    UDINT,  //QLineEdit
+    DWORD,  //QLineEdit
+    REAL,   //QDoubleSpinBox
+    STRING, //QLineEdit
+    ARRAY, 
+    STRUCT,
+    UNKNOWN 
+};
+
+NormalDataType default_value_for(S7DataType type); 
+
+class Dynamic_Value{
+    public:
+    void *ptr = nullptr;
+    std::type_index m_cpp_initalize_type = typeid(void);
+    std::type_index m_cpp_introduced_type = typeid(void);
+    void(*deleter)(void*) = nullptr;
+
+    //  AVOIDING float DELETE BY SHALLOW COPY
+    Dynamic_Value (const Dynamic_Value&) = delete;
+    Dynamic_Value& operator= (const Dynamic_Value&) =delete; 
+    
+    //  RIGHT VALUE CONSTRUCT AND DELETE NULL CONSTRUCT
+    template<typename T>
+    Dynamic_Value (T&& val){Reset_Value(std::forward<T>(val));}
+    Dynamic_Value () = default;
+
+    bool has_value() const { return ptr != nullptr; }
+
+    template<typename T>
+    const T& get() const{
+        return *(static_cast<T *>(ptr));
+    }
+
+    Dynamic_Value(Dynamic_Value&& otehr) noexcept:
+    ptr(otehr.ptr),deleter(otehr.deleter)
+    {
+        otehr.ptr = nullptr;
+        otehr.deleter = nullptr;
+    }
+
+    Dynamic_Value& operator= (Dynamic_Value &&other) noexcept{
+        if(this == &other)
+        {
+            return *this;
+        }
+        if(ptr && deleter)
+        {
+            ptr = other.ptr;
+            deleter = other.deleter;
+            other.ptr = nullptr;
+            other.deleter = nullptr;
+        }
+        return *this;
+    }
+
+    template <typename T> void Reset_Value(T &&val) {
+      // 1. 获取实际要存储的类型（去除引用和cv限定符）
+      using StoredType = std::decay_t<T>;
+
+      // 2. 记录新类型的 typeid
+      m_cpp_introduced_type = typeid(StoredType);
+
+      // 3. 情况1：已有数据且类型匹配
+      if (deleter && ptr && m_cpp_introduced_type == m_cpp_initalize_type) {
+        // 直接赋值到现有内存
+        *static_cast<StoredType *>(ptr) = std::forward<T>(val);
+        return;
+      }
+
+      // 4. 情况2：首次分配
+      if (deleter == nullptr && ptr == nullptr) {
+        auto *new_ptr = new StoredType(std::forward<T>(val));
+        if (new_ptr != nullptr) {
+          ptr = new_ptr;
+          m_cpp_initalize_type = typeid(StoredType);
+          deleter = [](void *pointer) {
+            delete static_cast<StoredType *>(pointer);
+          };
+        }
+        return;
+      }
+
+      // 5. 情况3：类型不匹配，需要重新分配
+      if (m_cpp_initalize_type != m_cpp_introduced_type) {
+        // 清理旧资源
+        if (deleter) {
+          deleter(ptr);
+        }
+        ptr = nullptr;
+        deleter = nullptr;
+
+        // 分配新资源
+        auto *new_ptr = new StoredType(std::forward<T>(val));
+        if (new_ptr != nullptr) {
+          ptr = new_ptr;
+          m_cpp_initalize_type = typeid(StoredType);
+          deleter = [](void *pointer) {
+            delete static_cast<StoredType *>(pointer);
+          };
+        }
+        return;
+      }
+    }
+
+    Result<bool, RichError> Reset_Value_by_uint8_t(
+        int data_offset, int data_length, S7DataType &data_type_enum,
+        std::vector<uint8_t> &m_data_block_buffer);
+
+    //  SHOULD DO DELETE
+    ~Dynamic_Value(){
+      if (deleter && ptr) {
+        //  HOW TO DELETE 
+        deleter(ptr);
+      }
+    }
+};
+
+// s7->ua type convert map
+static const std::unordered_map<S7DataType, UA_DataType*> s7_to_ua_map = {
+    {S7DataType::BOOL,   &UA_TYPES[UA_TYPES_BOOLEAN]},
+    {S7DataType::BYTE,   &UA_TYPES[UA_TYPES_BYTE]},
+    {S7DataType::INT,    &UA_TYPES[UA_TYPES_INT16]},
+    {S7DataType::WORD,   &UA_TYPES[UA_TYPES_UINT16]},
+    {S7DataType::DINT,   &UA_TYPES[UA_TYPES_INT32]},
+    {S7DataType::UDINT,  &UA_TYPES[UA_TYPES_UINT32]},
+    {S7DataType::DWORD,  &UA_TYPES[UA_TYPES_UINT32]},
+    {S7DataType::REAL,   &UA_TYPES[UA_TYPES_FLOAT]},
+    {S7DataType::STRING, &UA_TYPES[UA_TYPES_STRING]}
+};
+
+static const std::map<S7DataType, std::string> S7DataTypeToString = {
+    {S7DataType::BOOL, "BOOL"},     {S7DataType::BYTE, "BYTE"},
+    {S7DataType::INT, "INT"},       {S7DataType::WORD, "WORD"},
+    {S7DataType::DINT, "DINT"},     {S7DataType::UDINT, "UDINT"},
+    {S7DataType::DWORD, "DWORD"},   {S7DataType::REAL, "REAL"},
+    {S7DataType::STRING, "STRING"}, {S7DataType::ARRAY, "ARRAY"},
+    {S7DataType::STRUCT, "STRUCT"}, {S7DataType::UNKNOWN, "UNKNOWN"}};
+
+// 建立字符串到枚举的映射表
+static const std::unordered_map<std::string, S7DataType> typeMap = {
+    {"BOOL", S7DataType::BOOL},     {"BYTE", S7DataType::BYTE},
+    {"INT", S7DataType::INT},       {"WORD", S7DataType::WORD},
+    {"DINT", S7DataType::DINT},     {"UDINT", S7DataType::UDINT},
+    {"DWORD", S7DataType::DWORD},   {"REAL", S7DataType::REAL},
+    {"STRING", S7DataType::STRING}, {"ARRAY", S7DataType::ARRAY},
+    {"STRUCT", S7DataType::STRUCT},
+};
 
 // UA_String 转 std::string
 static std::string uaStringToString(const UA_String &str) {
@@ -525,16 +695,5 @@ struct OPCUAParseResult {
   }
 };
 
-// s7->ua type convert map
-static const std::unordered_map<S7DataType, UA_DataType*> s7_to_ua_map = {
-    {S7DataType::BOOL,   &UA_TYPES[UA_TYPES_BOOLEAN]},
-    {S7DataType::BYTE,   &UA_TYPES[UA_TYPES_BYTE]},
-    {S7DataType::INT,    &UA_TYPES[UA_TYPES_INT16]},
-    {S7DataType::WORD,   &UA_TYPES[UA_TYPES_UINT16]},
-    {S7DataType::DINT,   &UA_TYPES[UA_TYPES_INT32]},
-    {S7DataType::UDINT,  &UA_TYPES[UA_TYPES_UINT32]},
-    {S7DataType::DWORD,  &UA_TYPES[UA_TYPES_UINT32]},
-    {S7DataType::REAL,   &UA_TYPES[UA_TYPES_FLOAT]},
-    {S7DataType::STRING, &UA_TYPES[UA_TYPES_STRING]}
-};
+
 

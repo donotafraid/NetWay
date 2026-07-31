@@ -5,7 +5,16 @@
 #include <algorithm>
 #include <cctype>
 #include <unordered_set>
+#include <string>
+#include <fstream>
+#include <iostream>
+#include <sstream>
+#include <regex>
+#include <dlfcn.h>
+#include <cmath>
+
 #include "load_config/Qt_library.h"
+#include "MainWindows/Struct.h"
 #include "PLC/Struct.h"
 
 class OPCUAXMLParser {

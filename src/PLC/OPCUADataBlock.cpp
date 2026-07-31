@@ -20,15 +20,6 @@ bool OPCUADataBlock::hasVariable(const std::string& path) const {
     return findVariableByPath(path) != nullptr;
 }
 
-OPCUAParseResult* OPCUADataBlock::getVariable(const std::string& path) {
-    auto* var = findVariableByPath(path);
-    if (var) {
-        // 返回包含该变量的 OPCUAParseResult，这里需要根据实际需求调整
-        return m_variable.get();
-    }
-    return nullptr;
-}
-
 const int OPCUADataBlock::getVariableVectorSize() const {
     return static_cast<int>(m_variable->variables.size());
 }

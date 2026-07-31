@@ -118,6 +118,12 @@ OPCUADeviceReader::batchWriteOPCUABlock_ToPLC(OPCUADataBlock *data) {
 
 Result<bool, RichError>
 OPCUADeviceReader::batchWriteS7DataBlock_ToPLC(OPCUADataBlock *data) {
+  bool connect_check = m_s7Acess->isConnected();
+  if (!connect_check) {
+    if (m_s7Acess->reconnect(5, 2000).is_fail()) {
+      return Result<bool, RichError>(false);
+    }
+  }
   m_covert.batchSet_DynamicValue_To_Uint8_t(data);
   return m_s7Acess->batchWriteS7DataBlock_ToPLC(data); 
 }
@@ -158,10 +164,15 @@ bool OPCUADeviceReader::onRequestOPCUACheckConnect() const {
 
 
 bool OPCUADeviceReader::onRequestS7CheckConnect() const {
-    if (m_s7Acess) {
-        return m_s7Acess->isConnected();
+  if (m_s7Acess) {
+    bool connect_check = m_s7Acess->isConnected();
+    if (!connect_check) {
+      if (m_s7Acess->reconnect(5, 2000).is_fail()) {
+        return bool(false);
+      }
     }
-    return false;
+  }
+    return true;
 }
 
 bool OPCUADeviceReader::onRequestBuildS7(const std::string &ip_Address,
@@ -2884,12 +2895,7 @@ bool OPCUADataBlockManager::buildS7Connect(
     auto reader = std::make_shared<OPCUADeviceReader>();
     bool result =
         reader->onRequestBuildS7(ipAddress.toStdString(), rack, slot,1000);
-    if (result) {
       m_readerVector.push_back(std::move(reader));
-    } else {
-      return false;
-    }
-
     return true;
   }
 

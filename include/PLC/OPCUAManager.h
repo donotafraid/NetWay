@@ -5,6 +5,7 @@
 #include "PLC/OPCUABrowser.h"
 #include "PLC/OPCUACovert.h"
 #include "PLC/OPCUACSV.h"
+#include "PLC/TransformS7AndOPCUA.h"
 
 class OPCUADataBlock;
 class SpecialTreeView;

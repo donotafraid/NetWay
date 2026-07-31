@@ -1,5 +1,6 @@
 #include "PLC/OPCUACovert.h"
 #include <spdlog/spdlog.h>
+#include "PLC/TransformS7AndOPCUA.h"
 
 // T Function --------- Covert_UA_Scalar_To_Specific
 template <typename T>

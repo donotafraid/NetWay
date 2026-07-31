@@ -131,9 +131,9 @@ LittleEndianToS7BigEndian(std::vector<uint8_t> &Sourcebuffer,
 Result<bool,RichError> S7_Access::connect() 
 {
     bool check_result = isConnected();
-    if(check_result)
+    if(!check_result)
     {
-      return Result<bool, RichError>(check_result);
+        return Result<bool, RichError>(RichError{"connect status is error "});
     }
 
     int result =
@@ -148,6 +148,41 @@ Result<bool,RichError> S7_Access::connect()
         spdlog::info("Connection successful");
     }
     return Result<bool, RichError>(result);
+}
+
+Result<bool, RichError> S7_Access::reconnect(int max_retries,
+                                             int retryDelayMs) {
+  disconnect();
+  if (!m_client_var) {
+    m_client_var = Cli_Create();
+  }
+
+  for (int attempt = 1; attempt <= max_retries; ++attempt) {
+    spdlog::info("Reconnection attempt {}/{}", attempt, max_retries);
+
+    auto result = connect();
+
+    if (result.is_success()) {
+      spdlog::info("Reconnection successful");
+      return Result<bool, RichError>(true);
+    } else {
+      spdlog::warn("Session activation timeout");
+      // 会话激活失败，继续重试
+      disconnect();
+      if (!m_client_var) {
+        m_client_var = Cli_Create();
+      }
+    }
+
+    // 最后一次尝试失败后不再等待
+    if (attempt < max_retries) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(retryDelayMs));
+    }
+  }
+
+  return Result<bool, RichError>(RichError("Reconnection failed after " +
+                                           std::to_string(max_retries) +
+                                           " attempts"));
 }
 
 bool S7_Access::isConnected()
@@ -262,7 +297,10 @@ Result<bool,RichError> S7_Access::read(int DB_Number,int Start_Position,int Read
 {
     bool connect_check = this->isConnected();
     if (!connect_check) {
-    return Result<bool, RichError>(false);
+      if(reconnect(5, 2000).is_fail())
+      {
+        return Result<bool, RichError>(false);
+      }
     }
 
     int result = Cli_DBRead(m_client_var,DB_Number, Start_Position, Read_Size,SourceData_var);
