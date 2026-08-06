@@ -7,13 +7,13 @@
 #include <open62541/client_highlevel.h>
 #include <open62541/client_config_default.h>
 
-#include <fstream>
 #include <string>
-#include <regex>
 #include <iostream>
 #include "Rust_error_deal/error_deal.h"
-#include "PLC/OPCUADataBlock.h"
 #include <snap7.h>
+#include <unordered_set>
+#include <spdlog/spdlog.h>
+#include "PLC/Struct.h"
 
 
 // 连接状态的枚举（比 bool 更精确）
@@ -38,11 +38,130 @@ class S7_Access
             ~S7_Access() { disconnect(); };
 
             Result<bool, RichError>
-            batchReadS7DataBlock_FromPLC(OPCUADataBlock *data);
+            batchReadS7DataBlock_FromPLC(std::vector<OPCUAModernDataStruct> &dataVec,std::vector<uint8_t> &dataBuffer);
             Result<bool,RichError>
-            batchWriteS7DataBlock_ToPLC(OPCUADataBlock *data);
+            batchWriteS7DataBlock_ToPLC(std::vector<OPCUAModernDataStruct> &dataVec);
             Result<int,RichError> meastureStringObjectLength(int startPos,OPCUAModernDataStruct &var);
-          
+
+            void updateBufferFromS7ModernStructByLSB(
+               OPCUAModernDataStruct &VariableItem,std::vector<uint8_t> &dataBuffer) {
+              {
+                switch (VariableItem.data_type_enum) {
+                case S7DataType::BOOL: {
+                  bool boolValue = VariableItem.dataVar.toBool();
+                  if (boolValue) {
+                    dataBuffer[VariableItem.bytes_offset] |=
+                        1 << VariableItem.bit_offset;
+                  } else {
+                    dataBuffer[VariableItem.bytes_offset] &=
+                        ~(1 << VariableItem.bit_offset);
+                  }
+
+                  break;
+                }
+
+                case S7DataType::BYTE: {
+                  int intValue = VariableItem.dataVar.toUInt();
+                  if (intValue >= 0 && intValue <= 255) {
+                    ByteOrderCoverter::to_littleEndian(
+                        intValue, &dataBuffer[VariableItem.bytes_offset], 1);
+                    break;
+                  } else {
+                    spdlog::warn("Byte value is mismatch range in model "
+                                 "(BYTE), value: {}",
+                                 intValue);
+                  }
+                  break;
+                }
+
+                case S7DataType::INT: {
+                  int intValue = VariableItem.dataVar.toInt();
+                  if (intValue >= -32768 && intValue <= 32767) {
+                    ByteOrderCoverter::to_littleEndian(
+                        intValue, &dataBuffer[VariableItem.bytes_offset], 2);
+                    break;
+                  } else {
+                    spdlog::warn("Byte value is mismatch range in model (INT), "
+                                 "value: {}",
+                                 intValue);
+                  }
+                  break;
+                }
+
+                case S7DataType::DINT: {
+                  qint64 longValue = VariableItem.dataVar.toInt();
+                  if (longValue >= -2147483648LL && longValue <= 2147483647LL) {
+                    ByteOrderCoverter::to_littleEndian(
+                        longValue, &dataBuffer[VariableItem.bytes_offset], 4);
+                    break;
+                  } else {
+                    spdlog::warn("Byte value is mismatch range in model "
+                                 "(DINT), value: {}",
+                                 longValue);
+                  }
+                  break;
+                }
+
+                case S7DataType::WORD: {
+                  int intValue = VariableItem.dataVar.toUInt();
+                  if (intValue >= 0 && intValue <= 65535) {
+                    ByteOrderCoverter::to_littleEndian(
+                        intValue, &dataBuffer[VariableItem.bytes_offset], 2);
+                    break;
+                  } else {
+                    spdlog::warn("Byte value is mismatch range in model "
+                                 "(WORD), value: {}",
+                                 intValue);
+                  }
+                  break;
+                }
+
+                case S7DataType::DWORD:
+                case S7DataType::UDINT: {
+                  uint32_t uintValue = VariableItem.dataVar.toUInt();
+                  // 无符号类型始终在有效范围内，无需范围检查
+                  ByteOrderCoverter::to_littleEndian(
+                      uintValue, &dataBuffer[VariableItem.bytes_offset], 4);
+                  break;
+                }
+
+                case S7DataType::REAL: {
+                  float floatValue = VariableItem.dataVar.toFloat();
+                  uint32_t tmpBuffer;
+                  memcpy(&tmpBuffer, &floatValue, 4);
+                  ByteOrderCoverter::to_littleEndian(
+                      tmpBuffer, &dataBuffer[VariableItem.bytes_offset], 4);
+                  break;
+                }
+
+                case S7DataType::STRING: {
+                  std::string string_value =
+                      VariableItem.dataVar.toString().toStdString();
+
+                  dataBuffer[VariableItem.bytes_offset] =
+                      VariableItem.s7_data_type_length;
+                  dataBuffer[VariableItem.bytes_offset + 1] =
+                      string_value.size();
+                  std::fill(dataBuffer.begin() + VariableItem.bytes_offset + 2,
+                            dataBuffer.begin() + VariableItem.bytes_offset + 2 +
+                                VariableItem.s7_data_type_length - 2,
+                            0);
+
+                  memcpy(&dataBuffer[VariableItem.bytes_offset + 2],
+                         string_value.c_str(), string_value.size());
+                  break;
+                }
+
+                default: {
+                  // 未知类型，直接存储
+                  spdlog::debug("Unknown S7 data type encountered in "
+                                "updateBufferFromS7ModernStructByLSB");
+                  break;
+                }
+                }
+              }
+            }
+
             Result<bool, RichError> connect();
             Result<bool, RichError> reconnect(int maxRetries, int retryDelayMs);
             bool isConnected();
@@ -104,8 +223,8 @@ public:
 
   Result<bool, RichError> read();
 
-  Result<bool, RichError> batchReadOPCUADataBlock_FromPLC(OPCUADataBlock *data);
-  Result<bool, RichError> batchWriteOPCUABlock_ToPLC(OPCUADataBlock *data);
+  Result<bool, RichError> batchReadOPCUADataBlock_FromPLC(std::vector<OPCUAModernDataStruct> &dataVec);
+  Result<bool, RichError> batchWriteOPCUABlock_ToPLC(std::vector<OPCUAModernDataStruct> &dataVec);
 
   // trait function
   Result<bool, RichError> waitForSessionActivation(int timeoutMs);
@@ -149,68 +268,8 @@ public:
   bool isConnected();
   void Set_Read_NodeID(UA_ReadValueId &nodeID, OPCUAModernDataStruct &node);
 
-
-  void PrepareBatchRead(std::vector<OPCUAModernDataStruct> &data_vars) {
-    // 复用 C++ vector
-    if (m_batchNodesValid) {
-      std::cout << "PrepareBatchRead skip for the batchReadNodes had initialize"
-                << std::endl;
-      return;
-    }
-    m_batchReadNodes.clear();
-    m_batchReadNodes.reserve(data_vars.size());
-    m_batchReadVariant.clear();
-    m_batchReadVariant.reserve(data_vars.size());
-
-    for (auto &var : data_vars) {
-      if (var.filter_reason != "" || var.is_array ||
-          var.data_type_enum == S7DataType::UNKNOWN ||
-          !checkDotAndBackslash(
-              uaStringToString(var.nodeID.identifier.string))) {
-        continue;
-      }
-      UA_ReadValueId node;
-      UA_Variant variant;
-
-      UA_Variant_init(&variant);
-      UA_ReadValueId_init(&node);
-
-      Set_Read_NodeID(node, var);
-
-      m_batchReadNodes.push_back(std::move(node));
-      m_batchReadVariant.push_back(std::move(variant));
-    }
-
-    m_batchNodesValid = true;
-  }
-
-  void PrepareBatchWrite(std::vector<OPCUAModernDataStruct> &data_vars) {
-    // 复用 C++ vector
-    if (m_batchWriteNodesValid) {
-      std::cout
-          << "PrepareBatchWrite skip for the PrepareBatchWrite had initialize"
-          << std::endl;
-      return;
-    }
-    m_batchWriteNodes.clear();
-    m_batchWriteNodes.reserve(data_vars.size());
-
-    for (auto &var : data_vars) {
-       if (var.filter_reason != "" || var.is_array ||
-          var.data_type_enum == S7DataType::UNKNOWN ||
-          !checkDotAndBackslash(
-              uaStringToString(var.nodeID.identifier.string))) {
-        continue;
-      }
-
-      UA_WriteValue m_writeValue;
-      UA_WriteValue_init(&m_writeValue);
-
-      m_batchWriteNodes.push_back(std::move(m_writeValue));
-    }
-
-    m_batchWriteNodesValid = true;
-  }
+  void PrepareBatchRead(std::vector<OPCUAModernDataStruct> &data_vars); 
+  void PrepareBatchWrite(std::vector<OPCUAModernDataStruct> &data_vars); 
 
   UA_Client *getClient();
   void Clear_HasRead_var_set();

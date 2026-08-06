@@ -2,12 +2,9 @@
 
 #include "load_config/Qt_library.h"
 #include <algorithm>
-#include <cctype>
 #include <cstdlib>
 #include <cstring>
 #include <typeindex> // defines std::type_index
-#include <typeinfo>  // defines typeid and std::type_info
-#include <unordered_set>
 #include "Rust_error_deal/error_deal.h"
 
 #include <open62541/nodeids.h>
@@ -303,7 +300,7 @@ struct OPCUAModernDataStruct {
   std::string description;
   int access_level = 0;
   std::string parent_nodeID;
-  bool is_array = false;    // ← 由 arrayDimensions = "" 决定
+  bool is_array = false; // ← 由 arrayDimensions = "" 决定
   std::string arrayDimensions = "";
   std::string browse_name;
   std::string filter_reason;
@@ -319,9 +316,8 @@ struct OPCUAModernDataStruct {
   int s7_data_type_length = -1;
   int s7_data_array_length = -1;
 
-  // 数据指针
-  std::unique_ptr<Dynamic_Value> data_pointer =
-      std::make_unique<Dynamic_Value>();
+  // 数据存储 - 使用 QVariant 替代 data_pointer
+  QVariant dataVar;
 
   // 标识字段
   bool isOPCUAType = true;
@@ -330,24 +326,80 @@ struct OPCUAModernDataStruct {
 
   // ==================== 构造函数 ====================
 
-  // ==================== 从CSV数据构造 ====================
-
   // 从 CSV 结构体构造
   explicit OPCUAModernDataStruct(const OPCUAModernDataStructFromCSV &csvData) {
     UA_NodeId_init(&nodeID);
     fromCSVImport(csvData);
+    initializeDataVar();
   }
 
   // 默认构造函数
-  OPCUAModernDataStruct() { UA_NodeId_init(&nodeID); }
+  OPCUAModernDataStruct() {
+    UA_NodeId_init(&nodeID);
+    initializeDataVar();
+  }
 
   // ==================== 拷贝控制 ====================
 
-  // 拷贝构造函数 - 禁用
-  OPCUAModernDataStruct(const OPCUAModernDataStruct &other) = delete;
+  // 拷贝构造函数
+  OPCUAModernDataStruct(const OPCUAModernDataStruct &other)
+      : variable_name(other.variable_name),
+        variable_nodeID(other.variable_nodeID),
+        namespace_index(other.namespace_index), data_type(other.data_type),
+        raw_data_type(other.raw_data_type), description(other.description),
+        access_level(other.access_level), parent_nodeID(other.parent_nodeID),
+        is_array(other.is_array), arrayDimensions(other.arrayDimensions),
+        browse_name(other.browse_name), filter_reason(other.filter_reason),
+        parentName(other.parentName),
+        variable_full_path(other.variable_full_path), comment(other.comment),
+        data_type_enum(other.data_type_enum),
+        data_block_number(other.data_block_number),
+        bytes_offset(other.bytes_offset), bit_offset(other.bit_offset),
+        s7_data_type_length(other.s7_data_type_length),
+        s7_data_array_length(other.s7_data_array_length),
+        dataVar(other.dataVar), // 拷贝 QVariant
+        isOPCUAType(other.isOPCUAType), buildType(other.buildType),
+        isFromCSV(other.isFromCSV) {
+    UA_NodeId_init(&nodeID);
+    UA_NodeId_copy(&other.nodeID, &nodeID);
+  }
 
-  // 拷贝赋值运算符 - 禁用
-  OPCUAModernDataStruct &operator=(const OPCUAModernDataStruct &other) = delete;
+  // 拷贝赋值运算符
+  OPCUAModernDataStruct &operator=(const OPCUAModernDataStruct &other) {
+    if (this != &other) {
+      UA_NodeId_clear(&nodeID);
+
+      variable_name = other.variable_name;
+      variable_nodeID = other.variable_nodeID;
+      namespace_index = other.namespace_index;
+      data_type = other.data_type;
+      raw_data_type = other.raw_data_type;
+      description = other.description;
+      access_level = other.access_level;
+      parent_nodeID = other.parent_nodeID;
+      is_array = other.is_array;
+      arrayDimensions = other.arrayDimensions;
+      browse_name = other.browse_name;
+      filter_reason = other.filter_reason;
+      parentName = other.parentName;
+      variable_full_path = other.variable_full_path;
+      comment = other.comment;
+      data_type_enum = other.data_type_enum;
+      data_block_number = other.data_block_number;
+      bytes_offset = other.bytes_offset;
+      bit_offset = other.bit_offset;
+      s7_data_type_length = other.s7_data_type_length;
+      s7_data_array_length = other.s7_data_array_length;
+      dataVar = other.dataVar; // 拷贝 QVariant
+      isOPCUAType = other.isOPCUAType;
+      buildType = other.buildType;
+      isFromCSV = other.isFromCSV;
+
+      UA_NodeId_init(&nodeID);
+      UA_NodeId_copy(&other.nodeID, &nodeID);
+    }
+    return *this;
+  }
 
   // ==================== 移动构造函数 ====================
 
@@ -360,7 +412,7 @@ struct OPCUAModernDataStruct {
         description(std::move(other.description)),
         access_level(other.access_level),
         parent_nodeID(std::move(other.parent_nodeID)), is_array(other.is_array),
-        arrayDimensions(other.arrayDimensions),
+        arrayDimensions(std::move(other.arrayDimensions)),
         browse_name(std::move(other.browse_name)),
         filter_reason(std::move(other.filter_reason)),
         parentName(std::move(other.parentName)),
@@ -370,22 +422,20 @@ struct OPCUAModernDataStruct {
         bytes_offset(other.bytes_offset), bit_offset(other.bit_offset),
         s7_data_type_length(other.s7_data_type_length),
         s7_data_array_length(other.s7_data_array_length),
+        dataVar(std::move(other.dataVar)), // 移动 QVariant
         isOPCUAType(other.isOPCUAType), buildType(other.buildType),
-        isFromCSV(other.isFromCSV) { // ✅ 新增
+        isFromCSV(other.isFromCSV) {
 
     // 转移 UA_NodeId 所有权
     UA_NodeId_init(&nodeID);
     UA_NodeId_copy(&other.nodeID, &nodeID);
     UA_NodeId_clear(&other.nodeID);
 
-    // 转移数据指针
-    data_pointer = std::move(other.data_pointer);
-
     // 重置源对象
     other.namespace_index = 0;
     other.access_level = 0;
     other.is_array = false;
-    other.arrayDimensions="";
+    other.arrayDimensions = "";
     other.data_type_enum = S7DataType::UNKNOWN;
     other.data_block_number = -1;
     other.bytes_offset = -1.0f;
@@ -394,7 +444,8 @@ struct OPCUAModernDataStruct {
     other.s7_data_array_length = -1;
     other.isOPCUAType = true;
     other.buildType = InputFormat::BROWSER;
-    other.isFromCSV = false; // ✅ 重置
+    other.isFromCSV = false;
+    other.dataVar = QVariant(); // 重置 QVariant
   }
 
   // ==================== 移动赋值运算符 ====================
@@ -414,7 +465,7 @@ struct OPCUAModernDataStruct {
       access_level = other.access_level;
       parent_nodeID = std::move(other.parent_nodeID);
       is_array = other.is_array;
-      arrayDimensions = other.arrayDimensions;
+      arrayDimensions = std::move(other.arrayDimensions);
       browse_name = std::move(other.browse_name);
       filter_reason = std::move(other.filter_reason);
 
@@ -427,17 +478,15 @@ struct OPCUAModernDataStruct {
       bit_offset = other.bit_offset;
       s7_data_type_length = other.s7_data_type_length;
       s7_data_array_length = other.s7_data_array_length;
+      dataVar = std::move(other.dataVar); // 移动 QVariant
       isOPCUAType = other.isOPCUAType;
       buildType = other.buildType;
-      isFromCSV = other.isFromCSV; // ✅ 新增
+      isFromCSV = other.isFromCSV;
 
       // 转移 UA_NodeId 所有权
       UA_NodeId_init(&nodeID);
       UA_NodeId_copy(&other.nodeID, &nodeID);
       UA_NodeId_clear(&other.nodeID);
-
-      // 转移数据指针
-      data_pointer = std::move(other.data_pointer);
 
       // 重置源对象
       other.namespace_index = 0;
@@ -452,7 +501,8 @@ struct OPCUAModernDataStruct {
       other.s7_data_array_length = -1;
       other.isOPCUAType = true;
       other.buildType = InputFormat::BROWSER;
-      other.isFromCSV = false; // ✅ 重置
+      other.isFromCSV = false;
+      other.dataVar = QVariant(); // 重置 QVariant
     }
     return *this;
   }
@@ -480,7 +530,6 @@ struct OPCUAModernDataStruct {
     swap(browse_name, other.browse_name);
     swap(filter_reason, other.filter_reason);
 
-
     // S7 字段
     swap(parentName, other.parentName);
     swap(variable_full_path, other.variable_full_path);
@@ -492,13 +541,13 @@ struct OPCUAModernDataStruct {
     swap(s7_data_type_length, other.s7_data_type_length);
     swap(s7_data_array_length, other.s7_data_array_length);
 
-    // 智能指针
-    swap(data_pointer, other.data_pointer);
+    // QVariant
+    swap(dataVar, other.dataVar);
 
     // 标识字段
     swap(isOPCUAType, other.isOPCUAType);
     swap(buildType, other.buildType);
-    swap(isFromCSV, other.isFromCSV); // ✅ 新增
+    swap(isFromCSV, other.isFromCSV);
 
     // 交换 UA_NodeId
     UA_NodeId temp;
@@ -528,7 +577,6 @@ struct OPCUAModernDataStruct {
     browse_name.clear();
     filter_reason.clear();
 
-
     // S7 字段
     parentName.clear();
     variable_full_path.clear();
@@ -540,102 +588,118 @@ struct OPCUAModernDataStruct {
     s7_data_type_length = -1;
     s7_data_array_length = -1;
 
-    // 智能指针
-    data_pointer.reset();
-    data_pointer = std::make_unique<Dynamic_Value>();
+    // 重置 QVariant
+    dataVar = QVariant();
 
     // 标识字段
     isOPCUAType = true;
     buildType = InputFormat::BROWSER;
-    isFromCSV = false; // ✅ 重置
+    isFromCSV = false;
 
     // 重置节点ID
     UA_NodeId_clear(&nodeID);
     UA_NodeId_init(&nodeID);
   }
 
-  // ==================== CSV 导入方法 ====================
-  static const void initializeDataPointer(OPCUAModernDataStruct &item) {
-    // 第三步：根据类型打印值
-    bool success = true;
+    // ==================== 初始化 dataVar 方法 ====================
 
+  void initializeDataVar() {
+    // 根据数据类型初始化 dataVar 为对应类型的默认值
+    switch (data_type_enum) {
+    case S7DataType::BOOL:
+      dataVar = false;
+      break;
+    case S7DataType::BYTE:
+    case S7DataType::WORD:
+    case S7DataType::DWORD:
+    case S7DataType::UDINT:
+      dataVar = 0U; // 无符号整数
+      break;
+    case S7DataType::INT:
+    case S7DataType::DINT:
+      dataVar = 0; // 有符号整数
+      break;
+    case S7DataType::REAL:
+      dataVar = 0.0f; // 浮点数
+      break;
+    case S7DataType::STRING:
+      dataVar = QString("");
+      break;
+    default:
+      dataVar = QVariant();
+      break;
+    }
+  }
+
+    // ==================== CSV 导入方法 ====================
+
+  static void initializeS7Length(OPCUAModernDataStruct &item) {
     if (item.data_type_enum == S7DataType::BOOL) {
-      item.data_pointer->Reset_Value(bool{0});
-      item.s7_data_type_length = 1; // BOOL 占 1 位，但 S7 中通常按 1 字节处理
+      item.s7_data_type_length = 1;
     } else if (item.data_type_enum == S7DataType::BYTE) {
-      item.data_pointer->Reset_Value(uint8_t{0});
-      item.s7_data_type_length = 1; // 1 字节
+      item.s7_data_type_length = 1;
     } else if (item.data_type_enum == S7DataType::INT) {
-      item.data_pointer->Reset_Value(int16_t{0});
-      item.s7_data_type_length = 2; // 2 字节
+      item.s7_data_type_length = 2;
     } else if (item.data_type_enum == S7DataType::WORD) {
-      item.data_pointer->Reset_Value(uint16_t{0});
-      item.s7_data_type_length = 2; // 2 字节
+      item.s7_data_type_length = 2;
     } else if (item.data_type_enum == S7DataType::DINT) {
-      item.data_pointer->Reset_Value(int32_t{0});
-      item.s7_data_type_length = 4; // 4 字节
+      item.s7_data_type_length = 4;
     } else if (item.data_type_enum == S7DataType::DWORD) {
-      item.data_pointer->Reset_Value(uint32_t{0});
-      item.s7_data_type_length = 4; // 4 字节
+      item.s7_data_type_length = 4;
     } else if (item.data_type_enum == S7DataType::UDINT) {
-      item.data_pointer->Reset_Value(uint32_t{0});
-      item.s7_data_type_length = 4; // 4 字节
+      item.s7_data_type_length = 4;
     } else if (item.data_type_enum == S7DataType::REAL) {
-      item.data_pointer->Reset_Value(float{0});
-      item.s7_data_type_length = 4; // 4 字节
+      item.s7_data_type_length = 4;
     } else if (item.data_type_enum == S7DataType::STRING) {
-      item.data_pointer->Reset_Value(std::string{});
-      item.s7_data_type_length = 0; // 字符串长度可变，由具体内容决定
+      item.s7_data_type_length = 0;
     } else if (item.data_type_enum == S7DataType::ARRAY) {
-      // 数组类型，长度需要额外处理
-      item.s7_data_type_length = 0; // 由数组大小和元素类型决定
+      item.s7_data_type_length = 0;
     } else if (item.data_type_enum == S7DataType::STRUCT) {
-      // 结构体类型，长度需要额外计算
-      item.s7_data_type_length = 0; // 由结构体成员决定
+      item.s7_data_type_length = 0;
     } else {
-      // 未知类型
       item.data_type_enum = S7DataType::UNKNOWN;
-      item.data_pointer->Reset_Value(std::string{});
       item.s7_data_type_length = 0;
     }
   }
 
   // 从 CSV 结构体导入数据
   void fromCSVImport(const OPCUAModernDataStructFromCSV &csvData) {
-      // 1. 直接映射字段
-    variable_name = csvData.displayName;          // displayName -> variable_name
-    variable_nodeID = removeBackslashes(csvData.nodeId);             // nodeId -> variable_nodeID
-    data_type = csvData.dataType;                 // dataType -> data_type
-    raw_data_type = csvData.dataType;             // dataType -> raw_data_type
-    description = csvData.description;            // description -> description
-    parent_nodeID = removeBackslashes(csvData.parentNodeId);         // parentNodeId -> parent_nodeID
-    arrayDimensions = csvData.arrayDimensions;    // arrayDimensions -> arrayDimensions
-    browse_name = csvData.browseName;             // browseName -> browse_name
+    // 1. 直接映射字段
+    variable_name = csvData.displayName;
+    variable_nodeID = removeBackslashes(csvData.nodeId);
+    data_type = csvData.dataType;
+    raw_data_type = csvData.dataType;
+    description = csvData.description;
+    parent_nodeID = removeBackslashes(csvData.parentNodeId);
+    arrayDimensions = csvData.arrayDimensions;
+    browse_name = csvData.browseName;
 
-    //  data type enum  transform
+    // data type enum transform
     auto it = typeMap.find(raw_data_type);
-    if (it != typeMap.end() ) {
+    if (it != typeMap.end()) {
       data_type_enum = it->second;
-      initializeDataPointer(*this);
-    } else  {
+      initializeS7Length(*this);
+    } else {
       data_type_enum = S7DataType::UNKNOWN;
     }
 
     // 2. accessLevel 转换（字符串 -> 整数）
     if (!csvData.accessLevel.empty()) {
-        try {
-            access_level = std::stoi(csvData.accessLevel);
-        } catch (const std::exception& e) {
-            access_level = 0;
-        }
+      try {
+        access_level = std::stoi(csvData.accessLevel);
+      } catch (const std::exception &e) {
+        access_level = 0;
+      }
     }
-    
-    // 6. 其他字段保持默认值
-    filter_reason = "";  // 默认为空
 
+    // 3. 其他字段保持默认值
+    filter_reason = "";
     isOPCUAType = true;
     isFromCSV = true;
-    buildType = InputFormat::CSV; // 标记为 CSV 导入
+    buildType = InputFormat::CSV;
+
+    // 4. 初始化 dataVar
+    initializeDataVar();
   }
 
   // 使用erase-remove惯用法（最简洁）

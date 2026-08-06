@@ -12,7 +12,9 @@
 #include "PLC_Collector/MessageSendService.h"
 
 #include "Sqlite_DB/SQLiteCacheRepository.h"
-#include "Sqlite_DB/CacheService.h"
+
+#include "PLC/ModbusConfigLoader.h"
+
 
 /**
  * 统筹协作：系统管理器（指挥者）
@@ -25,7 +27,8 @@
  * 
  * 协作模式：观察者模式 + 指挥者模式
  */
-class SystemManager {
+class SystemManager : public QObject {
+  Q_OBJECT
 public:
   SystemManager();
   ~SystemManager();
@@ -100,6 +103,9 @@ private:
   void onPushGetWayDisconnected();
   size_t getBacklogCount() const;
 
+  //  initialize function
+  void loadModbusDevices();
+
   // === 核心组件 ===
   moodycamel::ConcurrentQueue<PLCData> m_queue; // 共享队列
   std::atomic<bool> m_running;                  // 全局运行标志
@@ -120,7 +126,13 @@ private:
   std::unique_ptr<PushGatewayImpl> push_gateWay_;
   std::shared_ptr<MessageSendService> send_service_;
 
-
+  //  Modbus module
+  ModbusConfigLoader loader;
+  // ✅ 关键：一个 IP 对应一个 Mediator
+  std::unordered_map<std::string, std::shared_ptr<ModbusMediator>>
+      m_modbusClients;
+  // ✅ 存储所有加载的设备节点（方便信号连接）
+  std::vector<std::shared_ptr<ModbusDataNode>> m_modbusNodes;
   // === 性能指标 ===
   struct Metrics {
     std::chrono::steady_clock::time_point startTime;

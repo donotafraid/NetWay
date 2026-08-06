@@ -14,6 +14,7 @@
 #include "PLC/Modbus.h"
 #include "PLC_Collector/manager.h"
 #include "PLC/OPCUACSVCovert.h"
+#include "PLC_Collector/manager.h"
 
 
 int main(int argc, char *argv[]) {
@@ -78,7 +79,8 @@ int main(int argc, char *argv[]) {
     windowManager->initialize();
   }
 
-  { std::cout << "Server is running , waiting for file .... \n"; }
+  SystemManager setting;
+  setting.start();
 
   mainWindows->show();
 

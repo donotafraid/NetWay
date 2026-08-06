@@ -5,6 +5,9 @@
 #include <algorithm>
 #include <cctype>
 #include <unordered_set>
+#include <fstream>    // ✅ 添加：支持 std::ofstream, std::ifstream
+#include <set>        // ✅ 添加：支持 std::set
+
 #include "load_config/Qt_library.h"
 #include "PLC/Struct.h"
 

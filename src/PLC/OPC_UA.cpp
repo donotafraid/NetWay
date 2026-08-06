@@ -1,4 +1,7 @@
 #include "PLC/OPC_UA.h"
+#include <spdlog/spdlog.h>
+#include <regex>
+
 //  EndianConverter----------------------------------------------------------------------------
 static Result<bool, RichError>
 S7BigEndianToLittleEndian(std::vector<uint8_t> &Sourcebuffer,
@@ -214,11 +217,11 @@ S7Object& S7_Access::getClient()
 }
 
 Result<bool, RichError>
-S7_Access::batchReadS7DataBlock_FromPLC(OPCUADataBlock *data) {
+S7_Access::batchReadS7DataBlock_FromPLC(std::vector<OPCUAModernDataStruct> &dataVec,std::vector<uint8_t> &dataBuffer) {
   bool success = true;
   Destbuffer.clear();
   Destbuffer.resize(10000);
-  for (auto &var : data->getVariabeDataVector()) {
+  for (auto &var : dataVec) {
     if (var.data_type_enum == S7DataType::UNKNOWN) {
       continue;
     }
@@ -240,8 +243,7 @@ S7_Access::batchReadS7DataBlock_FromPLC(OPCUADataBlock *data) {
     }
   }
   if (success) {
-    data->getVariableDataBuffer().clear();
-    std::swap(Destbuffer, data->getVariableDataBuffer());
+    std::swap(Destbuffer, dataBuffer);
     return Result<bool, RichError>(true);
   } else {
     return Result<bool, RichError>(RichError("read variable failed"));
@@ -249,11 +251,11 @@ S7_Access::batchReadS7DataBlock_FromPLC(OPCUADataBlock *data) {
 }
 
 Result<bool, RichError>
-S7_Access::batchWriteS7DataBlock_ToPLC(OPCUADataBlock *data) {
+S7_Access::batchWriteS7DataBlock_ToPLC(std::vector<OPCUAModernDataStruct> &dataVec ) {
   {
-     {
+    {
       bool success = true;
-      for (auto &var : data->getVariabeDataVector()) {
+      for (auto &var : dataVec) {
         {
           if(var.data_type_enum == S7DataType::UNKNOWN)
           {
@@ -261,12 +263,7 @@ S7_Access::batchWriteS7DataBlock_ToPLC(OPCUADataBlock *data) {
           }
           tmpBuffer.clear();
           tmpBuffer.resize(var.s7_data_type_length);
-          {
-            std::move(data->getVariableDataBuffer().begin() + var.bytes_offset,
-                      data->getVariableDataBuffer().begin() + var.bytes_offset +
-                          var.s7_data_type_length,
-                      tmpBuffer.begin());
-          }
+          updateBufferFromS7ModernStructByLSB(var, tmpBuffer);
 
           //  single write condition result
           auto result = this->write(
@@ -429,6 +426,68 @@ void OPCUA_Access::Set_Read_NodeID(UA_ReadValueId &nodeid,OPCUAModernDataStruct&
   nodeid.attributeId = UA_ATTRIBUTEID_VALUE;
 }
 
+void OPCUA_Access::PrepareBatchRead(
+    std::vector<OPCUAModernDataStruct> &data_vars) {
+  // 复用 C++ vector
+  if (m_batchNodesValid) {
+    std::cout << "PrepareBatchRead skip for the batchReadNodes had initialize"
+              << std::endl;
+    return;
+  }
+  m_batchReadNodes.clear();
+  m_batchReadNodes.reserve(data_vars.size());
+  m_batchReadVariant.clear();
+  m_batchReadVariant.reserve(data_vars.size());
+
+  for (auto &var : data_vars) {
+    if (var.filter_reason != "" || var.is_array ||
+        var.data_type_enum == S7DataType::UNKNOWN ||
+        !checkDotAndBackslash(uaStringToString(var.nodeID.identifier.string))) {
+      continue;
+    }
+    UA_ReadValueId node;
+    UA_Variant variant;
+
+    UA_Variant_init(&variant);
+    UA_ReadValueId_init(&node);
+
+    Set_Read_NodeID(node, var);
+
+    m_batchReadNodes.push_back(std::move(node));
+    m_batchReadVariant.push_back(std::move(variant));
+  }
+
+  m_batchNodesValid = true;
+}
+
+void OPCUA_Access::PrepareBatchWrite(
+    std::vector<OPCUAModernDataStruct> &data_vars) {
+  // 复用 C++ vector
+  if (m_batchWriteNodesValid) {
+    std::cout
+        << "PrepareBatchWrite skip for the PrepareBatchWrite had initialize"
+        << std::endl;
+    return;
+  }
+  m_batchWriteNodes.clear();
+  m_batchWriteNodes.reserve(data_vars.size());
+
+  for (auto &var : data_vars) {
+    if (var.filter_reason != "" || var.is_array ||
+        var.data_type_enum == S7DataType::UNKNOWN ||
+        !checkDotAndBackslash(uaStringToString(var.nodeID.identifier.string))) {
+      continue;
+    }
+
+    UA_WriteValue m_writeValue;
+    UA_WriteValue_init(&m_writeValue);
+
+    m_batchWriteNodes.push_back(std::move(m_writeValue));
+  }
+
+  m_batchWriteNodesValid = true;
+}
+
 std::pair<std::string, std::string> OPCUA_Access::extractPureNodeIdRobust(const std::string &input) {
   {
     // 正则表达式结构：
@@ -495,100 +554,98 @@ Result<bool, RichError> OPCUA_Access::read() {
   return Result<bool, RichError>(true);
 }
 
- ConnectionState OPCUA_Access::getConnectionState() const {
-    if (!m_client_pointer) {
-      return ConnectionState::UNINITIALIZED;
-    }
-
-    UA_SecureChannelState channelState;
-    UA_SessionState sessionState;
-    UA_Client_getState(m_client_pointer, &channelState, &sessionState, nullptr);
-
-    if (channelState == UA_SECURECHANNELSTATE_OPEN &&
-        sessionState == UA_SESSIONSTATE_ACTIVATED) {
-      return ConnectionState::CONNECTED;
-    }
-
-    return ConnectionState::OBJECT_ONLY; // 僵尸对象
+ConnectionState OPCUA_Access::getConnectionState() const {
+  if (!m_client_pointer) {
+    return ConnectionState::UNINITIALIZED;
   }
 
-  Result<bool, RichError> OPCUA_Access::ensureConnection() {
-    switch (getConnectionState()) {
-    case ConnectionState::CONNECTED:
-      return Result<bool, RichError>(true);
+  UA_SecureChannelState channelState;
+  UA_SessionState sessionState;
+  UA_Client_getState(m_client_pointer, &channelState, &sessionState, nullptr);
 
-    case ConnectionState::OBJECT_ONLY:
-      // 僵尸对象：尝试重连而不是重新创建
-      return reconnect(1, 1000);
-
-    case ConnectionState::UNINITIALIZED:
-      // 需要创建新对象
-      return connect();
-
-    default:
-      return Result<bool, RichError>(RichError("Unknown state"));
-    }
+  if (channelState == UA_SECURECHANNELSTATE_OPEN &&
+      sessionState == UA_SESSIONSTATE_ACTIVATED) {
+    return ConnectionState::CONNECTED;
   }
 
-  Result<bool, RichError> OPCUA_Access::reconnect(int maxRetries,
-                                                  int retryDelayMs) {
-    // 1. 如果已连接，先断开
-    disconnect();
+  return ConnectionState::OBJECT_ONLY; // 僵尸对象
+}
 
-    // 2. 清理可能存在的无效客户端
-    if (m_client_pointer) {
-      UA_Client_delete(m_client_pointer);
-      m_client_pointer = nullptr;
-    }
+Result<bool, RichError> OPCUA_Access::ensureConnection() {
+  switch (getConnectionState()) {
+  case ConnectionState::CONNECTED:
+    return Result<bool, RichError>(true);
 
-    // 3. 创建新客户端
-    m_client_pointer = UA_Client_new();
-    if (!m_client_pointer) {
-      UA_Client_delete(m_client_pointer);
-      m_client_pointer = nullptr;
-      return Result<bool, RichError>(
-          RichError("Failed to create client for reconnect"));
-    }
-    configureClient(); // 配置客户端参数
+  case ConnectionState::OBJECT_ONLY:
+    // 僵尸对象：尝试重连而不是重新创建
+    return reconnect(1, 1000);
 
-    // 4. 重连循环
-    std::string endpointUrl =
-        "opc.tcp://" + m_ip_Address + ":" + std::to_string(m_port);
+  case ConnectionState::UNINITIALIZED:
+    // 需要创建新对象
+    return connect();
 
-    for (int attempt = 1; attempt <= maxRetries; ++attempt) {
-      spdlog::info("Reconnection attempt {}/{}", attempt, maxRetries);
+  default:
+    return Result<bool, RichError>(RichError("Unknown state"));
+  }
+}
 
-      UA_StatusCode result =
-          UA_Client_connect(m_client_pointer, endpointUrl.c_str());
+Result<bool, RichError> OPCUA_Access::reconnect(int maxRetries,
+                                                int retryDelayMs) {
+  // 1. 如果已连接，先断开
+  disconnect();
 
-      if (result == UA_STATUSCODE_GOOD) {
-        if (waitForSessionActivation(5000).is_success()) {
-          spdlog::info("Reconnection successful");
-          return Result<bool, RichError>(true);
-        } else {
-          spdlog::warn("Session activation timeout");
-          // 会话激活失败，继续重试
-          UA_Client_disconnect(m_client_pointer);
-        }
-      }
+  // 2. 清理可能存在的无效客户端
+  if (m_client_pointer) {
+    UA_Client_delete(m_client_pointer);
+    m_client_pointer = nullptr;
+  }
 
-      // 连接失败，记录错误
-      char error_text[256];
-      Cli_ErrorText(result, error_text, sizeof(error_text));
-      spdlog::error("Reconnection attempt {} failed: {} (code: {})", attempt,
-                    error_text, result);
+  // 3. 创建新客户端
+  m_client_pointer = UA_Client_new();
+  if (!m_client_pointer) {
+    UA_Client_delete(m_client_pointer);
+    m_client_pointer = nullptr;
+    return Result<bool, RichError>(
+        RichError("Failed to create client for reconnect"));
+  }
+  configureClient(); // 配置客户端参数
 
-      // 最后一次尝试失败后不再等待
-      if (attempt < maxRetries) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(retryDelayMs));
+  // 4. 重连循环
+  std::string endpointUrl =
+      "opc.tcp://" + m_ip_Address + ":" + std::to_string(m_port);
+
+  for (int attempt = 1; attempt <= maxRetries; ++attempt) {
+    spdlog::info("Reconnection attempt {}/{}", attempt, maxRetries);
+
+    UA_StatusCode result =
+        UA_Client_connect(m_client_pointer, endpointUrl.c_str());
+
+    if (result == UA_STATUSCODE_GOOD) {
+      if (waitForSessionActivation(5000).is_success()) {
+        spdlog::info("Reconnection successful");
+        return Result<bool, RichError>(true);
+      } else {
+        spdlog::warn("Session activation timeout");
+        // 会话激活失败，继续重试
+        UA_Client_disconnect(m_client_pointer);
       }
     }
 
-    return Result<bool, RichError>(RichError("Reconnection failed after " +
-                                             std::to_string(maxRetries) +
-                                             " attempts"));
+    // 连接失败，记录错误
+    char error_text[256];
+    Cli_ErrorText(result, error_text, sizeof(error_text));
+    spdlog::error("Reconnection attempt {} failed: {} (code: {})", attempt,
+                  error_text, result);
+
+    // 最后一次尝试失败后不再等待
+    if (attempt < maxRetries) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(retryDelayMs));
+    }
   }
 
+  return Result<bool, RichError>(RichError(
+      "Reconnection failed after " + std::to_string(maxRetries) + " attempts"));
+}
 
  std::vector<UA_Variant>& OPCUA_Access::getReadVariant() 
  {
@@ -681,18 +738,19 @@ Result<bool, RichError> OPCUA_Access::read() {
 
   }
 
+
 Result<bool, RichError>
-OPCUA_Access::batchReadOPCUADataBlock_FromPLC(OPCUADataBlock *data) {
+OPCUA_Access::batchReadOPCUADataBlock_FromPLC(std::vector<OPCUAModernDataStruct> &dataVec) {
   bool success = true;
   //  CLEAR ELEMEMT EXISTED BEFORE
-  this->PrepareBatchRead(data->getVariabeDataVector());
+  this->PrepareBatchRead(dataVec);
 
   //  read data from PLC
   return (this->Read_UA_Variant_From_PLC());
 }
 
 Result<bool, RichError>
-OPCUA_Access::batchWriteOPCUABlock_ToPLC(OPCUADataBlock *data) {
+OPCUA_Access::batchWriteOPCUABlock_ToPLC(std::vector<OPCUAModernDataStruct> &dataVec) {
   auto result = this->ensureConnection();
   if (result.is_fail()) {
     return Result<bool, RichError>(result);
@@ -702,7 +760,6 @@ OPCUA_Access::batchWriteOPCUABlock_ToPLC(OPCUADataBlock *data) {
  
   return Result<bool, RichError>(writeResult);
 }
-
 
 
 Result<bool, RichError> OPCUA_Access::batchWrite() {

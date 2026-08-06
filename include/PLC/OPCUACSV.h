@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cctype>
 #include <unordered_set>
+#include <regex>      // ✅ 添加：支持 std::regex, std::smatch, std::regex_search
 #include "load_config/Qt_library.h"
 #include "PLC/Struct.h"
 

@@ -1,4 +1,7 @@
 #include "PLC/OPCUACSV.h"
+#include <string>
+#include <fstream>    // ✅ 添加：支持 std::ifstream
+
 
 // 从文件读取CSV内容
 std::vector<std::string> OPCUACSVParser::readCSVFile(const std::string& filePath) {

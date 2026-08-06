@@ -3,15 +3,10 @@
 
 #include <string>
 #include <vector>
-#include <fstream>
 #include <iostream>
 #include <sstream>
-#include <regex>
 #include <snap7.h>
 #include <dlfcn.h>
-#include <cmath>
-#include <list>
-
 
 #include "MainWindows/Struct.h"
 #include "PLC/Struct.h"
@@ -134,13 +129,9 @@ public:
 
   static Result<bool, RichError> TransformBytesToDynamicValue(
       const S7DataType &type, const std::vector<uint8_t> &bytes, int offset,
-      int string_length, int bit_offset, Dynamic_Value *valuePointer) {
+      int string_length, int bit_offset,QVariant &dataVar) {
 
     // 添加参数有效性检查
-    if (valuePointer == nullptr) {
-      return Result<bool, RichError>(RichError("valuePointer is null"));
-    }
-
     if (bytes.empty()) {
       return Result<bool, RichError>(RichError("bytes vector is empty"));
     }
@@ -162,7 +153,8 @@ public:
       }
       auto tmp_byte = bytes[offset];
       bool value = (tmp_byte & (1 << bit_offset)) != 0;
-      valuePointer->Reset_Value(value);
+      
+      dataVar = value;
       break; // ✅ 添加 break
     }
 
@@ -171,7 +163,8 @@ public:
         return Result<bool, RichError>(RichError("BYTE: offset out of range"));
       }
       uint8_t value = bytes[offset];
-      valuePointer->Reset_Value(value);
+      
+      dataVar = value;
       break; // ✅ 添加 break
     }
 
@@ -181,7 +174,8 @@ public:
       }
       int16_t value = 0;
       std::memcpy(&value, bytes.data() + offset, sizeof(int16_t));
-      valuePointer->Reset_Value(value);
+      
+      dataVar = value;
       break; // ✅ 添加 break
     }
 
@@ -191,7 +185,8 @@ public:
       }
       int32_t value = 0;
       std::memcpy(&value, bytes.data() + offset, sizeof(int32_t));
-      valuePointer->Reset_Value(value);
+      
+      dataVar = value;
       break; // ✅ 添加 break
     }
 
@@ -201,7 +196,8 @@ public:
       }
       float value = 0;
       std::memcpy(&value, bytes.data() + offset, sizeof(float));
-      valuePointer->Reset_Value(value);
+      
+      dataVar = value;
       break; // ✅ 添加 break
     }
 
@@ -211,7 +207,8 @@ public:
       }
       uint16_t value = 0;
       std::memcpy(&value, bytes.data() + offset, sizeof(uint16_t));
-      valuePointer->Reset_Value(value);
+      
+      dataVar = value;
       break; // ✅ 添加 break
     }
 
@@ -221,7 +218,8 @@ public:
       }
       uint32_t value = 0;
       std::memcpy(&value, bytes.data() + offset, sizeof(uint32_t));
-      valuePointer->Reset_Value(value);
+      
+      dataVar = value;
       break; // ✅ 添加 break
     }
 
@@ -231,7 +229,8 @@ public:
       }
       uint32_t value = 0;
       std::memcpy(&value, bytes.data() + offset, sizeof(uint32_t));
-      valuePointer->Reset_Value(value);
+      
+      dataVar = value;
       break; // ✅ 添加 break
     }
 
@@ -260,7 +259,8 @@ public:
       std::string value(
           reinterpret_cast<const char *>(bytes.data() + offset + 2),
           actual_length);
-      valuePointer->Reset_Value(value);
+      
+      dataVar = QString::fromStdString(value);
       break; // ✅ 添加 break
     }
 

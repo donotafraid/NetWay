@@ -3,6 +3,13 @@
 #include <modbus/modbus-tcp.h>
 #include "Rust_error_deal/error_deal.h"
 
+#include <string>
+#include <QVariant>
+#include "PLC/Struct.h"
+#include "PLC/ModbusDataStruct.h"
+
+
+
 // ============ 请求/响应模型 ============
 struct ModbusRequest {
     enum class Type {
@@ -52,10 +59,11 @@ public:
     ModbusMediator& operator=(const ModbusMediator&) = delete;
     ModbusMediator(ModbusMediator&& other) noexcept;
     ModbusMediator& operator=(ModbusMediator&& other) noexcept;
-    
+
     // ===== 连接管理 =====
     Result<bool, RichError> connect(const std::string& ip, int port = 502);
     void disconnect();
+    Result<bool, RichError> reconnect(const std::string& ip, int port = 502);
     
     // ===== 核心：统一的请求处理入口 =====
     ModbusResponse executeRequest(const ModbusRequest& request);
@@ -84,7 +92,18 @@ public:
     
     Result<bool, RichError> writeMultipleCoils(
         int slave_id, int start_addr, const std::vector<uint8_t>& data);
-    
+
+    // ===== 新增：基于业务数据结构的便捷读写接口 =====
+    // ✅ 根据 ModbusDataStruct 读取一个变量（返回原始
+    // uint16_t，缩放由上层处理）
+    Result<uint16_t, RichError> readNode(const ModbusDataStruct &config);
+    // ✅ 根据 ModbusDataStruct 写入一个值（自动判断 Coil 还是 Register）
+    Result<bool, RichError> writeNode(const ModbusDataStruct &config,
+                                      const QVariant &value);
+
+    Result<bool, RichError> batchWriteNode(const std::vector<ModbusDataStruct> &dataVec);
+    Result<bool, RichError> batchReadNode( std::vector<ModbusDataStruct> &dataVec);
+
     // ===== 配置方法 =====
     void setResponseTimeout(int seconds, int microseconds = 0);
     void setByteTimeout(int seconds, int microseconds = 0);
@@ -103,33 +122,7 @@ private:
     
 private:
     modbus_t* ctx_;
+    std::string address;
+    int port; 
     bool connected_;
-};
-
-// ============ 业务模块 ============
-
-class TemperatureMonitor {
-public:
-    explicit TemperatureMonitor(ModbusMediator& mediator);
-    
-    Result<float, RichError> getTemperature(int slave_id, int sensor_addr);
-    Result<bool, RichError> setTemperatureThreshold(int slave_id, 
-                                                     int threshold_addr,
-                                                     float threshold);
-    
-private:
-    ModbusMediator& mediator_;
-};
-
-class SwitchMonitor {
-public:
-    explicit SwitchMonitor(ModbusMediator& mediator);
-    
-    Result<uint8_t, RichError> getSwitch(int slave_id, int sensor_addr);
-    Result<bool, RichError> setSwitchThreshold(int slave_id, 
-                                                int threshold_addr,
-                                                float threshold);
-    
-private:
-    ModbusMediator& mediator_;
 };

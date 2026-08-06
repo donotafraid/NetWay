@@ -25,6 +25,8 @@ struct PLCData {
     int32_t deviceId;       // PLC设备ID（1-10）
     float value;            // 模拟量数值（0-100）
     uint8_t quality;        // 数据质量（0:良好, 1:异常）
+    std::string protocol;
+    std::string tag_name;
     
     // 元数据（用于追踪和调试）
     int32_t sequenceNum;    // 全局序列号（从1开始递增）
@@ -37,7 +39,7 @@ struct PLCData {
         , value(0.0f)
         , quality(0)
         , sequenceNum(0)
-        , collectorId(0) {}
+        , collectorId(0),protocol("Null"),tag_name("Null"){}
     
     // 格式化输出（用于日志和调试）
     std::string toString() const {
@@ -47,6 +49,8 @@ struct PLCData {
            << ", qual=" << static_cast<int>(quality)
            << ", seq=" << sequenceNum 
            << ", col=" << collectorId
+           << ", protocol=" << protocol 
+           << ", tag=" << tag_name 
            << ", ts=" << timestamp << "]";
         return ss.str();
     }

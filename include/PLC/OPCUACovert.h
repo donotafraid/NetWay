@@ -11,7 +11,7 @@
 #include <regex>
 #include <iostream>
 #include "Rust_error_deal/error_deal.h"
-#include "PLC/OPCUADataBlock.h"
+#include "PLC/Struct.h"
 
 class OPCUADataCovert {
 public:
@@ -40,7 +40,7 @@ public:
   // OPCUA
   // UA->Normal
   Result<bool, RichError>
-  Set_UA_To_Read_Normal_Scalar(const S7DataType &S7_type, Dynamic_Value &value,
+  Set_UA_To_Read_Normal_Scalar(const S7DataType &S7_type, QVariant &dataVar,
                                int i,
                                const std::vector<UA_Variant> &batchReadVariant);
   template <typename T>
@@ -64,12 +64,15 @@ public:
   void updateBufferFromS7ModernStructByMSB(
       std::vector<OPCUAModernDataStruct> &vector,
       std::vector<uint8_t> &dataBUffer);
+
   // Uint8_t->DynamicValue
   Result<bool, RichError>
-  batchSet_Uint8_t_To_Dynamic(OPCUADataBlock *data);
+  batchSet_Uint8_t_To_Dynamic(std::vector<OPCUAModernDataStruct> &vector,
+      std::vector<uint8_t> &dataBuffer);
   // DynamicValue->Uint8_t
   Result<bool, RichError>
-  batchSet_DynamicValue_To_Uint8_t(OPCUADataBlock *data);
+  batchSet_DynamicValue_To_Uint8_t(std::vector<OPCUAModernDataStruct> &vector,
+      std::vector<uint8_t> &dataBuffer);
 
   template <typename T>
   void ByteDeserialization_memcpy(T &value, const std::vector<uint8_t> &src,

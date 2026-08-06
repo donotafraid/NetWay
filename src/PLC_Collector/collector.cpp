@@ -54,17 +54,6 @@ void CollectorThread::run() {
 
   // 采集主循环
   while (m_running.load(std::memory_order_acquire)) {
-    // 1. 生成数据
-    PLCData data = generateData();
-
-    // 2. 尝试入队
-    bool success = tryEnqueue(data);
-    if (success) {
-      m_successCount++;
-    } else {
-      m_failCount++;
-    }
-
     // 3. 控制采集频率
     std::this_thread::sleep_for(
         std::chrono::milliseconds(m_config.collectIntervalMs));
@@ -73,39 +62,4 @@ void CollectorThread::run() {
   if (m_config.enableLogging) {
     spdlog::info("[Collector {}] Stopped", m_threadId);
   }
-}
-
-PLCData CollectorThread::generateData() {
-    PLCData data;
-    
-    auto result = mediator.readHoldingRegisters(1, 0, 1);
-    if (result.is_fail()) {
-      data.quality = 1; 
-      return data;
-    }
-
-    data.quality = 0; 
-    data.value  = result.unwrap_returnLeftValue()[0] / 10.0f;
-
-    // 模拟PLC读取
-    data.timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::system_clock::now().time_since_epoch()
-    ).count();
-    
-    data.sequenceNum = ++m_sequenceCounter;
-    data.collectorId = m_threadId;
-    
-    return data;
-}
-
-
-bool CollectorThread::tryEnqueue(const PLCData& data) {
-    // 非阻塞入队
-    bool success = m_queue.enqueue(data);
-    
-    if (!success && m_config.enableLogging) {
-        spdlog::warn("[Collector {}] Queue full, data lost: {}", m_threadId, data.toString());
-    }
-    
-    return success;
 }

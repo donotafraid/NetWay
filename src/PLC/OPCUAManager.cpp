@@ -1,41 +1,65 @@
 #include "PLC/OPCUAManager.h"
 #include <spdlog/spdlog.h>
+#include "PLC/StructuredDataNode.h"
+#include "PLC/XMLParser.h"
+#include "PLC/OPCUACSV.h"
+#include "PLC/Struct.h"
+
 
 //OPCUADataReader-------------------------------------------------------------
 // ==================== 构造函数 ====================
 
 OPCUADeviceReader::OPCUADeviceReader(const std::string& identifier)
     : m_identifier(identifier) {
+      readbuffer.reserve(10000);
 }
 
 // ==================== 读取数据方法 ====================
-Result<bool, RichError> OPCUADeviceReader::ReadDataFromPLC(OPCUADataBlock* data) {
-  if (m_identifier.find("OPC_UA") != std::string::npos) {
-    return batchReadOPCUADataBlock_FromPLC(data);
-  } else {
-    return batchReadS7DataBlock_FromPLC(data);
-  }
-}
 
 Result<bool, RichError>
-OPCUADeviceReader::batchReadOPCUADataBlock_FromPLC(OPCUADataBlock *data) {
-  auto result =  m_opcUA->batchReadOPCUADataBlock_FromPLC(data); 
+OPCUADeviceReader::batchReadOPCUADataBlock_FromPLC(std::vector<OPCUAModernDataStruct> &dataVec) {
+  auto result =  m_opcUA->batchReadOPCUADataBlock_FromPLC(dataVec); 
   if(result.is_fail())
   {
     return result;
   }
   else
   {
-    return  convertOPCUAToDataPointer(data); 
+    return  convertOPCUAToDataPointer(dataVec); 
   }
 }
 
 Result<bool, RichError>
-OPCUADeviceReader::convertOPCUAToDataPointer(OPCUADataBlock *data) {
+OPCUADeviceReader::batchReadS7DataBlock_FromPLC(std::vector<OPCUAModernDataStruct> &dataVec) {
+  readbuffer.clear();
+  readbuffer.resize(10000);
+  auto result =  m_s7Acess->batchReadS7DataBlock_FromPLC(dataVec,readbuffer); 
+  if(result.is_fail())
+  {
+    return result;
+  }
+  else
+  {
+    return  m_covert.batchSet_Uint8_t_To_Dynamic(dataVec,readbuffer); 
+  }
+}
+
+Result<int, RichError>
+OPCUADeviceReader::meastureStringObjectLength(int startPostion,
+                                              OPCUAModernDataStruct &var) {
+  if (m_s7Acess) {
+    return m_s7Acess->meastureStringObjectLength(startPostion, var);
+  } else {
+    return Result<int, RichError>(RichError{"error reader type"});
+  }
+}
+
+Result<bool, RichError>
+OPCUADeviceReader::convertOPCUAToDataPointer(std::vector<OPCUAModernDataStruct> &dataVec) {
   //  store data into data_pointer
   bool success = true;
   int index = 0;
-  for (auto &var : data->getVariabeDataVector()) {
+  for (auto &var : dataVec) {
     {
       if (var.filter_reason != "" || var.is_array ||
           var.data_type_enum == S7DataType::UNKNOWN ||
@@ -45,7 +69,7 @@ OPCUADeviceReader::convertOPCUAToDataPointer(OPCUADataBlock *data) {
       }
       //  deal normal scalar condition
       Result<bool, RichError> result = this->m_covert.Set_UA_To_Read_Normal_Scalar(
-          var.data_type_enum, *var.data_pointer, index,m_opcUA->getReadVariant());
+          var.data_type_enum, var.dataVar, index,m_opcUA->getReadVariant());
       if (result.is_fail()) {
         success = false;
         return result;
@@ -64,11 +88,11 @@ OPCUADeviceReader::convertOPCUAToDataPointer(OPCUADataBlock *data) {
 }
 
 Result<bool, RichError>
-OPCUADeviceReader::convertDataPointerToOPCUA(OPCUADataBlock *data) {
-  m_opcUA->PrepareBatchWrite(data->getVariabeDataVector());
+OPCUADeviceReader::convertDataPointerToOPCUA(std::vector<OPCUAModernDataStruct> &dataVec) {
+  m_opcUA->PrepareBatchWrite(dataVec);
 
   int index = 0;
-  for (auto &var : data->getVariabeDataVector()) {
+  for (auto &var : dataVec) {
     {
       if (var.filter_reason != "" || var.is_array ||
           var.data_type_enum == S7DataType::UNKNOWN ||
@@ -89,46 +113,31 @@ OPCUADeviceReader::convertDataPointerToOPCUA(OPCUADataBlock *data) {
   return Result<bool, RichError>(true);
 }
 
-Result<bool, RichError>
-OPCUADeviceReader::batchReadS7DataBlock_FromPLC(OPCUADataBlock *data) {
-  auto result = m_s7Acess->batchReadS7DataBlock_FromPLC(data);
-  if(result.is_fail())
-  {
-    return result;
-  }
-  else
-  {
-    return m_covert.batchSet_Uint8_t_To_Dynamic(data);
-  }
-}
 
 // ==================== 写入数据方法 ====================
 Result<bool, RichError>
-OPCUADeviceReader::batchWriteOPCUABlock_ToPLC(OPCUADataBlock *data) {
-  auto result = convertDataPointerToOPCUA(data);
+OPCUADeviceReader::batchWriteOPCUABlock_ToPLC(std::vector<OPCUAModernDataStruct> &dataVec) {
+  auto result = convertDataPointerToOPCUA(dataVec);
   if(result.is_fail())
   {
     return result;
   }
   else
   {
-    return m_opcUA->batchWriteOPCUABlock_ToPLC(data); 
+    return m_opcUA->batchWriteOPCUABlock_ToPLC(dataVec); 
   }
 }
 
 Result<bool, RichError>
-OPCUADeviceReader::batchWriteS7DataBlock_ToPLC(OPCUADataBlock *data) {
+OPCUADeviceReader::batchWriteS7DataBlock_ToPLC(std::vector<OPCUAModernDataStruct> &dataVec) {
   bool connect_check = m_s7Acess->isConnected();
   if (!connect_check) {
     if (m_s7Acess->reconnect(5, 2000).is_fail()) {
       return Result<bool, RichError>(false);
     }
   }
-  m_covert.batchSet_DynamicValue_To_Uint8_t(data);
-  return m_s7Acess->batchWriteS7DataBlock_ToPLC(data); 
+  return m_s7Acess->batchWriteS7DataBlock_ToPLC(dataVec); 
 }
-
-
 // ==================== get function ====================
 
 Result<std::string, RichError> OPCUADeviceReader::getIdentifier() {
@@ -202,141 +211,17 @@ void OPCUADeviceReader::resetConnections() {
         m_s7Acess.reset();
     }
     
-    Sourcebuffer.clear();
-    Destbuffer.clear();
+    readbuffer.clear();
     m_identifier.clear();
 }
 
 // ==================== 辅助方法 ====================
-
-bool OPCUADeviceReader::validateDataBlock(OPCUADataBlock* data) const {
-    if (!data) {
-        return false;
-    }
-    
-    // 检查是否有变量
-    if (data->getVariableVectorSize() == 0) {
-        return false;
-    }
-    
-    return true;
-}
-
 void OPCUADeviceReader::logError(const std::string& function, const std::string& error) const {
     spdlog::error("[OPCUADeviceReader::{}] Error: {}", function, error);
 }
 
 void OPCUADeviceReader::logInfo(const std::string& message) const {
     spdlog::info("[OPCUADeviceReader] Info: {}", message);
-}
-
-Result<bool, RichError> OPCUADeviceReader::convertS7ToOPCUA(const std::vector<uint8_t>& s7_data,
-                                                            OPCUADataBlock* data) {
-    if (!data) {
-        return RichError("Invalid data block");
-    }
-    
-    try {
-        auto& variables = data->getVariabeDataVector();
-        size_t offset = 0;
-        
-        for (auto& var : variables) {
-            // 根据数据类型从 buffer 中读取值
-            switch (var.data_type_enum) {
-                case S7DataType::BOOL: {
-                    if (offset < s7_data.size()) {
-                        // bool value = (s7_data[offset] != 0);
-                        // var.data_pointer = std::make_unique<Dynamic_Value>(value);
-                        offset += 1;
-                    }
-                    break;
-                }
-                case S7DataType::INT: {
-                    if (offset + 1 < s7_data.size()) {
-                        // int16_t value = (s7_data[offset] << 8) | s7_data[offset + 1];
-                        // var.data_pointer = std::make_unique<Dynamic_Value>(value);
-                        offset += 2;
-                    }
-                    break;
-                }
-                case S7DataType::REAL: {
-                    if (offset + 3 < s7_data.size()) {
-                        // float value;
-                        // memcpy(&value, &s7_data[offset], sizeof(float));
-                        // var.data_pointer = std::make_unique<Dynamic_Value>(value);
-                        offset += 4;
-                    }
-                    break;
-                }
-                default:
-                    // 其他类型处理
-                    offset += 4; // 默认大小
-                    break;
-            }
-        }
-        
-        return true;
-        
-    } catch (const std::exception& e) {
-        return RichError(std::string("Conversion failed: ") + e.what());
-    }
-}
-
-Result<bool, RichError> OPCUADeviceReader::convertOPCUAToS7(OPCUADataBlock* data,
-                                                            std::vector<uint8_t>& s7_data) {
-    if (!data) {
-        return RichError("Invalid data block");
-    }
-    
-    try {
-        auto& variables = data->getVariabeDataVector();
-        s7_data.clear();
-        
-        for (const auto& var : variables) {
-            if (!var.data_pointer) {
-                // 如果没有值，填充默认值
-                s7_data.push_back(0);
-                continue;
-            }
-            
-            // 根据数据类型写入 buffer
-            switch (var.data_type_enum) {
-                case S7DataType::BOOL: {
-                    // bool value = var.data_pointer->toBool();
-                    // s7_data.push_back(value ? 1 : 0);
-                    s7_data.push_back(0);
-                    break;
-                }
-                case S7DataType::INT: {
-                    // int16_t value = var.data_pointer->toInt();
-                    // s7_data.push_back((value >> 8) & 0xFF);
-                    // s7_data.push_back(value & 0xFF);
-                    s7_data.push_back(0);
-                    s7_data.push_back(0);
-                    break;
-                }
-                case S7DataType::REAL: {
-                    // float value = var.data_pointer->toFloat();
-                    // uint8_t* bytes = reinterpret_cast<uint8_t*>(&value);
-                    // s7_data.insert(s7_data.end(), bytes, bytes + sizeof(float));
-                    s7_data.push_back(0);
-                    s7_data.push_back(0);
-                    s7_data.push_back(0);
-                    s7_data.push_back(0);
-                    break;
-                }
-                default:
-                    // 默认写入 4 字节
-                    s7_data.insert(s7_data.end(), 4, 0);
-                    break;
-            }
-        }
-        
-        return true;
-        
-    } catch (const std::exception& e) {
-        return RichError(std::string("Conversion failed: ") + e.what());
-    }
 }
 
 
@@ -346,13 +231,7 @@ Result<bool, RichError> OPCUADeviceReader::convertOPCUAToS7(OPCUADataBlock* data
 
 OPCUADataBlockModel::OPCUADataBlockModel(QObject* parent)
     : QAbstractTableModel(parent)
-    , m_OPCUADataBlock(nullptr) {
-}
-
-OPCUADataBlockModel::OPCUADataBlockModel(std::shared_ptr<OPCUADataBlock> block, 
-                                         QObject* parent)
-    : QAbstractTableModel(parent)
-    , m_OPCUADataBlock(block) {
+    {
 }
 
 // ==================== 析构函数 ====================
@@ -363,10 +242,9 @@ OPCUADataBlockModel::~OPCUADataBlockModel() {
 
 // ==================== set internal member function ====================
 
-void OPCUADataBlockModel::setOPCUADataBlock(const std::shared_ptr<OPCUADataBlock> &block) {
+void OPCUADataBlockModel::setOPCUAStructVec(const std::shared_ptr<IDataNode> block) {
     beginResetModel(); // 告诉 View 准备完全重置
-    m_OPCUADataBlock = block;
-    buildTree();
+    m_OPCUAStructVec = block;
     rebuildVisualRowMap();
     printTreeNode(m_rootNode.get());
     endResetModel(); // View 会自动重新读取所有数据
@@ -386,7 +264,7 @@ QModelIndex OPCUADataBlockModel::index(int row, int column,
         return QModelIndex();
 
     // ⚠️ 关键：这里创建索引时传入的指针是否正确？
-    TreeNode* childNode = parentNode->children[row];
+    TreeNode* childNode = parentNode->children[row].get();
     QModelIndex result =
         createIndex(row, column, childNode); // ← childNode 应该非空且有数据
 
@@ -394,22 +272,38 @@ QModelIndex OPCUADataBlockModel::index(int row, int column,
 }
 
 QModelIndex OPCUADataBlockModel::parent(const QModelIndex &child) const {
-  TreeNode *childNode = static_cast<TreeNode *>(child.internalPointer());
+    if (!child.isValid())
+        return QModelIndex();
 
-  TreeNode *parentNode = childNode ? childNode->parent : nullptr;
+    // 1. 获取子节点指针（不增加引用计数）
+    TreeNode *childNode = static_cast<TreeNode *>(child.internalPointer());
+    if (!childNode)
+        return QModelIndex();
 
-  if (!parentNode || parentNode == m_rootNode.get()) {
-    return QModelIndex();
-  }
+    // 2. 获取父节点（使用弱引用或原始指针，避免增加引用计数）
+    std::shared_ptr<TreeNode> parentNode = childNode->parent.lock(); // 如果使用 weak_ptr
+    
+    if (!parentNode)
+        return QModelIndex();
 
-  TreeNode *grandParent = parentNode->parent;
-  int row = grandParent ? grandParent->children.indexOf(parentNode) : -1;
+    // 3. 如果父节点是根节点，返回无效索引
+    if (parentNode == m_rootNode)
+        return QModelIndex();
 
-  if (row < 0)
-    return QModelIndex();
+    // 4. 获取祖父节点以计算行号
+    std::shared_ptr<TreeNode> grandParent = parentNode->parent.lock();
+    if (!grandParent)
+        return QModelIndex();
 
-  return createIndex(row, 0, parentNode);
+    // 5. 查找父节点在祖父节点中的位置
+    int row = findChildIndex(grandParent, parentNode);
+    if (row < 0)
+        return QModelIndex();
+
+    return createIndex(row, 0, parentNode.get());
 }
+
+
 
 int OPCUADataBlockModel::rowCount(const QModelIndex &parent) const {
   if (!parent.isValid()) {
@@ -444,12 +338,7 @@ bool OPCUADataBlockModel::hasChildren(const QModelIndex &parent) const {
   }
 
   // 容器节点且有子节点才返回 true
-  bool hasChild = (node->m_dataBlock == nullptr) && !node->children.isEmpty();
-  // qDebug() << "  node:" << node->displayName
-  //          << "is container:" << (node->m_dataBlock == nullptr)
-  //          << "children count:" << node->children.size()
-  //          << "hasChildren:" << hasChild
-  //          << " its index : "<<parent;
+  bool hasChild = (node->m_data == nullptr) && !node->children.isEmpty();
 
   return hasChild;
 }
@@ -467,42 +356,41 @@ QVariant OPCUADataBlockModel::data(const QModelIndex &index, int role) const {
       return (node->displayName);
 
     case 1: // Data Type 列（只读）
-      if (node->m_dataBlock)
-        return static_cast<int>(node->m_dataBlock->data_type_enum);
+      if (node->m_data)
+        return static_cast<int>(node->m_data->getDataType());
 
     case 2: // limit of authority 列（只读）
-      if (node->m_dataBlock)
-        return node->m_dataBlock->access_level;
+      if (node->m_data)
+        return node->m_data->getAccessLevel();
 
-    case 3: // Value 列 - 根据数据类型返回原始值
-      if (node->m_dataBlock)
-        switch (node->m_dataBlock->data_type_enum) {
-        case S7DataType::BOOL:
-          return node->m_dataBlock->data_pointer->get<bool>();
-        case S7DataType::BYTE:
-          return node->m_dataBlock->data_pointer->get<uint8_t>();
-        case S7DataType::INT:
-          return node->m_dataBlock->data_pointer->get<int16_t>();
-        case S7DataType::DINT:
-          return node->m_dataBlock->data_pointer->get<int32_t>();
-        case S7DataType::WORD:
-          return node->m_dataBlock->data_pointer->get<uint16_t>();
-        case S7DataType::DWORD:
-          return node->m_dataBlock->data_pointer->get<uint32_t>();
-        case S7DataType::UDINT:
-          return node->m_dataBlock->data_pointer->get<uint32_t>();
-        case S7DataType::REAL:
-          return node->m_dataBlock->data_pointer->get<float>();
-        case S7DataType::STRING:
-          return QString::fromStdString(
-              node->m_dataBlock->data_pointer->get<std::string>());
-        default:
-          return node->m_dataBlock->data_pointer->get<QVariant>();
-        }
+  case 3: // Value 列 - 根据数据类型返回原始值
+    if (node->m_data)
+      switch (node->m_data->getDataType()) {
+      case S7DataType::BOOL:
+        return node->m_data->readValue().unwrap_returnRightValue().toBool();
+      case S7DataType::BYTE: // 无符号 8位
+        return node->m_data->readValue().unwrap_returnRightValue().toUInt();
+      case S7DataType::INT: // 有符号 16位
+        return node->m_data->readValue().unwrap_returnRightValue().toInt();
+      case S7DataType::DINT: // 有符号 32位
+        return node->m_data->readValue().unwrap_returnRightValue().toInt();
+      case S7DataType::WORD: // 无符号 16位
+        return node->m_data->readValue().unwrap_returnRightValue().toUInt();
+      case S7DataType::DWORD: // 无符号 32位
+        return node->m_data->readValue().unwrap_returnRightValue().toUInt();
+      case S7DataType::UDINT: // 无符号 32位
+        return node->m_data->readValue().unwrap_returnRightValue().toUInt();
+      case S7DataType::REAL: // 浮点数 32位
+        return node->m_data->readValue().unwrap_returnRightValue().toFloat();
+      case S7DataType::STRING:
+        return node->m_data->readValue().unwrap_returnRightValue().toString();
+      default:
+        return node->m_data->readValue().unwrap_returnRightValue();
+      }
 
     case 4: // Comment 列
-      if (node->m_dataBlock)
-        return QString::fromStdString(node->m_dataBlock->description);
+      if (node->m_data)
+        return QString::fromStdString(node->m_data->getDescrition());
 
     default:
       return QVariant();
@@ -517,11 +405,11 @@ QVariant OPCUADataBlockModel::data(const QModelIndex &index, int role) const {
 
     case 1: // Data Type 列
     {
-      if(node->m_dataBlock == nullptr)
+      if(node->m_data == nullptr)
       {
         return QVariant{};
       }
-      auto it = S7DataTypeToString.find(node->m_dataBlock->data_type_enum);
+      auto it = S7DataTypeToString.find(node->m_data->getDataType());
       if (it != S7DataTypeToString.end()) {
         return QString::fromStdString(it->second);
       }
@@ -529,55 +417,54 @@ QVariant OPCUADataBlockModel::data(const QModelIndex &index, int role) const {
     }
 
     case 2: // limit of authority 列
-      if (node->m_dataBlock == nullptr) {
+      if (node->m_data == nullptr) {
         return QVariant{};
       }
-      return node->m_dataBlock->access_level;
+      return node->m_data->getAccessLevel();
 
     case 3: // Value 列 - 格式化显示
-      if (node->m_dataBlock == nullptr) {
+      if (node->m_data == nullptr) {
         return QVariant{};
       }
-      switch (node->m_dataBlock->data_type_enum) {
+      switch (node->m_data->getDataType()) {
       case S7DataType::BOOL:
-        return node->m_dataBlock->data_pointer->get<bool>() ? "true" : "false";
-
+        return node->m_data->readValue().unwrap_returnRightValue().toBool() ? "true" : "false";
       case S7DataType::BYTE:
-        return QString::number(node->m_dataBlock->data_pointer->get<uint8_t>());
-
+        return QString::number(
+            node->m_data->readValue().unwrap_returnRightValue().toUInt());
       case S7DataType::INT:
-        return QString::number(node->m_dataBlock->data_pointer->get<int16_t>());
-
+        return QString::number(
+            node->m_data->readValue().unwrap_returnRightValue().toInt());
       case S7DataType::DINT:
-        return QString::number(node->m_dataBlock->data_pointer->get<int32_t>());
-
+        return QString::number(
+            node->m_data->readValue().unwrap_returnRightValue().toInt());
       case S7DataType::WORD:
-        return QString::number(node->m_dataBlock->data_pointer->get<uint16_t>());
-
+        return QString::number(
+            node->m_data->readValue().unwrap_returnRightValue().toUInt());
       case S7DataType::DWORD:
-        return QString("0x%1").arg(node->m_dataBlock->data_pointer->get<uint32_t>(), 8, 16,
-                                   QChar('0'));
-
+        return QString("0x%1").arg(
+            node->m_data->readValue().unwrap_returnRightValue().toUInt(), 8, 16,
+            QChar('0'));
       case S7DataType::UDINT:
         return QLocale(QLocale::English)
-            .toString(node->m_dataBlock->data_pointer->get<uint32_t>());
+            .toString(
+                node->m_data->readValue().unwrap_returnRightValue().toUInt());
         // 结果示例： "1,234,567" 而不是 "1234567"
-
       case S7DataType::REAL:
-        return QString::number(node->m_dataBlock->data_pointer->get<float>(), 'f', 6);
+        return QString::number(node->m_data->readValue().unwrap_returnRightValue().toFloat(), 'f', 6);
 
       case S7DataType::STRING:
-        return QString::fromStdString(node->m_dataBlock->data_pointer->get<std::string>());
+        return node->m_data->readValue().unwrap_returnRightValue().toString();
 
       default:
-        return QString::fromStdString(node->m_dataBlock->data_pointer->get<std::string>());
+        return node->m_data->readValue().unwrap_returnRightValue().toString();
       }
 
     case 4: // Comment 列
-      if (node->m_dataBlock == nullptr) {
+      if (node->m_data == nullptr) {
         return QVariant{};
       }
-      return QString::fromStdString(node->m_dataBlock->description);
+      return QString::fromStdString(node->m_data->getDescrition());
 
     default:
       return QVariant();
@@ -599,104 +486,98 @@ bool OPCUADataBlockModel::setData(const QModelIndex& index, const QVariant& valu
     }
 
     // 2. 获取对应的 VariableInfo
-    OPCUAModernDataStruct *dataBlock = node->m_dataBlock;
+    std::shared_ptr<IDataNode> dataBlock = node->m_data;
     if (!dataBlock) {
       // 这是一个容器节点（如 "Motor"），不可编辑
       return false;
     }
 
     if (index.column() == 3) { // Value 列
-        // 根据数据类型进行验证和转换
-        switch (node->m_dataBlock->data_type_enum) {
-        case S7DataType::BOOL: {
-            bool boolValue = value.toBool();
-            node->m_dataBlock->data_pointer->Reset_Value(boolValue);
-            break;
-        }
-        
-        case S7DataType::BYTE: {
-            bool ok;
-            int intValue = value.toInt(&ok);
-            if (ok && intValue >= 0 && intValue <= 255) {
-                node->m_dataBlock->data_pointer->Reset_Value(static_cast<uint8_t>(intValue));
-            } else {
-                return false; // 数据无效
-            }
-            break;
-        }
-        
-        case S7DataType::INT: {
-            bool ok;
-            int intValue = value.toInt(&ok);
-            if (ok && intValue >= -32768 && intValue <= 32767) {
-                node->m_dataBlock->data_pointer->Reset_Value(static_cast<int16_t>(intValue));
-            } else {
-                return false;
-            }
-            break;
-        }
-        
-        case S7DataType::DINT: {
-            bool ok;
-            qint64 longValue = value.toLongLong(&ok);
-            if (ok && longValue >= -2147483648LL && longValue <= 2147483647LL) {
-                node->m_dataBlock->data_pointer->Reset_Value(static_cast<int32_t>(longValue));
-            } else {
-                return false;
-            }
-            break;
-        }
-        
-        case S7DataType::WORD: {
-            bool ok;
-            int intValue = value.toInt(&ok);
-            if (ok && intValue >= 0 && intValue <= 65535) {
-                node->m_dataBlock->data_pointer->Reset_Value(static_cast<uint16_t>(intValue));
-            } else {
-                return false;
-            }
-            break;
-        }
-        
-        case S7DataType::DWORD:
-        case S7DataType::UDINT: {
-            bool ok;
-            uint32_t uintValue = value.toUInt(&ok);
-            if (ok) {
-                node->m_dataBlock->data_pointer->Reset_Value(uintValue);
-            } else {
-                return false;
-            }
-            break;
-        }
-        
-        case S7DataType::REAL: {
-            float floatValue = value.toFloat();
-            node->m_dataBlock->data_pointer->Reset_Value(floatValue);
+      // 根据数据类型进行验证和转换
+      switch (dataBlock->getDataType()) {
+      case S7DataType::BOOL: {
+        dataBlock->writeValue(value);
+        break;
+      }
 
-            float savedValue = node->m_dataBlock->data_pointer->get<float>();
-            spdlog::debug("Saved REAL value: {}, expected: {}", savedValue, floatValue);
-            break;
+      case S7DataType::BYTE: {
+        bool ok;
+        int intValue = value.toInt(&ok);
+        if (ok && intValue >= 0 && intValue <= 255) {
+          dataBlock->writeValue(value);
+        } else {
+          return false; // 数据无效
         }
-        
-        case S7DataType::STRING: {
-            QString stringValue = value.toString();
-            node->m_dataBlock->data_pointer->Reset_Value(stringValue.toStdString());
-            break;
+        break;
+      }
+
+      case S7DataType::INT: {
+        bool ok;
+        int intValue = value.toInt(&ok);
+        if (ok && intValue >= -32768 && intValue <= 32767) {
+          dataBlock->writeValue(value);
+        } else {
+          return false;
         }
-        
-        default: {
-            // 未知类型，尝试存储为字符串
-            node->m_dataBlock->data_pointer->Reset_Value(value.toString());
-            break;
+        break;
+      }
+
+      case S7DataType::DINT: {
+        bool ok;
+        qint64 longValue = value.toLongLong(&ok);
+        if (ok && longValue >= -2147483648LL && longValue <= 2147483647LL) {
+          dataBlock->writeValue(value);
+        } else {
+          return false;
         }
+        break;
+      }
+
+      case S7DataType::WORD: {
+        bool ok;
+        int intValue = value.toInt(&ok);
+        if (ok && intValue >= 0 && intValue <= 65535) {
+          dataBlock->writeValue(value);
+        } else {
+          return false;
         }
-        
-        // 数据修改成功，发射信号通知视图更新
-        emit dataChanged(index, index, {Qt::DisplayRole});
-        return true;
+        break;
+      }
+
+      case S7DataType::DWORD:
+      case S7DataType::UDINT: {
+        bool ok;
+        uint32_t uintValue = value.toUInt(&ok);
+        if (ok) {
+          dataBlock->writeValue(value);
+        } else {
+          return false;
+        }
+        break;
+      }
+
+      case S7DataType::REAL: {
+        dataBlock->writeValue(value);
+        break;
+      }
+
+      case S7DataType::STRING: {
+        dataBlock->writeValue(value);
+        break;
+      }
+
+      default: {
+        // 未知类型，尝试存储为字符串
+        dataBlock->writeValue(value);
+        break;
+      }
+      }
+
+      // 数据修改成功，发射信号通知视图更新
+      emit dataChanged(index, index, {Qt::DisplayRole});
+      return true;
     }
-    
+
     // if (index.column() == 4) { // Comment 列
     //     node->m_dataBlock->description = value.toString().toStdString();
     //     emit dataChanged(index, index, {Qt::DisplayRole});
@@ -741,7 +622,7 @@ Qt::ItemFlags OPCUADataBlockModel::flags(const QModelIndex &index) const {
     return Qt::NoItemFlags;
 
   TreeNode *node = static_cast<TreeNode *>(index.internalPointer());
-  if (node->m_dataBlock && index.column() == 3 &&
+  if (node->m_data && index.column() == 3 &&
       node->children.isEmpty()) { // 关键：检查是否有子节点
     return Qt::ItemIsEnabled | Qt::ItemIsSelectable | Qt::ItemIsEditable;
   }
@@ -751,7 +632,7 @@ Qt::ItemFlags OPCUADataBlockModel::flags(const QModelIndex &index) const {
 
 // ==================== batch update function ====================
 void OPCUADataBlockModel::batchSetDataForOPCUA() {
-if (!m_OPCUADataBlock )
+  if (!m_OPCUAStructVec)
     return;
 
   // 2. 恢复信号并一次性通知更新
@@ -785,10 +666,14 @@ bool OPCUADataBlockModel::isValidIndex(const QModelIndex &index) const {
         node->displayName.isEmpty() ? "(unnamed)" : node->displayName);
 
     // 添加类型标识
-    if (node->m_dataBlock) {
+    if (node->m_data) {
       // 变量节点
-      QString typeStr = QString::fromStdString(node->m_dataBlock->data_type);
-      nodeInfo += QString(" [变量: %1]").arg(typeStr);
+      auto it = S7DataTypeToString.find(node->m_data->getDataType());
+      if (it == S7DataTypeToString.end()) {
+        QString typeStr = QString::fromStdString("UNKNOWN");
+        }
+        QString typeStr = QString::fromStdString(it->second);
+        nodeInfo += QString(" [变量: %1]").arg(typeStr);
     } else {
       // 容器节点
       nodeInfo += QString(" [容器, 子节点数: %1]").arg(node->children.size());
@@ -799,7 +684,7 @@ bool OPCUADataBlockModel::isValidIndex(const QModelIndex &index) const {
     // 递归打印子节点
     for (int i = 0; i < node->children.size(); i++) {
       bool lastChild = (i == node->children.size() - 1);
-      printTreeNode(node->children[i], depth + 1, lastChild);
+      printTreeNode(node->children[i].get(), depth + 1, lastChild);
     }
   }
 
@@ -898,35 +783,7 @@ bool OPCUADataBlockModel::isValidIndex(const QModelIndex &index) const {
     return "";
   }
 
-  std::string OPCUADataBlockModel::extractLastPartWithoutIndexForNormal(
-      const std::string &input) {
-    // 直接查找最后一个双引号包裹的内容（包含双引号）
-    // 正则表达式: "([^"]+)"$ 匹配最后一个双引号内容
-    std::regex pattern("\"([^\"]+)\"$");
-    std::smatch match;
 
-    if (std::regex_search(input, match, pattern)) {
-      std::string result = match[1];
-
-      // 去除开头所有的 "\" 
-    while (!result.empty() && result.front() == '\\') {
-      result.erase(0, 1);
-    }
-
-    // 去除结尾所有的 "\""
-    while (!result.empty() && result.back() == '\\') {
-    result.pop_back();
-  }
-
-  return result;
-  }
-
-  return "";
-  }
-
-  std::string OPCUADataBlockModel::extractLastPartWithoutIndexForNormal(const OPCUAModernDataStruct &data) {
-    return data.parentName; 
-  }
 
 // ==================== 辅助方法 ====================
 
@@ -944,7 +801,7 @@ QString OPCUADataBlockModel::getDisplayValue(const OPCUAModernDataStruct& var, i
             return QVariant().toString();
             
         case Value:
-            if (var.data_pointer) {
+            if (var.data_type_enum != S7DataType::UNKNOWN) {
                 // 根据实际 Dynamic_Value 的实现来获取值
                 // return var.data_pointer->toQVariant().toString();
                 return QString::fromStdString(var.data_type);
@@ -989,41 +846,25 @@ QString OPCUADataBlockModel::getTypeString(S7DataType type) const {
     }
 }
 
-bool OPCUADataBlockModel::setVariableValue(OPCUAModernDataStruct& var, 
-                                           int column, 
-                                           const QVariant& value) {
-    if (column != Value) {
-        return false;
-    }
-    
-    if (!var.data_pointer) {
-        // 如果 data_pointer 为空，可能需要创建
-        // var.data_pointer = std::make_unique<Dynamic_Value>();
-        return false;
-    }
-    
-    try {
-        // 根据实际 Dynamic_Value 的实现来设置值
-        // var.data_pointer->fromQVariant(value);
-        
-        // 临时实现
-        return true;
-    } catch (const std::exception& e) {
-        spdlog::error("Failed to set variable value: {}", e.what());
-        return false;
-    }
-}
 
 QModelIndex OPCUADataBlockModel::indexFromNode(TreeNode *node,
                                                int column ) const {
   if (!node || node == m_rootNode.get())
     return QModelIndex();
 
-  TreeNode *parentNode = node->parent;
+  std::shared_ptr<TreeNode> parentNode = node->parent.lock();
   if (!parentNode)
     return QModelIndex();
 
-  int row = parentNode->children.indexOf(const_cast<TreeNode *>(node));
+  // 查找 node 在父节点 children 中的位置
+  // 需要遍历查找原始指针对应的 shared_ptr
+  int row = -1;
+  for (int i = 0; i < parentNode->children.size(); ++i) {
+    if (parentNode->children[i].get() == node) {
+      row = i;
+      break;
+    }
+  }
   if (row < 0)
     return QModelIndex();
 
@@ -1059,8 +900,8 @@ void OPCUADataBlockModel::buildVisualRowMapRecursive(TreeNode *node,
   {
     return ;
   }
-  for (TreeNode *child : node->children) {
-    buildVisualRowMapRecursive(child, currentRow);
+  for (auto child : node->children) {
+    buildVisualRowMapRecursive(child.get(), currentRow);
   }
 }
 
@@ -1111,123 +952,6 @@ TreeNode *OPCUADataBlockModel::getRootNode()
   return m_rootNode.get();
 }
 
-void OPCUADataBlockModel::buildTree(TreeNode *parent) {
-  if (!m_rootNode) {
-    m_rootNode = std::make_shared<TreeNode>();
-    m_rootNode->displayName = "Root";
-  }
-
-  for (auto &element : m_OPCUADataBlock->getVariabeDataVector()) {
-    //  special node skip it
-    if (element.filter_reason != "" ||
-        m_parentNodeIDMap.find(QString::fromStdString(element.variable_name)) !=
-            m_parentNodeIDMap.end()) {
-      continue;
-    }
-    TreeNode *parent = nullptr;
-
-    auto it = m_parentNodeIDMap.find(QString::fromStdString(element.parent_nodeID));
-    if (it != m_parentNodeIDMap.end()) {
-      //  find it !
-      parent = it.value();
-    } else {
-      //  can not find it ! mean we need build parent Node in Map fisrt
-      parent = createPlaceholderNode(element.parent_nodeID);
-    }
-
-    TreeNode *varNode = new TreeNode();
-    if (element.arrayDimensions == "" && element.data_type_enum != S7DataType::UNKNOWN) {
-      varNode->m_dataBlock = &element;
-    }
-    if(!varNode->m_dataBlock)
-    {
-      element.data_type_enum = S7DataType::UNKNOWN;
-    }
-
-    //  Array_Template do not need set m_dataBlock
-    varNode->parent = parent;
-    varNode->displayName = QString::fromStdString(element.variable_name);
-
-    //  build parent-son relationship
-    parent->children.append(varNode);
-    m_parentNodeIDMap[QString::fromStdString(element.variable_nodeID)] = varNode;
-    // Resize the varNode parent array according to child sizes.
-    if(parent->m_dataBlock != nullptr)
-    {
-      parent->m_dataBlock->s7_data_array_length = parent->children.size(); 
-      parent->m_dataBlock->is_array = true;
-    }
-   
-  }
-}
-
-TreeNode *
-OPCUADataBlockModel::createPlaceholderNode(const std::string &parent_nodeID) {
-  if (m_parentNodeIDMap.find(QString::fromStdString(parent_nodeID)) !=
-      m_parentNodeIDMap.end()) {
-    //  mean the parent node has exist
-    return nullptr;
-  }
-
-  TreeNode *placeholder = new TreeNode();
-  std::string parentName{extractLastPartWithoutIndexForNormal(parent_nodeID)};
-  placeholder->displayName = QString::fromStdString(parentName);
-  m_parentNodeIDMap[QString::fromStdString(parent_nodeID)] = placeholder;
-
-  //  get parent data block
-  auto parentPointer = findOPCUADataStruct(parent_nodeID);
- 
-  if (parentPointer) {
-    //  generate parent node by parent data block when the parent node do not
-    //  exist in parent map
-    auto gradParentPointer =
-        createPlaceholderNode(parentPointer->parent_nodeID);
-    if (!gradParentPointer) {
-      //  mean the gradparent node has exist , need find by map
-      // placeholder->parent = m_parentNodeIDMap[QString::fromStdString(
-      //     getParentName(*parentPointer))];
-      placeholder->parent = m_parentNodeIDMap[QString::fromStdString(
-          parentPointer->parent_nodeID)];
-    } else {
-      placeholder->parent = gradParentPointer;
-    }
-  } else {
-    //  find node result -> nullptr means the node is root node (DB......)
-    placeholder->parent = m_rootNode.get();
-  }
-
-  placeholder->parent->children.append(placeholder);
-  return placeholder;
-}
-
-OPCUAModernDataStruct * 
-OPCUADataBlockModel::findOPCUADataStruct(const std::string &parent_nodeID) {
-  for(auto &element : m_OPCUADataBlock->getVariabeDataVector()) 
-  {
-    if(element.variable_nodeID == parent_nodeID)
-    {
-      return &element;
-    }
-  }
-  return nullptr;
-}
-
-std::string
-OPCUADataBlockModel::getParentName(const OPCUAModernDataStruct &element) {
-  std::string parentName{};
-  
-  if(element.isOPCUAType)
-  {
-    parentName = extractLastPartWithoutIndexForNormal(element.parent_nodeID);
-  }
-  else
-  {
-    parentName = extractLastPartWithoutIndexForNormal(element);
-  }
-  return parentName;
-}
-
-
 void OPCUADataBlockModel::updateAllDataByLevel(int targetColumn) {
   // 按层级分组，减少 dataChanged 调用次数
   QMap<int, QList<QModelIndex>> levelMap;
@@ -1274,20 +998,44 @@ void OPCUADataBlockModel::collectIndicesByLevel(
     }
   }
 
-  for (TreeNode *child : node->children) {
-    collectIndicesByLevel(child, level + 1, levelMap);
+  for (auto child : node->children) {
+    collectIndicesByLevel(child.get(), level + 1, levelMap);
   }
 }
 
 //OPCUADataBlockBuilder------------------------------------------------------------
+void OPCUADataBlockBuilder::initialize(Scope *scope) {
+
+  std::shared_ptr<OPCUADeviceReader> reader =
+      scope->getShared<OPCUADeviceReader>();
+  if (!reader) {
+    spdlog::error("OPCUADataBlockBuilder::OPCUADeviceReader getSharedPtr is fail");
+  } else {
+    m_reader = std::move(reader);
+  }
+}
+
 Result<bool, RichError>
 OPCUADataBlockBuilder::build(const QString  &content,const std::string &ip_Address) {
   //  build DataBlock and package it into Result
   auto result = this->add_OPCUADataBlock_from_OPCUADataBlockDefinition(content,ip_Address,InputFormat::XML);
 
+  std::shared_ptr<IDataNode> dataPointer;
   if (result.is_success()) {
-    emit requestSaveOPCUAParseResult(std::move(result.unwrap_returnLeftValue()));
-    return Result<bool, RichError>(true);
+    auto rootNode = buildTree(result.unwrap_returnLeftValue());
+    calculate_data_block_size(result.unwrap_returnLeftValue());
+    dataPointer = std::make_shared<StructuredDataNode>(
+        std::move(result.unwrap_returnLeftValue()));
+
+    if (dataPointer&& rootNode != nullptr)
+    {
+      emit requestSaveOPCUAParseResult(std::move(dataPointer), std::move(rootNode));
+      return Result<bool, RichError>(true);
+    }
+    else
+    {
+    return Result<bool, RichError>(RichError{"m_vec = empty || rootNode = nullptr"});
+    }
   } else {
     return Result<bool, RichError>(RichError{result.unwrap_err()});
   }
@@ -1298,9 +1046,20 @@ OPCUADataBlockBuilder::build_CSV(const QString  &content,const std::string &ip_A
   //  build DataBlock and package it into Result
   auto result = this->add_OPCUADataBlock_from_OPCUADataBlockDefinition(content,ip_Address,InputFormat::CSV);
 
+  std::shared_ptr<IDataNode> dataPointer;
   if (result.is_success()) {
-    emit requestSaveOPCUAParseResult(std::move(result.unwrap_returnLeftValue()));
-    return Result<bool, RichError>(true);
+    auto rootNode = buildTree(result.unwrap_returnLeftValue());
+    calculate_data_block_size(result.unwrap_returnLeftValue());
+    dataPointer = std::make_shared<StructuredDataNode>(
+        std::move(result.unwrap_returnLeftValue()));
+
+    if (dataPointer && rootNode != nullptr) {
+      emit requestSaveOPCUAParseResult(std::move(dataPointer), rootNode);
+      return Result<bool, RichError>(true);
+    } else {
+      return Result<bool, RichError>(
+          RichError{"m_vec = empty || rootNode = nullptr"});
+    }
   } else {
     return Result<bool, RichError>(RichError{result.unwrap_err()});
   }
@@ -1327,22 +1086,58 @@ OPCUADataBlockBuilder::build_InlineBrowse(const std::string &ip_Address) {
   }
   else
   {
+    calculate_data_block_size(vec);
     parseResult->getOPCUAStrcutVec(std::move(vec));
   }
 
   {
-    emit requestSaveOPCUAParseResult(std::move(parseResult));
-    return Result<bool, RichError>(true);
+    std::shared_ptr<IDataNode> dataPointer;
+    auto rootNode = buildTree(vec);
+    dataPointer = std::make_shared<StructuredDataNode>(std::move(vec));
+
+    if (dataPointer && rootNode != nullptr) {
+      emit requestSaveOPCUAParseResult(std::move(dataPointer), rootNode);
+      return Result<bool, RichError>(true);
+    } else {
+      return Result<bool, RichError>(
+          RichError{"m_vec = empty || rootNode = nullptr"});
+    }
   }
 }
 
-Result<std::shared_ptr<OPCUAParseResult>, RichError>
+ Result<bool, RichError> OPCUADataBlockBuilder::build_S7(const OPCUADataBlockDefinition &content,
+                                     const std::string &ip_Address) {
+      //  build DataBlock and package it into Result
+      auto result = this->add_OPCUADataBlock_from_OPCUADataBlockDefinition(
+          content, ip_Address);
+
+      std::shared_ptr<IDataNode> dataPointer;
+      if (result.is_success()) {
+        auto rootNode = buildTree(result.unwrap_returnLeftValue());
+        calculate_data_block_size(
+            result.unwrap_returnLeftValue());
+        dataPointer = std::make_shared<StructuredDataNode>(std::move(result.unwrap_returnLeftValue()));
+       
+        if (dataPointer && rootNode != nullptr) {
+          emit requestSaveOPCUADataBlock(std::move(dataPointer), rootNode);
+          return Result<bool, RichError>(true);
+        } else {
+          return Result<bool, RichError>(
+              RichError{"m_vec = empty || rootNode = nullptr"});
+        }
+      } else {
+        std::cout << "DataBlockBuilder::build is failed." << std::endl;
+        return Result<bool, RichError>(RichError{result.unwrap_err()});
+      }
+    }
+
+Result<std::vector<OPCUAModernDataStruct>, RichError>
 OPCUADataBlockBuilder::add_OPCUADataBlock_from_OPCUADataBlockDefinition(
     const QString &file_path, const std::string &ip_Address,const InputFormat &buildType) {
   // 读取XML文件
   std::ifstream file(file_path.toStdString());
   if (!file.is_open()) {
-    return Result<std::shared_ptr<OPCUAParseResult>, RichError>(
+    return Result<std::vector<OPCUAModernDataStruct>, RichError>(
         RichError{"XML parse fail"});
   }
 
@@ -1357,10 +1152,10 @@ OPCUADataBlockBuilder::add_OPCUADataBlock_from_OPCUADataBlockDefinition(
     std::shared_ptr<OPCUAParseResult> result = parser.parse();
     auto updateResult = updateTypeEnum(result);
     if (updateResult.is_fail()) {
-      return Result<std::shared_ptr<OPCUAParseResult>, RichError>(
+      return Result<std::vector<OPCUAModernDataStruct>, RichError>(
           RichError{"OPCUAXML Parser work fail"});
     } else {
-      return Result<std::shared_ptr<OPCUAParseResult>, RichError>((result));
+      return Result<std::vector<OPCUAModernDataStruct>, RichError>(std::move(result->variables));
     }
   }
   else if(buildType ==InputFormat::CSV)
@@ -1372,8 +1167,9 @@ OPCUADataBlockBuilder::add_OPCUADataBlock_from_OPCUADataBlockDefinition(
     std::vector<std::string> lines = parser.readCSVFile(file_path.toStdString());
 
     if (lines.empty()) {
-      return Result<std::shared_ptr<OPCUAParseResult>, RichError>(
-          RichError{"source csv file is empty in add_OPCUADataBlock_from_OPCUADataBlockDefinition"});
+      return Result<std::vector<OPCUAModernDataStruct>, RichError>(
+          RichError{"source csv file is empty in "
+                    "add_OPCUADataBlock_from_OPCUADataBlockDefinition"});
     }
 
   // 3. 解析数据并填充结构体（hasHeader=true表示跳过第一行标题）
@@ -1387,21 +1183,20 @@ OPCUADataBlockBuilder::add_OPCUADataBlock_from_OPCUADataBlockDefinition(
       vecData.push_back(std::move(data));
     }
     result->getOPCUAStrcutVec(std::move(vecData));
-    return Result<std::shared_ptr<OPCUAParseResult>, RichError>((result));
+    return Result<std::vector<OPCUAModernDataStruct>, RichError>(std::move(result->variables));
   }
   else
   {
-    return Result<std::shared_ptr<OPCUAParseResult>, RichError>(
+    return Result<std::vector<OPCUAModernDataStruct>, RichError>(
         RichError{"error build type in "
                   "add_OPCUADataBlock_from_OPCUADataBlockDefinition "});
   }
 }
 
-Result<std::shared_ptr<OPCUADataBlock>, RichError>
+Result<std::vector<OPCUAModernDataStruct>, RichError>
 OPCUADataBlockBuilder::add_OPCUADataBlock_from_OPCUADataBlockDefinition(
     const OPCUADataBlockDefinition &data_block_definition, const std::string &ip_Address) {
   // Add variables of basic types through loop checking
-  auto dataBlock = std::make_shared<OPCUADataBlock>();
   std::vector<OPCUAModernDataStruct> m_variable_vector;
 
   bool is_done_successfully = true;
@@ -1415,18 +1210,10 @@ OPCUADataBlockBuilder::add_OPCUADataBlock_from_OPCUADataBlockDefinition(
         is_done_successfully;
   }
 
-  std::shared_ptr<OPCUAParseResult> m_variable =
-      std::make_shared<OPCUAParseResult>();
-  dataBlock->setParseResult(m_variable);
-  dataBlock->setVariableMap(m_variable_vector);
-  dataBlock->calculateDataBlockLength(data_block_definition.total_bytes_size);
-  dataBlock->setName(data_block_definition.data_block_name);
-  dataBlock->setIpAddres(ip_Address);
-
   if (is_done_successfully) {
-    return Result<std::shared_ptr<OPCUADataBlock>, RichError>(dataBlock);
+    return Result<std::vector<OPCUAModernDataStruct>, RichError>(std::move(m_variable_vector));
   } else {
-    return Result<std::shared_ptr<OPCUADataBlock>, RichError>(
+    return Result<std::vector<OPCUAModernDataStruct>, RichError>(
         RichError("add variable failed"));
   }
 }
@@ -1487,46 +1274,7 @@ OPCUADataBlockBuilder::add_variable_from_OPCUADataBlockDefinition(
             variable_definition.s7_data_type_length;
         tmp_variable.s7_data_array_length =
             variable_definition.s7_data_array_length;
-
-        // initialize data_pointer
-        switch (variable_definition.data_type_enum) {
-        case S7DataType::BOOL:
-          tmp_variable.data_pointer = std::make_unique<Dynamic_Value>(false);
-          break;
-        case S7DataType::BYTE:
-          tmp_variable.data_pointer =
-              std::make_unique<Dynamic_Value>(uint8_t{0});
-          break;
-        case S7DataType::INT:
-          tmp_variable.data_pointer = std::make_unique<Dynamic_Value>(int{0});
-          break;
-        case S7DataType::DINT:
-          tmp_variable.data_pointer =
-              std::make_unique<Dynamic_Value>(int32_t{0});
-          break;
-        case S7DataType::REAL:
-          tmp_variable.data_pointer = std::make_unique<Dynamic_Value>(float{0});
-          break;
-        case S7DataType::WORD:
-          tmp_variable.data_pointer =
-              std::make_unique<Dynamic_Value>(uint16_t{0});
-          break;
-        case S7DataType::DWORD:
-          tmp_variable.data_pointer =
-              std::make_unique<Dynamic_Value>(uint32_t{0});
-          // 如需显示十六进制，在 data() 函数中转换，而不是存字符串
-          break;
-        case S7DataType::UDINT:
-          tmp_variable.data_pointer =
-              std::make_unique<Dynamic_Value>(uint32_t{0});
-          break;
-        case S7DataType::STRING:
-          tmp_variable.data_pointer =
-              std::make_unique<Dynamic_Value>(std::string{"Null"});
-          break;
-        default:
-          break;
-        }
+        tmp_variable.dataVar = 0;
 
         m_variable_vector.push_back(std::move(tmp_variable));
         is_done_successfully = true;
@@ -1548,7 +1296,7 @@ Result<bool,RichError> OPCUADataBlockBuilder::updateTypeEnum(std::shared_ptr<OPC
     auto it = typeMap.find(item.raw_data_type);
     if (it != typeMap.end()) {
       item.data_type_enum = it->second;
-      resetValueByTypeEnum(item);
+      item.dataVar = 0 ;
     } else {
       item.data_type_enum = S7DataType::UNKNOWN;
     }
@@ -1556,30 +1304,133 @@ Result<bool,RichError> OPCUADataBlockBuilder::updateTypeEnum(std::shared_ptr<OPC
   return Result<bool, RichError>(true);
 }
 
-void OPCUADataBlockBuilder::resetValueByTypeEnum(OPCUAModernDataStruct &data) {
-  auto &s7_type = data.data_type_enum;
-  if (s7_type == S7DataType::BOOL) {
-    { data.data_pointer->Reset_Value(bool{0}); }
-  } else if (s7_type == S7DataType::BYTE) {
-    uint8_t tmp;
-    { data.data_pointer->Reset_Value(uint8_t{0}); }
-  } else if (s7_type == S7DataType::INT) {
-    { data.data_pointer->Reset_Value(int16_t{0}); }
-  } else if (s7_type == S7DataType::WORD) {
-    { data.data_pointer->Reset_Value(uint16_t{0}); }
-  } else if (s7_type == S7DataType::DWORD || s7_type == S7DataType::UDINT) {
-    { data.data_pointer->Reset_Value(uint32_t{0}); }
-  } else if (s7_type == S7DataType::DINT) {
-    { data.data_pointer->Reset_Value(int32_t{0}); }
-  } else if (s7_type == S7DataType::REAL) {
-    { data.data_pointer->Reset_Value(float{0}); }
-  } else if (s7_type == S7DataType::STRING) {
-    { data.data_pointer->Reset_Value(std::string{0}); }
-  } else {
-    { data.data_pointer->Reset_Value(std::string{0}); }
+std::shared_ptr<TreeNode> OPCUADataBlockBuilder::buildTree(std::vector<OPCUAModernDataStruct> &dataNodes) {
+  std::shared_ptr<TreeNode> m_rootNode = std::make_shared<TreeNode>();
+  m_rootNode->displayName = "Root";
+
+  QHash<QString, std::shared_ptr<TreeNode>>
+      m_parentNodeIDMap; // 路径到节点的映射
+  for (auto &element : dataNodes) {
+    //  special node skip it
+    if (element.filter_reason != "") {
+      continue;
+    }
+    std::weak_ptr<TreeNode> parent ;
+
+    auto it = m_parentNodeIDMap.find(QString::fromStdString(element.parent_nodeID));
+    if (it != m_parentNodeIDMap.end()) {
+      //  find it !
+      parent = it.value();
+    } else {
+      //  can not find it ! mean we need build parent Node in Map fisrt
+      parent = createPlaceholderNode(m_rootNode,element.parent_nodeID,m_parentNodeIDMap,dataNodes);
+    }
+
+    std::shared_ptr<TreeNode> varNode = std::shared_ptr<TreeNode>();
+    if (element.arrayDimensions == "" && element.data_type_enum != S7DataType::UNKNOWN) {
+      std::shared_ptr<IDataNode> dataNode =
+          std::make_shared<StructuredDataNode>(&element);
+      varNode->m_data = dataNode;
+    }
+    if(!varNode->m_data)
+    {
+      element.data_type_enum = S7DataType::UNKNOWN;
+    }
+
+    //  Array_Template do not need set m_dataBlock
+    varNode->parent = parent;
+    varNode->displayName = QString::fromStdString(element.variable_name);
+
+    //  build parent-son relationship
+    std::shared_ptr<TreeNode> tmpPointer = parent.lock();
+    tmpPointer->children.append(varNode);
+    m_parentNodeIDMap[QString::fromStdString(element.variable_nodeID)] = varNode;
   }
+  return m_rootNode;
 }
 
+std::shared_ptr<TreeNode> OPCUADataBlockBuilder::createPlaceholderNode(
+    std::shared_ptr<TreeNode> &rootNode, const std::string &parent_nodeID,
+    QHash<QString, std::shared_ptr<TreeNode>> &m_parentNodeIDMap,
+    std::vector<OPCUAModernDataStruct> &dataNodes) {
+  if (m_parentNodeIDMap.find(QString::fromStdString(parent_nodeID)) !=
+      m_parentNodeIDMap.end()) {
+    //  mean the parent node has exist
+    return nullptr;
+  }
+
+  std::shared_ptr<TreeNode> placeholder = std::shared_ptr<TreeNode>();
+  std::string parentName{extractLastPartWithoutIndexForNormal(parent_nodeID)};
+  placeholder->displayName = QString::fromStdString(parentName);
+  m_parentNodeIDMap[QString::fromStdString(parent_nodeID)] = placeholder;
+
+  //  get parent data block
+  auto parentPointer = findOPCUADataStruct(parent_nodeID,dataNodes);
+ 
+  if (parentPointer) {
+    //  generate parent node by parent data block when the parent node do not
+    //  exist in parent map
+    auto gradParentPointer = createPlaceholderNode(
+        rootNode, parentPointer->parent_nodeID, m_parentNodeIDMap, dataNodes);
+    if (!gradParentPointer) {
+      //  mean the gradparent node has exist , need find by map
+      placeholder->parent = m_parentNodeIDMap[QString::fromStdString(
+          parentPointer->parent_nodeID)];
+    } else {
+      placeholder->parent = gradParentPointer;
+    }
+  } else {
+    //  find node result -> nullptr means the node is root node (DB......)
+    placeholder->parent = rootNode;
+  }
+
+  std::shared_ptr<TreeNode> tmpPointer = placeholder->parent.lock();
+  tmpPointer->children.append(placeholder);
+  return placeholder;
+}
+
+OPCUAModernDataStruct * 
+OPCUADataBlockBuilder::findOPCUADataStruct(const std::string &parent_nodeID,std::vector<OPCUAModernDataStruct> &dataNodes) {
+  for(auto &element : dataNodes) 
+  {
+    if(element.variable_nodeID == parent_nodeID)
+    {
+      return &element;
+    }
+  }
+  return nullptr;
+}
+
+std::string OPCUADataBlockBuilder::extractLastPartWithoutIndexForNormal(
+    const std::string &input) {
+  // 直接查找最后一个双引号包裹的内容（包含双引号）
+  // 正则表达式: "([^"]+)"$ 匹配最后一个双引号内容
+  std::regex pattern("\"([^\"]+)\"$");
+  std::smatch match;
+
+  if (std::regex_search(input, match, pattern)) {
+    std::string result = match[1];
+
+    // 去除开头所有的 "\"
+    while (!result.empty() && result.front() == '\\') {
+      result.erase(0, 1);
+    }
+
+    // 去除结尾所有的 "\""
+    while (!result.empty() && result.back() == '\\') {
+      result.pop_back();
+    }
+
+    return result;
+  }
+
+  return "";
+}
+
+std::string OPCUADataBlockBuilder::extractLastPartWithoutIndexForNormal(
+    const OPCUAModernDataStruct &data) {
+  return data.parentName;
+}
 //OPCUADelegate-----------------------------------------------------------
 QWidget *OPCUADataDelegate::createEditor(QWidget *parent,
                                          const QStyleOptionViewItem &option,
@@ -1587,11 +1438,11 @@ QWidget *OPCUADataDelegate::createEditor(QWidget *parent,
   if (index.column() == 3) { // Value 列
     // 获取数据类型
     TreeNode *node = static_cast<TreeNode *>(index.internalPointer());
-    if (!node || !node->m_dataBlock) {
+    if (!node || !node->m_data) {
       qDebug() << "Node or dataBlock is null";
       return QStyledItemDelegate::createEditor(parent, option, index);
     }
-    S7DataType dataType = node->m_dataBlock->data_type_enum;
+    S7DataType dataType = node->m_data->getDataType();
 
     QWidget* editor = nullptr;
     switch (dataType) {
@@ -1648,7 +1499,7 @@ void OPCUADataDelegate::setEditorData(QWidget* editor, const QModelIndex& index)
     
     if (index.column() == 3) {
         TreeNode *node = static_cast<TreeNode *>(index.internalPointer());
-        S7DataType dataType = node->m_dataBlock->data_type_enum;
+        S7DataType dataType = node->m_data->getDataType();
 
         switch (dataType) {
         case S7DataType::BOOL: {
@@ -1709,7 +1560,7 @@ void OPCUADataDelegate::setModelData(QWidget* editor, QAbstractItemModel* model,
                                   const QModelIndex& index) const {
     if (index.column() == 3) {
         TreeNode *node = static_cast<TreeNode *>(index.internalPointer());
-        S7DataType dataType = node->m_dataBlock->data_type_enum;
+        S7DataType dataType = node->m_data->getDataType();
         QVariant value;
         
         switch (dataType) {
@@ -2019,136 +1870,6 @@ void OPCUADataBlockView::onRowdoubleClicked(const QModelIndex &idx) {
  
 }
 
-void OPCUADataBlockView::validateTreeStructure() {
-  qDebug() << "========================================";
-  qDebug() << "=== 开始验证树结构（增强版） ===";
-  qDebug() << "========================================";
-
-  int nodeCount = 0;
-  int leafCount = 0;
-  int errorCount = 0;
-  int depthLevels = 0;
-
-  std::function<void(const QModelIndex &, int)> traverse =
-      [&](const QModelIndex &parent, int depth) {
-        depthLevels = std::max(depthLevels, depth);
-        int rows = m_model->rowCount(parent);
-
-        for (int row = 0; row < rows; row++) {
-          QModelIndex idx = m_model->index(row, 0, parent);
-          if (!idx.isValid()) {
-            qDebug() << "❌ 错误：无效索引 at row:" << row << "depth:" << depth;
-            errorCount++;
-            continue;
-          }
-
-          nodeCount++;
-
-          TreeNode *node = static_cast<TreeNode *>(idx.internalPointer());
-          QString indent = QString(" ").repeated(depth * 2);
-
-          // 获取节点信息
-          QString nodeName = idx.data().toString();
-          bool hasData = (node && node->m_dataBlock != nullptr);
-          bool hasChildren = m_model->hasChildren(idx);
-          int childCount = m_model->rowCount(idx);
-
-          // 获取内部指针信息
-          quint64 internalPtr =
-              reinterpret_cast<quint64>(idx.internalPointer());
-          quint64 parentPtr = 0;
-          if (node && node->parent) {
-            parentPtr = reinterpret_cast<quint64>(node->parent);
-          }
-
-          // 获取节点类型（如果有 dataBlock）
-          QString dataType = "无数据";
-          quint64 dataPtr = 0;
-          if (hasData && node->m_dataBlock) {
-            dataType = QString::fromStdString(node->m_dataBlock->data_type);
-            dataPtr = reinterpret_cast<quint64>(node->m_dataBlock);
-          }
-
-          // 特殊标记：如果节点有数据但不是叶子节点（有子节点），这是一个严重问题
-          bool invalidState = (hasData && hasChildren);
-          if (invalidState) {
-            qDebug() << "";
-            qDebug().noquote()
-                << indent + "⚠️⚠️⚠️ 警告：节点同时有数据和孩子！⚠️⚠️⚠️";
-            errorCount++;
-          }
-
-          // 打印节点信息
-          QString nodeInfo = QString("%1[%2] row:%3 col:0 name:\"%4\" %5")
-                                 .arg(indent)
-                                 .arg(nodeCount)
-                                 .arg(row)
-                                 .arg(nodeName)
-                                 .arg(invalidState ? "❌【异常节点】" : "");
-
-          qDebug().noquote() << nodeInfo;
-          qDebug().noquote() << indent + "  ├─ internalPtr : 0x" +
-                                    QString::number(internalPtr, 16);
-          qDebug().noquote() << indent + "  ├─ parentPtr   : 0x" +
-                                    QString::number(parentPtr, 16);
-          qDebug().noquote() << indent + "  ├─ hasData     : " +
-                                    QString(hasData ? "true" : "false");
-          qDebug().noquote() << indent + "  ├─ dataType    : " + dataType;
-          qDebug().noquote() << indent + "  ├─ dataPtr     : 0x" +
-                                    QString::number(dataPtr, 16);
-          qDebug().noquote() << indent + "  ├─ hasChildren : " +
-                                    QString(hasChildren ? "true" : "false");
-          qDebug().noquote()
-              << indent + "  └─ childCount  : " + QString::number(childCount);
-
-          // 统计叶子节点（应该有数据的节点）
-          if (!hasChildren && hasData) {
-            leafCount++;
-          }
-
-          // 打印所有列的数据
-          for (int col = 0; col < m_model->columnCount(parent); col++) {
-            QModelIndex colIdx = m_model->index(row, col, parent);
-            if (colIdx.isValid()) {
-              QVariant data = colIdx.data(Qt::DisplayRole);
-              qDebug().noquote()
-                  << indent + "     col" + QString::number(col) + " : "
-                  << data.toString();
-            } else {
-              qDebug().noquote()
-                  << indent + "     ❌ 列" + QString::number(col) + "无效";
-              errorCount++;
-            }
-          }
-
-          qDebug() << "";
-
-          // 递归子节点
-          if (hasChildren) {
-            traverse(idx, depth + 1);
-          }
-        }
-      };
-
-  traverse(QModelIndex(), 0);
-
-  qDebug() << "========================================";
-  qDebug() << "=== 验证结果统计 ===";
-  qDebug() << "总节点数        : " << nodeCount;
-  qDebug() << "数据叶子节点数  : " << leafCount;
-  qDebug() << "最大深度        : " << depthLevels;
-  qDebug() << "错误/警告数     : " << errorCount;
-  qDebug() << "========================================";
-
-  // 额外：打印 manualIdx 和 viewIdx 的对应关系提示
-  qDebug() << "";
-  qDebug() << "=== 提示 ===";
-  qDebug() << "注意：viewIdx 应该只包含数据叶子节点（无子节点）";
-  qDebug() << "如果发现节点同时有数据和子节点，说明树结构有问题";
-  qDebug() << "数据叶节点的 dataPtr 应该与 manualIdx 中的 internalPtr 一致";
-  qDebug() << "========================================";
-}
-
 void OPCUADataBlockView::printCallStack() {
    // 1. 创建堆栈跟踪对象
     backward::StackTrace st;
@@ -2204,8 +1925,8 @@ bool OPCUADataBlockView::eventFilter(QObject *obj, QEvent *event) {
     QMouseEvent *mouseEvent = static_cast<QMouseEvent *>(event);
     QModelIndex idx = treeView->indexAt(mouseEvent->pos());
     TreeNode *node = static_cast<TreeNode *>(idx.internalPointer());
-    if (node == nullptr || node->m_dataBlock == nullptr) {
-      qDebug() << "node:" << node << "node->m_dataBlock:";
+    if (node == nullptr || node->m_data == nullptr) {
+      qDebug() << "node:" << node << "node->m_data:";
       return QWidget::eventFilter(obj, event);
     }
 
@@ -2264,7 +1985,7 @@ bool OPCUADataBlockView::eventFilter(QObject *obj, QEvent *event) {
       QModelIndex idx = treeView->indexAt(lastClickLocation);
       TreeNode *node = static_cast<TreeNode *>(idx.internalPointer());
       // ✅ 第0列：让 Qt 正常处理（展开/折叠、选择等）
-      if (!idx.isValid() || node == nullptr || node->m_dataBlock == nullptr) {
+      if (!idx.isValid() || node == nullptr || node->m_data == nullptr) {
         return QWidget::eventFilter(obj, event); // 交给 Qt 默认处理
       }
 
@@ -2314,13 +2035,13 @@ QModelIndex OPCUADataBlockView::findIndexByNode(TreeNode *node, int column) cons
   }
 
   // 获取父节点
-  TreeNode *parentNode = node->parent;
+  std::shared_ptr<TreeNode> parentNode = node->parent.lock();
   if (!parentNode) {
     return QModelIndex();
   }
 
+  int row = findChildIndex(parentNode, node);
   // 获取 node 在父节点中的行号
-  int row = parentNode->children.indexOf(node);
   if (row < 0) {
     return QModelIndex();
   }
@@ -2329,9 +2050,9 @@ QModelIndex OPCUADataBlockView::findIndexByNode(TreeNode *node, int column) cons
   // 如果父节点是根节点，parentIdx 应该无效
   QModelIndex parentIdx;
 
-  if (parentNode != m_model->getRootNode()) {
+  if (parentNode.get() != m_model->getRootNode()) {
     // 递归获取父节点的索引
-    parentIdx = findIndexByNode(parentNode, 0); // 获取父节点的第0列
+    parentIdx = findIndexByNode(parentNode.get(), 0); // 获取父节点的第0列
                                                 // 在 manualIndexAt 中添加
     if (!parentIdx.isValid()) {
       return QModelIndex();
@@ -2554,6 +2275,7 @@ void OPCUADataBlockController::initialize(Scope *scope) {
     }
 
     m_OPCUADataBlockBuild = std::make_shared<OPCUADataBlockBuilder>();
+    m_OPCUADataBlockBuild->initialize(scope);
   }
 
   
@@ -2590,8 +2312,6 @@ void OPCUADataBlockController::buildConnection() {
   connect(m_OPCUADataBlockBuild.get(),
           &OPCUADataBlockBuilder::requestSaveOPCUADataBlock, this,
           &OPCUADataBlockController::onSaveOPCUADataBlock);
-  // connect(m_view, &OPCUADataBlockView::requestFile, this,
-  //         &OPCUADataBlockController::onbuildDataBlockFromDBFile);
   connect(m_view, &OPCUADataBlockView::requestRefresh, this,
           &OPCUADataBlockController::onViewReadRequested);
   connect(m_view, &OPCUADataBlockView::requestWrite, this,
@@ -2599,94 +2319,37 @@ void OPCUADataBlockController::buildConnection() {
 }
 
 void OPCUADataBlockController::onViewReadRequested() {
-  //  update buffer from data_pointer in littleEndian
-  auto result_test = m_reader->getIdentifier();
-  if(result_test.is_fail())
-  {
-    return;
-  }
-
-  if(result_test.unwrap_returnLeftValue().find("OPC_UA") != std::string::npos)
-  {
-    auto result = m_reader->batchReadOPCUADataBlock_FromPLC(m_OPCUADataBlock.get());
-    if (result.is_fail()) {
-      spdlog::error("onViewReadRequested fail : {}", result.unwrap_err().what());
-    }
-  }
-  else
-  {
-    auto result = m_reader->batchReadS7DataBlock_FromPLC(m_OPCUADataBlock.get());
-    if (result.is_fail()) {
-      spdlog::error("onViewReadRequested fail : {}", result.unwrap_err().what());
-    }
-  }
-
+  m_model->getMessage();
   m_model->batchSetDataForOPCUA();
+  return;
 };
 
 void OPCUADataBlockController::onViewWriteRequested() {
-  //  update buffer from data_pointer in littleEndian
-  auto result_test = m_reader->getIdentifier();
-  if(result_test.is_fail())
-  {
-    return;
-  }
-
-  if(result_test.unwrap_returnLeftValue().find("OPC_UA") != std::string::npos )
-  {
-    auto result = m_reader->batchWriteOPCUABlock_ToPLC(m_OPCUADataBlock.get());
-    if (result.is_fail()) {
-      spdlog::error("onViewWriteRequested fail : {}", result.unwrap_err().what());
-    }
-  }
-  else
-  {
-    auto result = m_reader->batchWriteS7DataBlock_ToPLC(m_OPCUADataBlock.get());
-    if (result.is_fail()) {
-      spdlog::error("onViewWriteRequested fail : {}", result.unwrap_err().what());
-    }
-  }
-  
+  m_model->sendMessage();
+  return;
 };
 
-void OPCUADataBlockController::onSaveOPCUAParseResult(const std::shared_ptr<OPCUAParseResult> &parseResult) {
-  if (parseResult) {
+void OPCUADataBlockController::onSaveOPCUAParseResult(const std::shared_ptr<IDataNode> &dataBlockResult,const std::shared_ptr<TreeNode> &rootNode) {
+  if (dataBlockResult) {
     //  update lastest data block
-    m_OPCUADataBlock = std::make_shared<OPCUADataBlock>();
-    m_OPCUADataBlock->setParseResult(parseResult);
-    m_model->setOPCUADataBlock(m_OPCUADataBlock);
+    m_varVec = dataBlockResult;
+    m_model->setOPCUAStructVec(m_varVec);
+    m_model->setRootNode(rootNode);
     m_view->setModel();
     m_view->setDelegate();
-    if (m_reader->getIdentifier().is_fail()) {
-
-    } else if (m_reader->getIdentifier().unwrap_returnRightValue().find(
-                   "OPC_UA") != std::string::npos) {
-    } else {
-      calculate_data_block_size(m_OPCUADataBlock->getVariabeDataVector());
-    }
   } else {
     spdlog::error("onSaveOPCUAParseResult : dataBlock is nullptr");
   }
 }
 
-void OPCUADataBlockController::onSaveOPCUADataBlock(const std::shared_ptr<OPCUADataBlock> &dataBlock) {
+void OPCUADataBlockController::onSaveOPCUADataBlock(const std::shared_ptr<IDataNode> &dataBlock,const std::shared_ptr<TreeNode> &rootNode) {
   if (dataBlock) {
     //  update lastest data block
-    m_OPCUADataBlock = dataBlock;
-    m_model->setOPCUADataBlock(dataBlock);
+    m_varVec = dataBlock;
+    m_model->setOPCUAStructVec(m_varVec);
+    m_model->setRootNode(rootNode);
     m_view->setModel();
     m_view->setDelegate();
-    if(m_reader->getIdentifier().is_fail())
-    {
-
-    }
-    else if(m_reader->getIdentifier().unwrap_returnRightValue() .find("OPC_UA") != std::string::npos)
-    {
-    }
-    else
-    {
-      calculate_data_block_size(dataBlock->getVariabeDataVector());
-    }
   } else {
     spdlog::error("onSaveOPCUADataBlock : dataBlock is nullptr");
   }
@@ -2892,7 +2555,7 @@ bool OPCUADataBlockManager::buildS7Connect(
 
   if (!context) {
     emit errorOccurred(ipAddress, "", " not found");
-    auto reader = std::make_shared<OPCUADeviceReader>();
+    auto reader = std::make_shared<OPCUADeviceReader>(std::string{"S7-Offset"});
     bool result =
         reader->onRequestBuildS7(ipAddress.toStdString(), rack, slot,1000);
       m_readerVector.push_back(std::move(reader));
@@ -2909,7 +2572,7 @@ bool OPCUADataBlockManager::buildOPCUAConnect(const QString &ipAddress, int name
 
   if (!context) {
     emit errorOccurred(ipAddress, "", " not found");
-    auto reader = std::make_shared<OPCUADeviceReader>();
+    auto reader = std::make_shared<OPCUADeviceReader>(std::string{"OPC_UA"});
     bool result =
         reader->onRequestBuildOPCUA(ipAddress.toStdString(), nameSpace, port);
     m_readerVector.push_back(std::move(reader));
@@ -3078,13 +2741,13 @@ SpecialTreeView::findIndexByNode(const FindRelativeIndex &item) const {
   }
 
   // 获取父节点
-  TreeNode *parentNode = item.node->parent;
+  std::shared_ptr<TreeNode> parentNode = item.node->parent.lock();
   if (!parentNode) {
     return Result<QModelIndex, RichError>(QModelIndex());
   }
 
   // 获取 node 在父节点中的行号
-  int row = parentNode->children.indexOf(item.node);
+  int row = findChildIndex(parentNode, item.node);
   if (row < 0) {
     return Result<QModelIndex, RichError>(QModelIndex());
   }
@@ -3093,11 +2756,11 @@ SpecialTreeView::findIndexByNode(const FindRelativeIndex &item) const {
   // 如果父节点是根节点，parentIdx 应该无效
   QModelIndex parentIdx;
 
-  if (parentNode != m_model->getRootNode()) {
+  if (parentNode.get()!= m_model->getRootNode()) {
     // 递归获取父节点的索引
     auto result = findIndexByNode(
-        FindRelativeIndex{parentNode, 0}); // 获取父节点的第0列
-                                           // 在 manualIndexAt 中添加
+        FindRelativeIndex{parentNode.get(), 0}); // 获取父节点的第0列
+                                                 // 在 manualIndexAt 中添加
     if (result.is_fail()) {
       return Result<QModelIndex, RichError>(result);
     }
@@ -3125,8 +2788,8 @@ SpecialTreeView::getNodeByGlobalRow(int globalRow) const {
     return Result<TreeNode *, RichError>(
         RichError("No node found for row: " + std::to_string(globalRow)));
   }
-  qDebug() << "select item :" << node->displayName
-           << " and its parent name :" << node->parent->displayName;
+  qDebug() << "select item :" << node->displayName;
+          
   return Result<TreeNode *, RichError>(node);
 }
 

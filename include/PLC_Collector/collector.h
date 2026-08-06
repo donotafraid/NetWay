@@ -62,26 +62,6 @@ private:
      */
     void run();
     
-    /**
-     * 生成模拟数据（模拟PLC读取）
-     * 
-     * 任务分解：
-     * - 模拟设备ID（1-10随机）
-     * - 模拟数值（0-100随机）
-     * - 模拟异常（10%概率quality=1）
-     * - 添加时间戳和序列号
-     */
-    PLCData generateData();
-    
-    /**
-     * 尝试入队（容错处理）
-     * 
-     * 协作点：队列满时的处理策略
-     * - 策略：记录日志，丢弃数据（不阻塞采集）
-     * - 理由：采集不能停，宁可丢数据也不能卡死
-     */
-    bool tryEnqueue(const PLCData& data);
-
     //  ===Modbus读取对象===
     ModbusMediator mediator;
 

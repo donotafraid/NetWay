@@ -249,6 +249,209 @@ ModbusMediator::writeMultipleCoils(int slave_id, int start_addr,
     return Result<bool, RichError>(true);
 }
 
+Result<bool, RichError>
+ModbusMediator::batchReadNode(std::vector<ModbusDataStruct> &dataVec) {
+  for (auto &element : dataVec) {
+    auto result = readNode(element);
+    if (result.is_fail()) {
+      return Result<bool, RichError>(RichError{result.unwrap_err()});
+    } else {
+      element.setRawValue(result.unwrap_returnLeftValue());
+    }
+  }
+  return Result<bool, RichError>(true);
+}
+
+Result<bool, RichError>
+ModbusMediator::batchWriteNode(const std::vector<ModbusDataStruct> &dataVec) {
+  for (auto &element : dataVec) {
+    auto result = writeNode(element,element.cached_value);
+    if (result.is_fail()) {
+      return Result<bool, RichError>(RichError{result.unwrap_err()});
+    } else {
+        continue;
+    }
+  }
+  return Result<bool, RichError>(true);
+}
+
+Result<uint16_t, RichError>
+ModbusMediator::readNode(const ModbusDataStruct &config) {
+  // 1. 从业务结构体中提取通信参数
+  int slave = config.slave_id;
+  int addr = config.address;
+  int count = config.register_count; // 对于 REAL / DWORD，count 为 2
+
+  // 2. 根据节点类型，决定调用哪个底层读函数并直接返回
+  switch (config.node_type) {
+  case ModbusNodeType::HoldingRegister: {
+    auto result = readHoldingRegisters(slave, addr, count);
+    if (result.is_fail()) {
+      return Result<uint16_t, RichError>(result.unwrap_err());
+    }
+    auto &values = result.unwrap_returnLeftValue();
+    if (values.empty()) {
+      return Result<uint16_t, RichError>(
+          RichError("No data returned from HoldingRegister"));
+    }
+    return Result<uint16_t, RichError>(values[0]);
+  }
+
+  case ModbusNodeType::InputRegister: {
+    auto result = readInputRegisters(slave, addr, count);
+    if (result.is_fail()) {
+      return Result<uint16_t, RichError>(result.unwrap_err());
+    }
+    auto &values = result.unwrap_returnLeftValue();
+    if (values.empty()) {
+      return Result<uint16_t, RichError>(
+          RichError("No data returned from InputRegister"));
+    }
+    return Result<uint16_t, RichError>(values[0]);
+  }
+
+  case ModbusNodeType::Coil: {
+    auto result = readCoils(slave, addr, count);
+    if (result.is_fail()) {
+      return Result<uint16_t, RichError>(result.unwrap_err());
+    }
+    auto bits = result.unwrap_returnLeftValue();
+    if (bits.empty()) {
+      return Result<uint16_t, RichError>(
+          RichError("No data returned from Coil"));
+    }
+    // 将第一个 bit 转为 uint16_t
+    return Result<uint16_t, RichError>(bits[0] ? 1 : 0);
+  }
+
+  case ModbusNodeType::DiscreteInput: {
+    auto result = readDiscreteInputs(slave, addr, count);
+    if (result.is_fail()) {
+      return Result<uint16_t, RichError>(result.unwrap_err());
+    }
+    auto bits = result.unwrap_returnLeftValue();
+    if (bits.empty()) {
+      return Result<uint16_t, RichError>(
+          RichError("No data returned from DiscreteInput"));
+    }
+    return Result<uint16_t, RichError>(bits[0] ? 1 : 0);
+  }
+
+  default: {
+    return Result<uint16_t, RichError>(
+        RichError{"Unsupported Modbus node type"});
+  }
+
+  }
+}
+
+Result<bool, RichError> ModbusMediator::writeNode(const ModbusDataStruct& config, const QVariant& value) {
+    int slave = config.slave_id;
+    int addr = config.address;
+    int count = config.register_count;  // 对于 REAL / DWORD，count 为 2
+    
+    switch (config.node_type) {
+        case ModbusNodeType::Coil: {
+            // Coil: 写入布尔值，0xFF 表示 ON，0x00 表示 OFF
+            bool bool_val = value.toBool();
+            uint8_t coil_val = bool_val ? 0xFF : 0x00;
+            return writeSingleCoil(slave, addr, coil_val);
+        }
+        
+        case ModbusNodeType::DiscreteInput: {
+            // DiscreteInput 是只读的，不能写入
+            return Result<bool, RichError>(
+                RichError("DiscreteInput is read-only, cannot write")
+            );
+        }
+        
+        case ModbusNodeType::HoldingRegister: {
+            // HoldingRegister: 支持多种数据类型
+            switch (config.data_type_enum) {
+                case S7DataType::BOOL: {
+                    // BOOL 类型：写入单个 bit
+                    bool bool_val = value.toBool();
+                    return writeSingleRegister(slave, addr, bool_val ? 1 : 0);
+                }
+                
+                case S7DataType::BYTE: {
+                    // BYTE: 0-255
+                    uint8_t byte_val = static_cast<uint8_t>(value.toUInt());
+                    return writeSingleRegister(slave, addr, static_cast<uint16_t>(byte_val));
+                }
+                
+                case S7DataType::INT: {
+                    // INT: -32768 ~ 32767
+                    int16_t int_val = static_cast<int16_t>(value.toInt());
+                    return writeSingleRegister(slave, addr, static_cast<uint16_t>(int_val));
+                }
+                
+                case S7DataType::WORD: {
+                    // WORD: 0-65535
+                    uint16_t word_val = static_cast<uint16_t>(value.toUInt());
+                    return writeSingleRegister(slave, addr, word_val);
+                }
+                
+                case S7DataType::DINT: {
+                    // DINT: 32位有符号，需要写入两个寄存器
+                    int32_t dint_val = static_cast<int32_t>(value.toLongLong());
+                    std::vector<uint16_t> registers(2);
+                    // 大端序（Modbus 标准）
+                    registers[0] = static_cast<uint16_t>((dint_val >> 16) & 0xFFFF);
+                    registers[1] = static_cast<uint16_t>(dint_val & 0xFFFF);
+                    return writeMultipleRegisters(slave, addr, registers);
+                }
+                
+                case S7DataType::UDINT:
+                case S7DataType::DWORD: {
+                    // UDINT/DWORD: 32位无符号，需要写入两个寄存器
+                    uint32_t uint_val = static_cast<uint32_t>(value.toUInt());
+                    std::vector<uint16_t> registers(2);
+                    // 大端序（Modbus 标准）
+                    registers[0] = static_cast<uint16_t>((uint_val >> 16) & 0xFFFF);
+                    registers[1] = static_cast<uint16_t>(uint_val & 0xFFFF);
+                    return writeMultipleRegisters(slave, addr, registers);
+                }
+                
+                case S7DataType::REAL: {
+                    // REAL: 32位浮点，需要写入两个寄存器
+                    float float_val = value.toFloat();
+                    
+                    // 先应用缩放因子（与 read 操作对称）
+                    float_val = float_val / config.scale_factor;
+                    
+                    // 将 float 转为 uint32_t
+                    uint32_t raw_bits;
+                    memcpy(&raw_bits, &float_val, sizeof(float));
+                    
+                    std::vector<uint16_t> registers(2);
+                    // 大端序（Modbus 标准）
+                    registers[0] = static_cast<uint16_t>((raw_bits >> 16) & 0xFFFF);
+                    registers[1] = static_cast<uint16_t>(raw_bits & 0xFFFF);
+                    return writeMultipleRegisters(slave, addr, registers);
+                }
+                
+                default: {
+                  return Result<bool, RichError>(RichError(
+                      "Unsupported data type for HoldingRegister write"));
+                }
+            }
+        }
+        
+        case ModbusNodeType::InputRegister: {
+            // InputRegister 是只读的，不能写入
+            return Result<bool, RichError>(
+                RichError("InputRegister is read-only, cannot write")
+            );
+        }
+        
+        default: {
+          return Result<bool, RichError>(
+              RichError{"Unsupported Modbus node type for write: %1"});
+        }
+    }
+}
+
 // ===== 配置方法 =====
 
 void ModbusMediator::setResponseTimeout(int seconds, int microseconds) {
@@ -410,51 +613,4 @@ ModbusResponse ModbusMediator::writeMultipleCoils(const ModbusRequest& req) {
         resp.status = ModbusResponse::Status::Success;
     }
     return resp;
-}
-
-// ============ TemperatureMonitor 实现 ============
-
-TemperatureMonitor::TemperatureMonitor(ModbusMediator& mediator) 
-    : mediator_(mediator) {}
-
-Result<float, RichError> 
-TemperatureMonitor::getTemperature(int slave_id, int sensor_addr) {
-    auto result = mediator_.readHoldingRegisters(slave_id, sensor_addr, 1);
-    if (result.is_fail()) {
-        return Result<float, RichError>(RichError{result.unwrap_err()});
-    }
-    
-    float temp = result.unwrap_returnLeftValue()[0] / 10.0f;
-    return Result<float, RichError>(temp);
-}
-
-Result<bool, RichError> 
-TemperatureMonitor::setTemperatureThreshold(int slave_id, 
-                                            int threshold_addr,
-                                            float threshold) {
-    uint16_t raw_value = static_cast<uint16_t>(threshold * 10);
-    return mediator_.writeMultipleRegisters(slave_id, threshold_addr, {raw_value});
-}
-
-// ============ SwitchMonitor 实现 ============
-
-SwitchMonitor::SwitchMonitor(ModbusMediator& mediator) 
-    : mediator_(mediator) {}
-
-Result<uint8_t, RichError> 
-SwitchMonitor::getSwitch(int slave_id, int sensor_addr) {
-    auto result = mediator_.readCoils(slave_id, sensor_addr, 8);
-    if (result.is_fail()) {
-        return Result<uint8_t, RichError>(RichError{result.unwrap_err()});
-    }
-    
-    return Result<uint8_t, RichError>(result.unwrap_returnLeftValue()[0]);
-}
-
-Result<bool, RichError> 
-SwitchMonitor::setSwitchThreshold(int slave_id, 
-                                   int threshold_addr,
-                                   float threshold) {
-    uint16_t raw_value = static_cast<uint16_t>(threshold * 10);
-    return mediator_.writeMultipleRegisters(slave_id, threshold_addr, {raw_value});
 }

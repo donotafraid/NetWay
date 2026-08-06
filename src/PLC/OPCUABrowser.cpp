@@ -1,4 +1,7 @@
 #include "PLC/OPCUABrowser.h"
+#include <fstream>   // ✅ 添加：std::ifstream, std::ofstream
+#include <set>       // ✅ 添加：std::set
+#include <regex>     // ✅ 添加：std::regex, std::smatch, std::regex_search
 
 // ==================== OPCUANodePathTracer 实现 ====================
 

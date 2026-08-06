@@ -1,9 +1,9 @@
 #include "PLC_Collector/manager.h"
+
+#include <QtCore/qobjectdefs.h>
 #include <spdlog/spdlog.h>
-#include <iostream>
 #include <thread>
 #include <chrono>
-#include <iomanip>
 
 SystemManager::SystemManager() : m_running(false), m_config() {
   // 可选：从配置文件加载
@@ -32,13 +32,14 @@ SystemManager::SystemManager() : m_running(false), m_config() {
 
   // 4. 创建服务（业务逻辑）
   DataConsumer::Config dataConsumer_config_;
-  service_config_.batch_size = 100;
-  service_config_.drain_threshold = 10;
+  dataConsumer_config_.batch_size = 100;
+  dataConsumer_config_.queue_empty_sleep_ms = 1000;
   dataConsumer_ = std::make_unique<DataConsumer>(m_queue, m_running,
                                                  send_service_, dataConsumer_config_);
   // 5. 启动服务
   send_service_->start();
 
+  loadModbusDevices();
   // 5. 设置连接状态回调（由Reporter触发）
   // 这里需要在Reporter中集成连接状态检测
 
@@ -71,14 +72,7 @@ void SystemManager::start() {
     // Step 1: 设置运行标志（先于所有线程）
     m_running.store(true, std::memory_order_release);
 
-    // Step 3: 创建采集线程池（生产者）
-    for (int i = 0; i < m_config.collectorThreadCount; ++i) {
-        m_collectors.push_back(
-            std::make_unique<CollectorThread>(
-                i, m_queue, m_running, m_config
-            )
-        );
-    }
+    // // Step 3: 创建采集线程池（生产者）
 
     // Step 4: 启动监控线程（可选）
     // m_monitorThread = std::make_unique<std::thread>(
@@ -142,8 +136,6 @@ void SystemManager::stop() {
     spdlog::info("[Manager] System stopped");
 }
 
-
-
 /**
  * 监控循环 - 健康检查
  * 
@@ -161,7 +153,6 @@ void SystemManager::monitorLoop() {
         // 计算吞吐量
         if (dataConsumer_) {
             m_metrics.totalProcessed = dataConsumer_->getProcessedCount();
-            // m_metrics.totalErrors = dataConsumer_>getErrorCount();
         }
         
         auto now = std::chrono::steady_clock::now();
@@ -200,13 +191,67 @@ size_t SystemManager::getBacklogCount() const {
     return true;
 }
 
+void SystemManager::loadModbusDevices() {
+  ModbusConfigLoader loader;
+
+  for (const auto &entry :
+       std::filesystem::directory_iterator("./config/modbus/")) {
+    if (entry.path().extension() != ".json")
+      continue;
+
+    // 1. 加载 JSON，得到设备配置 + 寄存器列表
+    auto loadResult = loader.loadFromJSON(entry.path().string());
+    if (loadResult.is_fail()) {
+      spdlog::error("Failed to load {}: {}", entry.path().string(),
+                    loadResult.unwrap_err().what());
+      continue;
+    }
+
+    auto &result = loadResult.unwrap_returnLeftValue();
+    auto &deviceConfig = result.device_config; // 设备级参数
+    auto &registers = result.registers;        // 寄存器列表
+
+    // 2. ✅ 创建专属 Mediator 并连接
+    auto mediator = std::make_shared<ModbusMediator>();
+    auto connectResult =
+        mediator->connect(deviceConfig.ip_address, deviceConfig.port);
+    if (connectResult.is_fail()) {
+      spdlog::error("Failed to connect to {}: {}", deviceConfig.ip_address,
+                    connectResult.unwrap_err().what());
+      continue;
+    }
+
+    // 3. ✅ 存入映射表（以 IP 为键）
+    m_modbusClients[deviceConfig.ip_address] = mediator;
+
+    // 4. ✅ 遍历寄存器，创建 ModbusDataNode
+    for (auto &reg : registers) {
+      // 填充从站 ID（从设备配置继承）
+      reg.slave_id = deviceConfig.slave_id;
+
+      // 创建节点，传入 Mediator 和配置
+      auto node = std::make_shared<ModbusDataNode>(mediator, &reg);
+
+      // 连接信号，让数据自动入队
+      connect(node.get(), &ModbusDataNode::batchDataReady, this,
+              [this](const std::vector<PLCData> &dataVec) {
+                for (auto &element : dataVec) {
+                  this->m_queue.enqueue(std::move(element));
+                }
+              });
+
+      m_modbusNodes.push_back(node);
+      spdlog::debug("Created Modbus node: {} (address: {})", reg.variable_name,
+                    reg.address);
+    }
+
+    spdlog::info("Loaded {} registers from {}", registers.size(),
+                 entry.path().string());
+  }
+}
+
 bool SystemManager::isHealthy() const {
     // 检查采集线程是否都活着
-    for (const auto& collector : m_collectors) {
-        if (!collector->isRunning()) {
-            return false;
-        }
-    }
     
     // 检查队列是否严重积压
     size_t queueSize = m_queue.size_approx();
@@ -216,8 +261,6 @@ bool SystemManager::isHealthy() const {
     
     return true;
 }
-
-
 
 void SystemManager::printStatistics() const {
     spdlog::info("\n=== System Statistics ===");
@@ -248,7 +291,6 @@ void SystemManager::printStatistics() const {
     
     spdlog::info("==========================");
 }
-
 
 void SystemManager::printStatus() const {
     spdlog::info("\n[Status] Running: {}, Queue: {}", 

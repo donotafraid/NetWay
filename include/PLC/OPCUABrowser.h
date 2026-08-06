@@ -1,5 +1,7 @@
 #include "load_config/Qt_library.h"
 #include "PLC/Struct.h"
+#include <spdlog/spdlog.h>
+#include <unordered_set>
 
 #include <open62541/client_config_default.h>
 #include <open62541/client_highlevel.h>
@@ -157,57 +159,44 @@ static bool readAndPrintVariable(UA_Client *client, const UA_NodeId &nodeId,
                      boolValue ? "true" : "false", "DataType",
                      value.type->typeName);
         item.data_type_enum = S7DataType::BOOL;
-        item.data_pointer->Reset_Value(bool{0});
     } else if (value.type == &UA_TYPES[UA_TYPES_SBYTE]) {
         UA_SByte sbyteValue = *(UA_SByte*)value.data;
         spdlog::info("{}{} = {} {} = {}", indent, "Value",
                      (int)sbyteValue, "DataType", value.type->typeName);
         item.data_type_enum = S7DataType::BYTE;
-        item.data_pointer->Reset_Value(uint8_t{0});
-        
     } else if (value.type == &UA_TYPES[UA_TYPES_BYTE]) {
         UA_Byte byteValue = *(UA_Byte*)value.data;
         spdlog::info("{}{} = {} {} = {}", indent, "Value",
                      byteValue, "DataType", value.type->typeName);
         item.data_type_enum = S7DataType::BYTE;
-        item.data_pointer->Reset_Value(uint8_t{0});
-        
     } else if (value.type == &UA_TYPES[UA_TYPES_INT16]) {
         UA_Int16 int16Value = *(UA_Int16*)value.data;
         spdlog::info("{}{} = {} {} = {}", indent, "Value",
                      int16Value, "DataType", value.type->typeName);
         item.data_type_enum = S7DataType::INT;
-        item.data_pointer->Reset_Value(int16_t{0});
     } else if (value.type == &UA_TYPES[UA_TYPES_UINT16]) {
         UA_UInt16 uint16Value = *(UA_UInt16*)value.data;
         spdlog::info("{}{} = {} {} = {}", indent, "Value",
                      uint16Value, "DataType", value.type->typeName);
         item.data_type_enum = S7DataType::WORD;
-        item.data_pointer->Reset_Value(uint16_t{0});
     } else if (value.type == &UA_TYPES[UA_TYPES_INT32]) {
         UA_Int32 int32Value = *(UA_Int32*)value.data;
         spdlog::info("{}{} = {} {} = {}", indent, "Value",
                      int32Value, "DataType", value.type->typeName);
         item.data_type_enum = S7DataType::DINT;
-        item.data_pointer->Reset_Value(int32_t{0});
     } else if (value.type == &UA_TYPES[UA_TYPES_UINT32]) {
         UA_UInt32 uint32Value = *(UA_UInt32*)value.data;
         spdlog::info("{}{} = {} {} = {}", indent, "Value",
                      uint32Value, "DataType", value.type->typeName);
         item.data_type_enum = S7DataType::UDINT;
-        item.data_pointer->Reset_Value(uint32_t{0});
-        
     } else if (value.type == &UA_TYPES[UA_TYPES_FLOAT]) {
         UA_Float floatValue = *(UA_Float*)value.data;
         spdlog::info("{}{} = {} {} = {}", indent, "Value",
                      floatValue, "DataType", value.type->typeName);
         item.data_type_enum = S7DataType::REAL;
-        item.data_pointer->Reset_Value(float{0});
-        
     } else if (value.type == &UA_TYPES[UA_TYPES_STRING]) {
         spdlog::info("{}{} = {}", indent, "DataType", value.type->typeName);
         item.data_type_enum = S7DataType::STRING;
-        item.data_pointer->Reset_Value(std::string{0});
     }
 
     // }
@@ -238,9 +227,10 @@ static bool readAndPrintVariable(UA_Client *client, const UA_NodeId &nodeId,
       spdlog::warn("{}{} = [其他类型: {}]", indent, "Value",
                    value.type->typeName);
       item.data_type_enum = S7DataType::UNKNOWN;
-      item.data_pointer->Reset_Value(std::string{0});
     }
 
+
+    item.dataVar = 0;
     // 统一使用 _clear 清理
     UA_Variant_clear(&value);
     
@@ -296,7 +286,7 @@ static void browseNodeChildren(UA_Client* client, const UA_NodeId& nodeId,
                           "NodeId", childNodeId);
                       UA_NodeId_copy(&ref->nodeId.nodeId,
                                      &item.nodeID);
-                      // item.variable_nodeID = childNodeId;
+                      item.variable_nodeID = childNodeId;
                       item.variable_name = childBrowseName;
                       item.namespace_index = 0;
                       item.parent_nodeID = "";
