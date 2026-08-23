@@ -6,7 +6,6 @@
 #include <spdlog/spdlog.h>
 #include <chrono>
 #include <thread>
-#include <iostream>
 
 DataConsumer::DataConsumer(
     moodycamel::ConcurrentQueue<PLCData>& queue,

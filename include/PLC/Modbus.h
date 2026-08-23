@@ -4,11 +4,8 @@
 #include "Rust_error_deal/error_deal.h"
 
 #include <string>
-#include <QVariant>
-#include "PLC/Struct.h"
+#include "PLC/WriteRequestAddres.h"
 #include "PLC/ModbusDataStruct.h"
-
-
 
 // ============ 请求/响应模型 ============
 struct ModbusRequest {
@@ -99,7 +96,7 @@ public:
     Result<uint16_t, RichError> readNode(const ModbusDataStruct &config);
     // ✅ 根据 ModbusDataStruct 写入一个值（自动判断 Coil 还是 Register）
     Result<bool, RichError> writeNode(const ModbusDataStruct &config,
-                                      const QVariant &value);
+                                      const ValueType &value);
 
     Result<bool, RichError> batchWriteNode(const std::vector<ModbusDataStruct> &dataVec);
     Result<bool, RichError> batchReadNode( std::vector<ModbusDataStruct> &dataVec);

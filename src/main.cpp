@@ -1,4 +1,3 @@
-#include "MQTTEncryptionClient/MQTTEncryptionClient.h"
 #include <QSurfaceFormat>
 #include "MQTTDecryptionServer/MQTTDecryptionServer.h"
 #include "ProtocolHeader/ProtocolHeader.h"
@@ -79,8 +78,8 @@ int main(int argc, char *argv[]) {
     windowManager->initialize();
   }
 
-  SystemManager setting;
-  setting.start();
+  // SystemManager setting;
+  // setting.start();
 
   mainWindows->show();
 

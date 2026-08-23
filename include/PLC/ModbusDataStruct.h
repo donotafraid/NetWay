@@ -2,7 +2,7 @@
 
 #include <string>
 #include <QVariant>
-#include "PLC/Struct.h"
+#include "PLC/S7TypeStruct.h"
 
 enum class ModbusNodeType {
     Coil,                 // 0x 线圈

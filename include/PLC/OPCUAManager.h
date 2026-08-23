@@ -3,23 +3,15 @@
 #include "PLC/OPC_UA.h"
 #include "PLC/OPCUABrowser.h"
 #include "PLC/OPCUACovert.h"
-#include "PLC/TransformS7AndOPCUA.h"
 #include "PLC_Collector/IDataNode.h"
+#include "PLC/ParsingStrategy.h"
+#include "PLC/TreeNode.h"
+#include "PLC/MapperStrategy.h"
+#include "PLC/GenericTreeBuilder.h"
+#include "PLC/CreateContextStrategy.h"
 
 class OPCUADataBlock;
 class SpecialTreeView;
-
-struct TreeNode {
-  std::shared_ptr<IDataNode> m_data = nullptr;
-  std::weak_ptr<TreeNode> parent ;
-  QList<std::shared_ptr<TreeNode>> children;
-  QString displayName = "";
-  bool isExpanded = false;
-
-  std::shared_ptr<TreeNode> getChildNode(int index){
-    return children[index];
-  }
-};
 
 // 职责：将OPCUADataBlock适配为Qt的Model
 class OPCUADataBlockModel : public QAbstractTableModel {
@@ -32,40 +24,15 @@ public:
   // 析构函数
   ~OPCUADataBlockModel() override;
 
-  // transform external request
-  void sendMessage()
-  {
-    if (m_OPCUAStructVec ) {
-      m_OPCUAStructVec->writeValueToPLC();
-    } else {
-      // 处理空指针或空容器的情况
-      spdlog::info("sendMessage:Vec is empty or Vec is nullptr");
-    }
-  };
-  void getMessage() {
-    if (m_OPCUAStructVec ) {
-      m_OPCUAStructVec->readValueFromPLC();
-    } else {
-      // 处理空指针或空容器的情况
-      spdlog::info("getMessage:Vec is empty or Vec is nullptr");
-    }
-  };
-
   //  set internal parmeter
-  void setRootNode(std::shared_ptr<TreeNode> rootNode){m_rootNode = rootNode;};
-  void setOPCUAStructVec(const std::shared_ptr<IDataNode> block);
+  void setRootNode(std::shared_ptr<TreeNode> rootNode) {
+    m_rootNode = rootNode;
+    rebuildVisualRowMap();
+  };
 
   // respond external request about variable
-  std::vector<OPCUAModernDataStruct> &getModelItemVecotr();
-  QString getDisplayValue(const OPCUAModernDataStruct &var, int column) const;
-  QString getTypeString(S7DataType type) const;
   TreeNode *getNodeByVisualRow(int visualRow) const;
-  TreeNode *getRootNode();
-  TreeNode *getGlobalNode(const int globalIndex) {
-    TreeNode *Node = nullptr;
-    Node = this->getNodeByVisualRow(globalIndex);
-    return Node;
-  }
+  std::shared_ptr<TreeNode> getRootNode();
 
   //  rebuild function
   void rebuildVisualRowMap();
@@ -82,7 +49,6 @@ public:
   // return data from internal Model
   QVariant data(const QModelIndex &index,
                 int role = Qt::DisplayRole) const override;
-
   // set data into internal Model
   bool setData(const QModelIndex &index, const QVariant &value,
                int role = Qt::EditRole) override;
@@ -94,8 +60,6 @@ public:
 
   // batch update function
   void batchSetDataForOPCUA();
-
-  
 
 signals:
   void requestOPCUADataBlockModified();
@@ -109,17 +73,16 @@ private:
     Value,
     Comment
   };
-  
-  std::shared_ptr<IDataNode> m_OPCUAStructVec = nullptr;
+
   std::shared_ptr<TreeNode> m_rootNode;
-  QMap<int, TreeNode *> m_visualRowMap;         // 视觉行号 → 节点指针
+  QMap<int, TreeNode *> m_visualRowMap; // 视觉行号 → 节点指针
   bool m_visualRowMapValid = false;
 
   // 辅助方法
   // 输入：数据节点指针 (TreeNode*)
   // 输出：QModelIndex
   QModelIndex indexFromNode(TreeNode *node, int column = 0) const;
-  void buildTree(TreeNode* parent = nullptr);
+  void buildViewTree(TreeNode *parent = nullptr);
   TreeNode *createPlaceholderNode(const std::string &parent_nodeID);
   IDataNode *findOPCUADataStruct(const std::string &parent_nodeID);
 
@@ -130,295 +93,67 @@ private:
   // validation function
   bool isValidIndex(const QModelIndex &index) const;
   void printTreeNode(TreeNode *node, int depth = 0, bool isLast = true);
-  
-  std::string extractVariableNameWithoutIndex(const std::string &input); 
+
+  std::string extractVariableNameWithoutIndex(const std::string &input);
   std::pair<std::string, std::string>
-  extractVariableNameWithIndex(const std::string &input); 
-  std::string extractLastPartWithoutIndexForArray(const std::string &input); 
-  
-  int getChildSize(TreeNode *node) const  {
+  extractVariableNameWithIndex(const std::string &input);
+  std::string extractLastPartWithoutIndexForArray(const std::string &input);
+
+
+  int getChildSize(TreeNode *node) const {
     int size = 1;
-    if (node->children.size() == 0) {
+    if (node->getChildCount() == 0) {
       return 1;
     } else {
-      for (auto &element : node->children) {
+      for (auto &element : node->getChildren()) {
         size += getChildSize(element.get());
       }
     }
     return size;
   }
 
-    // 辅助函数：在父节点中查找子节点索引（可以缓存优化）
+  // 辅助函数：在父节点中查找子节点索引（可以缓存优化）
   int findChildIndex(const std::shared_ptr<TreeNode> &parent,
                      const std::shared_ptr<TreeNode> &child) const {
     // 如果有缓存，可以直接返回
-    // return parent->childIndexCache.value(child.get(), -1);
-
-    return parent->children.indexOf(child);
+    return parent->getChildren().indexOf(child);
   }
-};
 
-//  OPCUA Device Reader
-class OPCUADeviceReader {
-public:
-    // 构造函数
-    OPCUADeviceReader() = default;
-    explicit OPCUADeviceReader(const std::string& identifier);
-    ~OPCUADeviceReader() = default;
-    
-    // 禁止拷贝
-    OPCUADeviceReader(const OPCUADeviceReader&) = delete;
-    OPCUADeviceReader& operator=(const OPCUADeviceReader&) = delete;
-    
-    // 允许移动
-    OPCUADeviceReader(OPCUADeviceReader&& other) noexcept = default;
-    OPCUADeviceReader& operator=(OPCUADeviceReader&& other) noexcept = default;
+  // 无符号整数转换辅助函数
+  template <typename TargetType>
+  bool convertAndStoreUnsigned(const QVariant &value,
+                               std::optional<ValueType> &coreValue) {
+    bool ok = false;
+    uint32_t temp = value.toUInt(&ok);
+    if (!ok)
+      return false;
 
-    // 读取数据方法
-    Result<bool, RichError> batchReadOPCUADataBlock_FromPLC(
-        std::vector<OPCUAModernDataStruct> &dataVec);
-    Result<bool, RichError> batchReadS7DataBlock_FromPLC(
-        std::vector<OPCUAModernDataStruct> &dataVec);
-    Result<int, RichError>
-    meastureStringObjectLength(int startPostion, OPCUAModernDataStruct &var);
-
-    // 写入数据方法
-    Result<bool, RichError> batchWriteS7DataBlock_ToPLC(OPCUADataBlock *data);
-    Result<bool, RichError> batchWriteS7DataBlock_ToPLC(std::vector<OPCUAModernDataStruct> &dataVec);
-    Result<bool, RichError>
-    batchWriteOPCUABlock_ToPLC(std::vector<OPCUAModernDataStruct> &dataVec);
-
-    // get function
-    Result<std::string, RichError> getIdentifier();
-    
-    // respond function
-    bool onRequestBuildOPCUA(const std::string& ip_Address, int nameSpace, int port);
-    bool onRequestOPCUACheckConnect() const;
-    
-    // S7 相关方法
-    bool onRequestBuildS7(const std::string& ip_Address, int rack, int slot, int timeout);
-    bool onRequestS7CheckConnect() const;
-    
-    // 重置连接
-    void resetConnections();
-
-private:
-    OPCUADataCovert m_covert;
-    std::unique_ptr<S7_Access> m_s7Acess = nullptr;
-    std::unique_ptr<OPCUA_Access> m_opcUA = nullptr;
-    std::vector<uint8_t> readbuffer;
-    std::string m_identifier = "";
-    
-    // 辅助方法
-    void logError(const std::string& function, const std::string& error) const;
-    void logInfo(const std::string& message) const;
-    
-    // 数据转换辅助方法
-    Result<bool, RichError> convertOPCUAToDataPointer(std::vector<OPCUAModernDataStruct> &dataVec );
-    Result<bool, RichError> convertDataPointerToOPCUA(std::vector<OPCUAModernDataStruct> &dataVec );
-};
-
-// 职责：从定义构建OPCUADataBlock
-class OPCUADataBlockBuilder : public QObject{
-  Q_OBJECT
-public:
-    void initialize(Scope* scope);
-
-    Result<std::vector<OPCUAModernDataStruct>, RichError>
-    add_OPCUADataBlock_from_OPCUADataBlockDefinition(
-        const QString &file_path, const std::string &ip_Address,const InputFormat &buildType);
-    Result<std::vector<OPCUAModernDataStruct>, RichError>
-    add_OPCUADataBlock_from_OPCUADataBlockDefinition(
-        const OPCUADataBlockDefinition &data_block_definition,
-        const std::string &ip_Address);
-    Result<bool, RichError> add_variable_from_OPCUADataBlockDefinition(
-        const S7XMLVariableDefinition &variable_definition,
-        int data_block_number, const std::string &prefix,
-        std::vector<OPCUAModernDataStruct> &m_variable_vector);
-
-    //  update function
-    Result<bool, RichError> updateTypeEnum(std::shared_ptr<OPCUAParseResult> &data);
-
-    // build function
-    std::shared_ptr<TreeNode> buildTree(std::vector<OPCUAModernDataStruct> &dataNodes);
-    std::shared_ptr<TreeNode> createPlaceholderNode(std::shared_ptr<TreeNode> &rootNode,const std::string &parent_nodeID, QHash<QString, std::shared_ptr<TreeNode >> &m_parentNodeIDMap,std::vector<OPCUAModernDataStruct> &dataNodes);
-    OPCUAModernDataStruct *findOPCUADataStruct(const std::string &parent_nodeID,std::vector<OPCUAModernDataStruct> &dataNodes);
-
-    Result<bool, RichError> build(const QString &file_path,
-                                  const std::string &ip_Address);
-    Result<bool, RichError> build_CSV(const QString &file_path,
-                                      const std::string &ip_Address);
-    Result<bool, RichError> build_InlineBrowse(const std::string &ip_Address);
-    Result<bool, RichError> build_S7(const OPCUADataBlockDefinition &content,
-                                     const std::string &ip_Address);
-
-  signals:
-    void requestSaveOPCUAParseResult(
-        const std::shared_ptr<IDataNode> &dataPointer,const std::shared_ptr<TreeNode> &rootNode);
-    void requestSaveOPCUADataBlock(
-        const std::shared_ptr<IDataNode> &dataPointer,const std::shared_ptr<TreeNode> &rootNode);
-
-  private:
-    std::string m_name;
-    int m_dbNumber = 0;
-    std::shared_ptr<OPCUADeviceReader> m_reader;
-
-    // trim function
-    Result<bool, RichError> isNumber(const std::string &s) {
-      if (s.empty())
-        return false;
-
-      char *end = nullptr;
-      // 使用 strtod 而不是 atof，因为 atof 无法检测错误
-      strtod(s.c_str(), &end);
-
-      // end 指向第一个未转换的字符
-      return Result<bool, RichError>(end == s.c_str() + s.length());
+    // 边界值检查（防止溢出）
+    if (temp > std::numeric_limits<TargetType>::max()) {
+      return false; // 数值超出目标类型范围
     }
 
-    Result<bool, RichError>
-    calculate_data_block_size(std::vector<OPCUAModernDataStruct> &varVector) {
-      //  RECORD LAST USEABLE POSITION
-      int last_free_byte_offset = 0;
-      //  RECORD LAST USED POSITION
-      float last_used_var_byte_offset = -1;
-      int current_bit_quality = 0;
-      bool is_effective_calculate = true;
-      S7DataType last_data_S7_type = S7DataType::UNKNOWN;
-      for (auto &var : varVector) {
-        if (var.data_type_enum == S7DataType::UNKNOWN) {
-          continue;
-        }
-        is_effective_calculate &=
-            calculate_variable_offset(
-                var, last_free_byte_offset, current_bit_quality,
-                last_used_var_byte_offset, last_data_S7_type)
-                .is_success();
-        last_used_var_byte_offset = var.bytes_offset;
-      }
+    coreValue = static_cast<TargetType>(temp);
+    return true;
+  }
 
-      if (is_effective_calculate) {
-        return Result<bool, RichError>(true);
-      } else {
-        return Result<bool, RichError>(
-            RichError("calculate data block size failed"));
-      }
+  // 有符号整数转换辅助函数（可选，用于统一处理）
+  template <typename TargetType>
+  bool convertAndStoreSigned(const QVariant &value, std::optional<ValueType> &coreValue) {
+    bool ok = false;
+    int32_t temp = value.toInt(&ok);
+    if (!ok)
+      return false;
+
+    // 边界值检查
+    if (temp < std::numeric_limits<TargetType>::min() ||
+        temp > std::numeric_limits<TargetType>::max()) {
+      return false;
     }
 
-    Result<bool, RichError> calculate_variable_offset(
-        OPCUAModernDataStruct &var, int &last_free_byte_offset,
-        int &current_bit_quality, float &last_used_var_byte_offset,
-        S7DataType &last_data_S7_type) {
-      // update the latest byte position to be allocated
-      switch (var.data_type_enum) {
-      case S7DataType::BOOL:
-        //  CHECK THE EXISTENCE OF CONTINUOUS BOLL VARIABLE
-        if (last_data_S7_type == S7DataType::BOOL) {
-          //  IN S7 , VARIABLE_OFFSET DECIMAL PART IS EQUAL TO OR LESS THAN 7
-          int used_decimal_part = last_used_var_byte_offset * 10 -
-                                  std::floor(last_used_var_byte_offset) * 10;
-          if (used_decimal_part < 7) {
-            var.bytes_offset = last_used_var_byte_offset + 0.1;
-            var.bit_offset = used_decimal_part + 1;
-          } else {
-            var.bytes_offset = std::floor(last_used_var_byte_offset) + 1;
-            var.bit_offset = 0;
-          }
-          //  float PART CAN UPDATE BY VAR.BYTES_OFFSET , BECAUSE
-          last_free_byte_offset = (std::floor(var.bytes_offset) + 1);
-        } else {
-          var.bytes_offset = last_free_byte_offset;
-          var.bit_offset = 0;
-          last_free_byte_offset = var.bytes_offset + 1;
-        }
-        last_data_S7_type = S7DataType::BOOL;
-        //  AVOID THE RUNNING OF ASSIGNMENT OF IS_CONTINUOUS_BOOL TO FALSE
-        return Result<bool, RichError>(true);
-      case S7DataType::BYTE:
-        last_data_S7_type = S7DataType::BYTE;
-        var.bytes_offset = last_free_byte_offset;
-        last_free_byte_offset = var.bytes_offset + 1;
-        break;
-      case S7DataType::INT:
-        last_data_S7_type = S7DataType::INT;
-        if (last_free_byte_offset % 2 == 0) {
-          var.bytes_offset = last_free_byte_offset;
-        } else {
-          var.bytes_offset = last_free_byte_offset + 1;
-        }
-        last_free_byte_offset = var.bytes_offset + 2;
-        break;
-      case S7DataType::WORD:
-        last_data_S7_type = S7DataType::WORD;
-        if (last_free_byte_offset % 2 == 0) {
-          var.bytes_offset = last_free_byte_offset;
-        } else {
-          var.bytes_offset = last_free_byte_offset + 1;
-        }
-        last_free_byte_offset = var.bytes_offset + 2;
-        break;
-      case S7DataType::DWORD:
-        last_data_S7_type = S7DataType::DWORD;
-        if (last_free_byte_offset % 2 == 0) {
-          var.bytes_offset = last_free_byte_offset;
-        } else {
-          var.bytes_offset = last_free_byte_offset + 1;
-        }
-        last_free_byte_offset = var.bytes_offset + 4;
-        break;
-      case S7DataType::UDINT:
-        last_data_S7_type = S7DataType::UDINT;
-        if (last_free_byte_offset % 2 == 0) {
-          var.bytes_offset = last_free_byte_offset;
-        } else {
-          var.bytes_offset = last_free_byte_offset + 1;
-        }
-        last_free_byte_offset = var.bytes_offset + 4;
-        break;
-      case S7DataType::DINT:
-        last_data_S7_type = S7DataType::DINT;
-        if (last_free_byte_offset % 2 == 0) {
-          var.bytes_offset = last_free_byte_offset;
-        } else {
-          var.bytes_offset = last_free_byte_offset + 1;
-        }
-        last_free_byte_offset = var.bytes_offset + 4;
-        break;
-      case S7DataType::REAL:
-        last_data_S7_type = S7DataType::REAL;
-        if (last_free_byte_offset % 2 == 0) {
-          var.bytes_offset = last_free_byte_offset;
-        } else {
-          var.bytes_offset = last_free_byte_offset + 1;
-        }
-        last_free_byte_offset = var.bytes_offset + 4;
-        break;
-      case S7DataType::STRING: {
-        last_data_S7_type = S7DataType::STRING;
-        var.bytes_offset = last_free_byte_offset;
-        auto result =
-            m_reader->meastureStringObjectLength(last_free_byte_offset, var);
-        if (result.is_fail())
-        {
-          var.s7_data_type_length = 2;
-        }
-        else
-        {
-          var.s7_data_type_length = result.unwrap_returnLeftValue() + 2;
-        }
-        last_free_byte_offset += (var.s7_data_type_length) % 2
-                                     ? (var.s7_data_type_length / 2 + 1) * 2
-                                     : var.s7_data_type_length;
-      } break;
-      default:
-        return Result<bool, RichError>(RichError("unknown data type"));
-      }
-      return Result<bool, RichError>(true);
-    }
-
-    std::string extractLastPartWithoutIndexForNormal(const std::string &input);
-    std::string
-    extractLastPartWithoutIndexForNormal(const OPCUAModernDataStruct &data);
+    coreValue = static_cast<TargetType>(temp);
+    return true;
+  }
 };
 
 //  responsibility : The logic behind the data presented 
@@ -449,7 +184,6 @@ public:
 //  responsibility : Provides UI controls and UI business logic
 class OPCUADataBlockView : public QWidget {
   Q_OBJECT
-
 public:
   explicit OPCUADataBlockView(QWidget *parent = nullptr);
   ~OPCUADataBlockView();
@@ -551,7 +285,7 @@ private:
   int findChildIndex(const std::shared_ptr<TreeNode> &parent,
                      const TreeNode *child) const {
                       int row = 0 ;
-    for (auto element : parent->children) {
+    for (auto element : parent->getChildren()) {
       if(element.get() == child)
       {
         return row;
@@ -659,7 +393,7 @@ public:
   int findChildIndex(const std::shared_ptr<TreeNode> &parent,
                      const TreeNode *child) const {
     int row = 0;
-    for (auto element : parent->children) {
+    for (auto element : parent->getChildren()) {
       if (element.get() == child) {
         return row;
       }
@@ -685,100 +419,23 @@ private:
 //  responsibility : Coordinating business interactions
 class OPCUADataBlockController : public QObject {
     Q_OBJECT
-    
 public:
     explicit OPCUADataBlockController(QObject* parent = nullptr){};
     ~OPCUADataBlockController(){
       std::cout << "OPCUADataBlockController destory call" << std::endl;
     }
-    
-    void initialize(Scope* scope);
-    void initializeView(OPCUADataBlockView* view);
+
+    void initialize(std::shared_ptr<OPCUADataBlockView> view,
+                    std::shared_ptr<OPCUADataBlockModel> model,
+                    const QString &identifier, const ServiceRegistry &registry);
     void buildConnection();
     
     // 处理外部请求
     void handleExternalRefreshRequest(){};
     void handleExternalWriteRequest(){};
-    bool handleExternalOPCUAConnectRequest(const std::string &ip_Address, int nameSpace,
-                                         int port) {
-      return m_reader->onRequestBuildOPCUA(ip_Address,nameSpace,port);
-    };
-    bool handleExternalOPCUAConnectCheckRequest() {
-      return m_reader->onRequestOPCUACheckConnect();
-    };
-    bool handleSwithView(const QString &ip_Address,const QString &OPCUADataBlockName){
-      return true;
-    }
     //  on function
-    bool onbuildOPCUADataBlockFromXMLFile(const QString &file_path,
-                                          const std::string &ip_Address) {
-
-      // 1. 检查文件路径是否为空
-      if (file_path.isEmpty()) {
-        // 记录错误日志
-        std::cerr << "Error: Empty file path" << std::endl;
-        return false;
-      }
-
-      // 2. 检查文件是否存在
-      if (!QFile::exists(file_path)) {
-        std::cerr << "Error: File does not exist: " << file_path.toStdString()
-                  << std::endl;
-        return false;
-      }
-
-      // 3. 获取文件后缀名（转小写以进行不区分大小写的比较）
-      QString suffix = QFileInfo(file_path).suffix().toLower();
-
-      // 4. 根据后缀名路由到不同的处理函数
-      if (suffix == "xml") {
-        // 处理 XML 文件
-        auto result = m_OPCUADataBlockBuild->build(file_path, ip_Address);
-        if (result.is_fail()) {
-          return false;
-        } else {
-          return true;
-        }
-      } else if (suffix == "csv") {
-        // 处理 CSV 文件
-        auto result = m_OPCUADataBlockBuild->build_CSV(file_path, ip_Address);
-        if (result.is_fail()) {
-          return false;
-        } else {
-          return true;
-        }
-      } else {
-        // 不支持的文件格式
-        std::cerr << "Error: Unsupported file format: " << suffix.toStdString()
-                  << ". Supported formats: XML, CSV" << std::endl;
-        return false;
-      }
-    }
-    bool onbuildOPCUAInlineBrowse(const std::string &ip_Address) {
-      auto result = m_OPCUADataBlockBuild->build_InlineBrowse(ip_Address);
-      if (result.is_fail()) {
-        return false;
-      } else {
-        return true;
-      }
-    }
-    bool onbuildOPCUADataBlockFromDBFile(const QString &file_path,
-                                         const std::string &ip_Address) {
-      auto parse_result =m_DBParser.read_file_content(file_path.toStdString()).and_then(
-          [this](std::string &fileContent) {
-            return this->m_DBParser.parse(fileContent);
-          });
-
-      if (parse_result.is_success()) {
-        m_OPCUADataBlockBuild->build_S7(parse_result.unwrap_returnLeftValue(),
-                                ip_Address);
-        return true;
-      } else {
-        std::cout << "error : SCL_Parser::Parser exist problem" << std::endl;
-        return false;
-      }
-    }
-
+    bool onbuildOPCUADataBlockFromMap(const QString &file_path,
+                                          const QString &identifier,const std::unordered_map<QString, ServiceRegistry> &m_serviceSuites);
   private slots:
     // 连接View的信号到Model的操作
     void onViewReadRequested();
@@ -787,136 +444,19 @@ public:
     void onViewExportRequested(){};
     void onViewFindRequested(){};
 
-    //  OPCUADataBlock function
-    void onSaveOPCUAParseResult(const std::shared_ptr<IDataNode> &dataBlockResult,const std::shared_ptr<TreeNode> &rootNode);
-    void onSaveOPCUADataBlock(const std::shared_ptr<IDataNode> &dataBlock,const std::shared_ptr<TreeNode> &rootNode);
-
     // Model变化时的响应
 
   private:
-    OPCUADataBlockView *m_view = nullptr;
-    std::shared_ptr<OPCUADataBlockModel> m_model = nullptr;
-    std::shared_ptr<OPCUADataBlockBuilder> m_OPCUADataBlockBuild = nullptr;
-    std::shared_ptr<OPCUADeviceReader> m_reader = nullptr;
+  std::weak_ptr<OPCUADataBlockView> m_view ;
+  std::weak_ptr<OPCUADataBlockModel> m_model ;
+  QString m_identifier;
+  ServiceRegistry m_registry;
 
+  std::unique_ptr<GenericTreeBuilder> treeBuilder ;
+  DataLoader m_loader;
 
-    std::shared_ptr<IDataNode> m_varVec;
-    SCL_Parser m_DBParser;
-
-    Result<bool, RichError> calculate_variable_offset(
-        OPCUAModernDataStruct &var, int &last_free_byte_offset,
-        int &current_bit_quality, float &last_used_var_byte_offset,
-        S7DataType &last_data_S7_type) {
-      // update the latest byte position to be allocated
-      switch (var.data_type_enum) {
-      case S7DataType::BOOL:
-        //  CHECK THE EXISTENCE OF CONTINUOUS BOLL VARIABLE
-        if (last_data_S7_type == S7DataType::BOOL) {
-          //  IN S7 , VARIABLE_OFFSET DECIMAL PART IS EQUAL TO OR LESS THAN 7
-          int used_decimal_part = last_used_var_byte_offset * 10 -
-                                  std::floor(last_used_var_byte_offset) * 10;
-          if (used_decimal_part < 7) {
-            var.bytes_offset = last_used_var_byte_offset + 0.1;
-            var.bit_offset = used_decimal_part + 1;
-          } else {
-            var.bytes_offset = std::floor(last_used_var_byte_offset) + 1;
-            var.bit_offset = 0;
-          }
-          //  float PART CAN UPDATE BY VAR.BYTES_OFFSET , BECAUSE
-          last_free_byte_offset = (std::floor(var.bytes_offset) + 1);
-        } else {
-          var.bytes_offset = last_free_byte_offset;
-          var.bit_offset = 0;
-          last_free_byte_offset = var.bytes_offset + 1;
-        }
-        last_data_S7_type = S7DataType::BOOL;
-        //  AVOID THE RUNNING OF ASSIGNMENT OF IS_CONTINUOUS_BOOL TO FALSE
-        return Result<bool, RichError>(true);
-      case S7DataType::BYTE:
-        last_data_S7_type = S7DataType::BYTE;
-        var.bytes_offset = last_free_byte_offset;
-        last_free_byte_offset = var.bytes_offset + 1;
-        break;
-      case S7DataType::INT:
-        last_data_S7_type = S7DataType::INT;
-        if (last_free_byte_offset % 2 == 0) {
-          var.bytes_offset = last_free_byte_offset;
-        } else {
-          var.bytes_offset = last_free_byte_offset + 1;
-        }
-        last_free_byte_offset = var.bytes_offset + 2;
-        break;
-      case S7DataType::WORD:
-        last_data_S7_type = S7DataType::WORD;
-        if (last_free_byte_offset % 2 == 0) {
-          var.bytes_offset = last_free_byte_offset;
-        } else {
-          var.bytes_offset = last_free_byte_offset + 1;
-        }
-        last_free_byte_offset = var.bytes_offset + 2;
-        break;
-      case S7DataType::DWORD:
-        last_data_S7_type = S7DataType::DWORD;
-        if (last_free_byte_offset % 2 == 0) {
-          var.bytes_offset = last_free_byte_offset;
-        } else {
-          var.bytes_offset = last_free_byte_offset + 1;
-        }
-        last_free_byte_offset = var.bytes_offset + 4;
-        break;
-      case S7DataType::UDINT:
-        last_data_S7_type = S7DataType::UDINT;
-        if (last_free_byte_offset % 2 == 0) {
-          var.bytes_offset = last_free_byte_offset;
-        } else {
-          var.bytes_offset = last_free_byte_offset + 1;
-        }
-        last_free_byte_offset = var.bytes_offset + 4;
-        break;
-      case S7DataType::DINT:
-        last_data_S7_type = S7DataType::DINT;
-        if (last_free_byte_offset % 2 == 0) {
-          var.bytes_offset = last_free_byte_offset;
-        } else {
-          var.bytes_offset = last_free_byte_offset + 1;
-        }
-        last_free_byte_offset = var.bytes_offset + 4;
-        break;
-      case S7DataType::REAL:
-        last_data_S7_type = S7DataType::REAL;
-        if (last_free_byte_offset % 2 == 0) {
-          var.bytes_offset = last_free_byte_offset;
-        } else {
-          var.bytes_offset = last_free_byte_offset + 1;
-        }
-        last_free_byte_offset = var.bytes_offset + 4;
-        break;
-      case S7DataType::STRING: {
-        last_data_S7_type = S7DataType::STRING;
-        var.bytes_offset = last_free_byte_offset;
-        auto result = meastureStringObjectLength(last_free_byte_offset,var);
-        if (result.is_fail())
-        {
-          var.s7_data_type_length = 2;
-        }
-        else
-        {
-          var.s7_data_type_length = result.unwrap_returnLeftValue() + 2;
-        }
-        last_free_byte_offset += (var.s7_data_type_length) % 2
-                                     ? (var.s7_data_type_length / 2 + 1) * 2
-                                     : var.s7_data_type_length;
-      } break;
-      default:
-        return Result<bool, RichError>(RichError("unknown data type"));
-      }
-      return Result<bool, RichError>(true);
-    }
-
-    Result<int, RichError>
-    meastureStringObjectLength(int last_free_byte_offset,OPCUAModernDataStruct &var) {
-      return Result<int, RichError>(m_reader->meastureStringObjectLength(last_free_byte_offset,var));
-    }
+  std::vector<std::shared_ptr<IDataNode>> dataNodeVec;
+  std::vector<WriteRequest> m_requestVec;
 };
 
 struct OPCUADataBlockKey {
@@ -950,7 +490,7 @@ inline uint qHash(const OPCUADataBlockKey& key, uint seed) {
 struct OPCUADataBlockContext {
   OPCUADataBlockKey key;
   QWidget m_controllWidget;
-  OPCUADataBlockView *view = nullptr;      // 独立的View
+  std::shared_ptr<OPCUADataBlockView> view; // 独立的View
   std::shared_ptr<OPCUADataBlockController> controller;
   std::shared_ptr<OPCUADataBlockModel> model;    // 独立的Model
   std::shared_ptr<OPCUADataDelegate> delegate; // 独立的Delegate
@@ -985,7 +525,6 @@ public:
      * @brief 获取已存在的 View（不创建）
      * @return QTableView* 如果不存在返回 nullptr
      */
-    QTreeView* getTableView(const QString& ipAddress, const QString& OPCUADataBlockName);
     // QTableView* getTableView(const QString& ipAddress, const QString& OPCUADataBlockName);
     QWidget* getView(const QString& ipAddress, const QString& OPCUADataBlockName);
     
@@ -995,118 +534,50 @@ public:
                                           const QString& filePath);
     QList<OPCUADataBlockKey> getAllOPCUADataBlockKeys() const;
     QList<OPCUADataBlockContext> getAllOPCUADataBlocks() const;
-    std::shared_ptr<OPCUADeviceReader> getSpecialReader(const std::string &ip_Address) const;
+    std::shared_ptr<IDeviceReader> getSpecialReader(const QString &identifier) const;
     // ========== 删除接口 ==========
     bool removeOPCUADataBlock(const QString& ipAddress, const QString& OPCUADataBlockName);
     int removeOPCUADataBlocksByIp(const QString& ipAddress);
     void removeAllOPCUADataBlocks(){
-      for(auto &element : m_OPCUADataBlocks)
-      {
-        if(element)
-        {
-          delete element;
           std::cout<<"element delete successfully"<<std::endl;
-        }
-      }
     };
-    
-    // ========== 更新接口 ==========
-    bool updateOPCUADataBlock(const QString& ipAddress, 
-                        const QString& OPCUADataBlockName,
-                        const QVariantMap& newParams);
-    
-    void markAsModified(const QString& ipAddress, 
-                       const QString& OPCUADataBlockName, 
-                       bool modified);
-    
-    bool markAsConnected(const QString& ipAddress, 
-                        const QString& OPCUADataBlockName, 
-                        bool connected);
-    
+    void cleanupOPCUADataBlockContext(OPCUADataBlockContext *context);
+
     // ========== 刷新接口 ==========
-    void refreshOPCUADataBlock(const QString& ipAddress, const QString& OPCUADataBlockName);
-    void refreshAllOPCUADataBlocks();
-    
-    // ========== 设备连接管理 ==========
-    std::shared_ptr<OPCUADeviceReader> getClient(const QString& ipAddress,const std::string &connectWay);
     
     // ========== 原有业务接口（需要指定操作哪个 OPCUADataBlock）==========
     bool buildS7Connect(const QString &ipAddress, int rack, int slot,
+                        const QString &identifier,
                         const std::string &connectWay = "S7_Offset"); // S7参数
 
-    bool buildOPCUAConnect(const QString &ipAddress,
-                             int nameSpace, int port,const std::string &connectWay = "OPC_UA");
-
-    bool buildOPCUAInlineBrowse(const QString &ipAddress, int nameSpace, int port,
+    bool buildOPCUAConnect(const QString &ipAddress, int nameSpace, int port,
+                           const QString &identifier,
                            const std::string &connectWay = "OPC_UA");
+
+    bool buildOPCUAInlineBrowseConnect(
+        const QString &ipAddress, int nameSpace, int port,
+        const std::string &urlPrefix, const int &objectId,
+        const QString &identifier, const std::string &connectWay = "OPC_UA");
 
     bool checkConnectToDevice(const QString& ipAddress,
                         const std::string& connectWay);
     
-    bool buildDataFromFile(const QString& ipAddress,
+    bool buildDataFromFile(const QString& identify,
                          const QString& fileName);
-    
-signals:
+  signals:
     // 信号携带 ip + OPCUADataBlockName，让外部知道是哪个发生了变化
     void OPCUADataBlockCreated(const QString& ipAddress, const QString& OPCUADataBlockName);
     void OPCUADataBlockRemoved(const QString& ipAddress, const QString& OPCUADataBlockName);
     void OPCUADataBlockModified(const QString& ipAddress, const QString& OPCUADataBlockName, bool modified);
     void OPCUADataBlockConnected(const QString& ipAddress, const QString& OPCUADataBlockName, bool connected);
     void OPCUADataBlockRefreshed(const QString& ipAddress, const QString& OPCUADataBlockName);
-    void errorOccurred(const QString& ipAddress, const QString& OPCUADataBlockName, const QString& error);
 
 private:
-    // 内部辅助函数
-    OPCUADataBlockContext* createOPCUADataBlockContext(const QString& ipAddress,
-                                             const QString& OPCUADataBlockName);
+  // 核心数据结构：Key -> OPCUADataBlockContext
+  QMap<OPCUADataBlockKey, std::shared_ptr<OPCUADataBlockContext>> m_blockMap;
+  
+  ContextStrategyFactory m_contextFactory;
 
-    void setupOPCUADataBlockConnections(OPCUADataBlockContext* context);
-    void cleanupOPCUADataBlockContext(OPCUADataBlockContext* context);
-    
-    std::shared_ptr<OPCUADataBlockModel> createModel(const QString& ipAddress,
-                                               const QString& OPCUADataBlockName);
-    
-    std::shared_ptr<OPCUADataDelegate> createDelegate(const QString& OPCUADataBlockName);
-    OPCUADataBlockView *createView();
-
-  private:
-    // 核心数据结构：Key -> OPCUADataBlockContext
-    QMap<OPCUADataBlockKey, OPCUADataBlockContext*> m_OPCUADataBlocks;
-    
-    // 设备客户端缓存：IP -> Client（同一IP复用连接）
-    QMap<QString, std::shared_ptr<OPCUADeviceReader>> m_clients;
-    
-    // 共享组件
-    std::shared_ptr<OPCUADataBlockBuilder> m_builder;
-    std::vector<std::shared_ptr<OPCUADeviceReader>> m_readerVector;
-    std::unique_ptr<OPCUADataBlockController> m_controller;
-};
-
-class MyApplication : public QApplication
-{
-    Q_OBJECT
-public:
-    MyApplication(int &argc, char **argv) : QApplication(argc, argv) {}
-
-    bool notify(QObject *receiver, QEvent *event) override
-    {
-        // 核心：在事件被分发到目标对象之前进行拦截
-        if (event->type() == QEvent::MouseButtonPress || 
-            event->type() == QEvent::MouseMove || 
-            event->type() == QEvent::Paint) 
-        {
-            qDebug() << "------ Event Dispatched ------";
-            qDebug() << "Event Type:" << event->type();
-            qDebug() << "Receiver Object:" << receiver->metaObject()->className();
-            
-            // 如果是鼠标事件，可以打印更多细节
-            if (event->type() == QEvent::MouseButtonPress) {
-                QMouseEvent *mouseEvent = static_cast<QMouseEvent*>(event);
-                qDebug() << "Mouse Press Position:" << mouseEvent->pos();
-            }
-        }
-
-        // 调用父类的notify，保证事件的正常处理
-        return QApplication::notify(receiver, event);
-    }
+  // 设备客户端缓存：IP -> Client（同一IP复用连接）
+  std::unordered_map<QString, ServiceRegistry> m_serviceSuites;
 };

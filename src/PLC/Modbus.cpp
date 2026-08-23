@@ -1,4 +1,5 @@
 #include "PLC/Modbus.h"
+#include "PLC/WriteRequestAddres.h"
 
 // ============ ModbusMediator 实现 ============
 
@@ -345,7 +346,7 @@ ModbusMediator::readNode(const ModbusDataStruct &config) {
   }
 }
 
-Result<bool, RichError> ModbusMediator::writeNode(const ModbusDataStruct& config, const QVariant& value) {
+Result<bool, RichError> ModbusMediator::writeNode(const ModbusDataStruct& config, const ValueType& value) {
     int slave = config.slave_id;
     int addr = config.address;
     int count = config.register_count;  // 对于 REAL / DWORD，count 为 2

@@ -10,6 +10,7 @@
 
 #include "MainWindows/Struct.h"
 #include "PLC/Struct.h"
+#include "Rust_error_deal/error_deal.h"
 
 struct S7XMLVariableDefinition
 {
@@ -127,9 +128,9 @@ public:
     }
   }
 
-  static Result<bool, RichError> TransformBytesToDynamicValue(
+  static Result<bool, RichError> TransformBytesToDataType(
       const S7DataType &type, const std::vector<uint8_t> &bytes, int offset,
-      int string_length, int bit_offset,QVariant &dataVar) {
+      int string_length, int bit_offset, ValueType&dataVar) {
 
     // 添加参数有效性检查
     if (bytes.empty()) {
@@ -259,8 +260,7 @@ public:
       std::string value(
           reinterpret_cast<const char *>(bytes.data() + offset + 2),
           actual_length);
-      
-      dataVar = QString::fromStdString(value);
+      dataVar = (value);
       break; // ✅ 添加 break
     }
 
@@ -275,89 +275,153 @@ public:
     return Result<bool, RichError>(true);
   }
 
-    static Result<bool, RichError> TransformDynamicValueToBytes(
-      const S7DataType &type, int typeLength, const std::vector<uint8_t> &bytes,
-      int offset, int string_length, int bit_offset,
-      std::vector<uint8_t> &dataBuffer, Dynamic_Value *valuePointer) {
+ static Result<bool, RichError> TransformDataTypeToBytes(
+      const S7DataType &type, const std::vector<uint8_t> &bytes, int offset,
+      int string_length, int bit_offset, ValueType&dataVar) {
+
+    // 添加参数有效性检查
+    if (bytes.empty()) {
+      return Result<bool, RichError>(RichError("bytes vector is empty"));
+    }
+
+    // 检查对象是否有效
+    if (type == S7DataType::UNKNOWN) {
+      return Result<bool, RichError>(RichError("object type is UNKNOWN"));
+    }
+
+    // 检查偏移量是否越界
+    if (offset < 0 || offset >= static_cast<int>(bytes.size())) {
+      return Result<bool, RichError>(RichError("Offset out of range"));
+    }
+
     switch (type) {
-    //  the data order is little endian
     case S7DataType::BOOL: {
-      bool boolValue = valuePointer->get<bool>();
-      if (boolValue) {
-        dataBuffer[offset] |= 1 << bit_offset;
-      } else {
-        dataBuffer[offset] &= ~(1 << bit_offset);
+      if (offset >= static_cast<int>(bytes.size())) {
+        return Result<bool, RichError>(RichError("BOOL: offset out of range"));
       }
-
-      break;
+      auto tmp_byte = bytes[offset];
+      bool value = (tmp_byte & (1 << bit_offset)) != 0;
+      
+      dataVar = value;
+      break; // ✅ 添加 break
     }
+
     case S7DataType::BYTE: {
-      int intValue = valuePointer->get<uint8_t>();
-      if (intValue >= 0 && intValue <= 255) {
-        ByteOrderCoverter::to_bigEndian(intValue, &dataBuffer[offset], 1);
+      if (offset >= static_cast<int>(bytes.size())) {
+        return Result<bool, RichError>(RichError("BYTE: offset out of range"));
       }
-      break;
+      uint8_t value = bytes[offset];
+      
+      dataVar = value;
+      break; // ✅ 添加 break
     }
+
     case S7DataType::INT: {
-      int intValue = valuePointer->get<int16_t>();
-      if (intValue >= -32768 && intValue <= 32767) {
-        ByteOrderCoverter::to_bigEndian(intValue, &dataBuffer[offset], 2);
-        break;
-      } else {
-        spdlog::warn("Byte value is mismatch range in model !");
+      if (offset + sizeof(int16_t) > bytes.size()) {
+        return Result<bool, RichError>(RichError("INT: insufficient data"));
       }
+      int16_t value = 0;
+      std::memcpy(&value, bytes.data() + offset, sizeof(int16_t));
+      
+      dataVar = value;
+      break; // ✅ 添加 break
     }
+
     case S7DataType::DINT: {
-      qint64 longValue = valuePointer->get<int32_t>();
-      if (longValue >= -2147483648LL && longValue <= 2147483647LL) {
-        ByteOrderCoverter::to_bigEndian(longValue, &dataBuffer[offset], 4);
-        break;
-      } else {
-        spdlog::warn("Byte value is mismatch range in model !");
+      if (offset + sizeof(int32_t) > bytes.size()) {
+        return Result<bool, RichError>(RichError("DINT: insufficient data"));
       }
+      int32_t value = 0;
+      std::memcpy(&value, bytes.data() + offset, sizeof(int32_t));
+      
+      dataVar = value;
+      break; // ✅ 添加 break
     }
+
     case S7DataType::REAL: {
-      float floatValue = valuePointer->get<float>();
-      uint32_t tmpBuffer;
-      memcpy(&tmpBuffer, &floatValue, 4);
-      ByteOrderCoverter::to_bigEndian(tmpBuffer, &dataBuffer[offset], 4);
-      break;
+      if (offset + sizeof(float) > bytes.size()) {
+        return Result<bool, RichError>(RichError("REAL: insufficient data"));
+      }
+      float value = 0;
+      std::memcpy(&value, bytes.data() + offset, sizeof(float));
+      
+      dataVar = value;
+      break; // ✅ 添加 break
     }
+
     case S7DataType::WORD: {
-      int intValue = valuePointer->get<uint16_t>();
-      if (intValue >= 0 && intValue <= 65535) {
-        ByteOrderCoverter::to_bigEndian(intValue, &dataBuffer[offset], 2);
-        break;
-      } else {
-        spdlog::warn("Byte value is mismatch range in model !");
+      if (offset + sizeof(uint16_t) > bytes.size()) {
+        return Result<bool, RichError>(RichError("WORD: insufficient data"));
       }
+      uint16_t value = 0;
+      std::memcpy(&value, bytes.data() + offset, sizeof(uint16_t));
+      
+      dataVar = value;
+      break; // ✅ 添加 break
     }
-    case S7DataType::DWORD:
+
     case S7DataType::UDINT: {
-      uint32_t uintValue = valuePointer->get<uint32_t>();
-      if (1) {
-        ByteOrderCoverter::to_bigEndian(uintValue, &dataBuffer[offset], 4);
-        break;
-      } else {
-        spdlog::warn("Byte value is mismatch range in model !");
+      if (offset + sizeof(uint32_t) > bytes.size()) {
+        return Result<bool, RichError>(RichError("UDINT: insufficient data"));
       }
+      uint32_t value = 0;
+      std::memcpy(&value, bytes.data() + offset, sizeof(uint32_t));
+      
+      dataVar = value;
+      break; // ✅ 添加 break
     }
+
+    case S7DataType::DWORD: {
+      if (offset + sizeof(uint32_t) > bytes.size()) {
+        return Result<bool, RichError>(RichError("DWORD: insufficient data"));
+      }
+      uint32_t value = 0;
+      std::memcpy(&value, bytes.data() + offset, sizeof(uint32_t));
+      
+      dataVar = value;
+      break; // ✅ 添加 break
+    }
+
     case S7DataType::STRING: {
-      std::string string_value = valuePointer->get<std::string>();
+      // 检查 STRING 格式：前两个字节是长度信息
+      if (offset + 2 > static_cast<int>(bytes.size())) {
+        return Result<bool, RichError>(
+            RichError("STRING: insufficient data for header"));
+      }
 
-      dataBuffer[offset] = typeLength;
-      dataBuffer[offset + 1] = string_value.size();
-      std::fill(dataBuffer.begin() + offset + 2,
-                dataBuffer.begin() + offset + 2 + typeLength - 2, 0);
+      uint8_t max_length = bytes[offset];        // 最大长度
+      uint8_t actual_length = bytes[offset + 1]; // 实际长度
 
-      memcpy(&dataBuffer[offset + 2], string_value.c_str(),
-             string_value.size());
+      // 验证长度
+      if (actual_length > max_length) {
+        return Result<bool, RichError>(RichError("STRING: invalid length"));
+      }
+
+      // 检查数据是否足够
+      if (offset + 2 + actual_length > bytes.size()) {
+        return Result<bool, RichError>(
+            RichError("STRING: insufficient data for content"));
+      }
+
+      // 使用实际长度
+      std::string value(
+          reinterpret_cast<const char *>(bytes.data() + offset + 2),
+          actual_length);
+      dataVar = (value);
+      break; // ✅ 添加 break
     }
-    default:
-      return Result<bool, RichError>(RichError("Unsupported data type"));
+
+    default: {
+      // 未知类型
+      return Result<bool, RichError>(RichError(
+          "Unsupported data type: " + std::to_string(static_cast<int>(type))));
     }
+    }
+
+    // 所有分支成功执行
     return Result<bool, RichError>(true);
   }
+
 
   static std::string transform_uint32_to_string(uint32_t value) {
     return std::to_string(value);

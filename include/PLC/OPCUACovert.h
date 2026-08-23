@@ -6,12 +6,12 @@
 #include <open62541/client_highlevel.h>
 #include <open62541/client_config_default.h>
 
-#include <fstream>
 #include <string>
 #include <regex>
-#include <iostream>
 #include "Rust_error_deal/error_deal.h"
 #include "PLC/Struct.h"
+#include "PLC_Collector/IDataNode.h"
+
 
 class OPCUADataCovert {
 public:
@@ -40,7 +40,7 @@ public:
   // OPCUA
   // UA->Normal
   Result<bool, RichError>
-  Set_UA_To_Read_Normal_Scalar(const S7DataType &S7_type, QVariant &dataVar,
+  Set_UA_To_Read_Normal_Scalar(const S7DataType &S7_type, ValueType &dataVar,
                                int i,
                                const std::vector<UA_Variant> &batchReadVariant);
   template <typename T>
@@ -59,19 +59,16 @@ public:
   // S7
   //  DynamicValue->Uint8_t
   void updateBufferFromS7ModernStructByLSB(
-      std::vector<OPCUAModernDataStruct> &vector,
-      std::vector<uint8_t> &dataBUffer);
-  void updateBufferFromS7ModernStructByMSB(
-      std::vector<OPCUAModernDataStruct> &vector,
+      std::vector<IDataNode> &vector,
       std::vector<uint8_t> &dataBUffer);
 
   // Uint8_t->DynamicValue
   Result<bool, RichError>
-  batchSet_Uint8_t_To_Dynamic(std::vector<OPCUAModernDataStruct> &vector,
+  batchSet_Uint8_t_To_Dynamic(std::vector<std::shared_ptr<IDataNode>> &vector,
       std::vector<uint8_t> &dataBuffer);
   // DynamicValue->Uint8_t
   Result<bool, RichError>
-  batchSet_DynamicValue_To_Uint8_t(std::vector<OPCUAModernDataStruct> &vector,
+  batchSet_Dynamic_To_Uint8_t(std::vector<IDataNode> &vector,
       std::vector<uint8_t> &dataBuffer);
 
   template <typename T>

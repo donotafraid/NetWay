@@ -268,8 +268,8 @@ bool PushGatewayImpl::pushMetrics(const std::string &body_content) {
     // 检查结果
     bool success = (res == CURLE_OK && (http_code == 200 || http_code == 202));
     
-    spdlog::debug("pushMetrics: curl result = {}, http_code = {}, success = {}", 
-                  res, http_code, success);
+    spdlog::debug("pushMetrics: curl result = {}, http_code = {}, success = {}",
+                  static_cast<int>(res), http_code, success);
 
     // 触发回调
     if (callback_ && !success) {
@@ -314,7 +314,7 @@ bool PushGatewayImpl::checkConnection() const {
     bool connected = (res == CURLE_OK && http_code == 200);
     
     spdlog::debug("checkConnection: curl result = {}, http_code = {}, connected = {}", 
-                  res, http_code, connected);
+                  static_cast<int>(res), http_code, connected);
 
     // 如果状态变化，触发回调
     if (callback_) {

@@ -95,6 +95,8 @@ class S7_MainWindows_UI : public QMainWindow {
   QLineEdit *m_ip_Address_edit = nullptr; // UI输入框
   QLineEdit *m_nameSpace_edit = nullptr;  // UI输入框
   QLineEdit *m_port_edit = nullptr;       // UI输入框
+  QLineEdit *m_urlPrefix_edit = nullptr;       // UI输入框
+  QLineEdit *m_organizesId_edit = nullptr;       // UI输入框
 
   QLineEdit *m_slot_edit = nullptr;            // UI输入框
   QLineEdit *m_rack_edit = nullptr;            // UI输入框
@@ -128,7 +130,7 @@ class S7_MainWindows_UI : public QMainWindow {
 public:
   // 业务方法
   void buildConnection();
-  bool checkRepeatDeviceTable(const QString &ip_Address,const QString &dataBlockName);
+  bool checkRepeatDeviceTable(const QString &identify,const QString &dataBlockName);
 
   //  initialize funtion
   void initialize();
@@ -159,7 +161,6 @@ public slots:
   void onLoadExternalDataBlock();
   void onDeleteDataBlock();
   void onLoadInternalDataBlock();
-  QString onLoadInlineBrowse();
 
   //  tree item function
   void onTreeItemExpanded(QTreeWidgetItem *item);
@@ -207,16 +208,16 @@ public:
   void handleMetricSendRequest(int times);
  
   void handleExternalOPCUAConnectRequest(const QString &ip_Address, int nameSpace,
-                                       int port);
-  void handleExternalOPCUAInlineBrowsetRequest(const QString &ip_Address,
-                                         int nameSpace, int port);
+                                       int port,const QString &identifier);
+  void handleExternalOPCUAInlineBrowsetConnectRequest(const QString &ip_Address,
+                                         int nameSpace, int port,const std::string &urlPrefix,const int &objectId,const QString &identifier);
   void handleExternalS7ConnectRequest(const QString &ip_Address, int rack,
-                                    int slot);
+                                    int slot,const QString &identifier);
   bool handleConnectRequest(const QString &ip_Address,
                             const std::string &connectWay);
-  bool handleParseFile(const QString &filePath,const QString &ip_Address);
+  bool handleParseFile(const QString &filePath,const QString &identify);
 
-  QWidget* handleSwithView(const QString &ip_Address, const QString &dataBlockName); 
+  QWidget* handleSwithView(const QString &identifier, const QString &filePath); 
 
 private:
   // Scope Object

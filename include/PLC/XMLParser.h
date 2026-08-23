@@ -19,40 +19,40 @@
 
 class OPCUAXMLParser {
 private:
-    std::string xml_content;
-    OPCUAParseResult result;
-    
-    const std::set<std::string> SYSTEM_VARIABLES_BLACKLIST = {
-        // 设备信息类
-        "DeviceRevision", "HardwareRevision", "SoftwareRevision", "Manufacturer",
-        "Model", "SerialNumber", "OrderNumber", "RevisionCounter",
-        "EngineeringRevision", "DeviceManual", "OperatingMode",
-        
-        // OPC UA 模型类
-        "SimaticStructuresType", "SimaticOperatingState",
-        
-        // 容器节点类
-        "DataBlocksGlobal", "DataBlocksInstance", "Counters", "Timers", "Inputs",
-        "Outputs", "Memory",  "DataBlocksGlobal",
-        
-        // 枚举定义类
-        "EnumValues"
-    };
-    
-    // 2. 类型定义节点前缀（这些是模型定义，不是实例）
-    const std::set<std::string> TYPE_NODE_PREFIXES = {
-        "VT_", // VariableType
-        "V_",  // VariableType instance
-        "DT_", // DataType
-        "TE_"  // TypeEncoding
-    };
+  std::string xml_content;
+  OPCUAParseResult result;
+
+  const std::set<std::string> SYSTEM_VARIABLES_BLACKLIST = {
+      // 设备信息类
+      "DeviceRevision", "HardwareRevision", "SoftwareRevision", "Manufacturer",
+      "Model", "SerialNumber", "OrderNumber", "RevisionCounter",
+      "EngineeringRevision", "DeviceManual", "OperatingMode",
+
+      // OPC UA 模型类
+      "SimaticStructuresType", "SimaticOperatingState",
+
+      // 容器节点类
+      "DataBlocksGlobal", "DataBlocksInstance", "Counters", "Timers", "Inputs",
+      "Outputs", "Memory", "DataBlocksGlobal",
+
+      // 枚举定义类
+      "EnumValues"};
+
+  // 2. 类型定义节点前缀（这些是模型定义，不是实例）
+  const std::set<std::string> TYPE_NODE_PREFIXES = {
+      "VT_", // VariableType
+      "V_",  // VariableType instance
+      "DT_", // DataType
+      "TE_"  // TypeEncoding
+  };
 
 public:
     // 构造函数
-    explicit OPCUAXMLParser(const std::string& content);
+    OPCUAXMLParser() = default;
     
     // 主解析函数
-    std::shared_ptr<OPCUAParseResult> parse();
+    // std::shared_ptr<OPCUAParseResult> parse();
+    std::vector<OPCUAModernDataStruct> parse(const std::string &filePath);
     
     // XML 转义字符解码
     std::string decode_xml_entities(const std::string& input);

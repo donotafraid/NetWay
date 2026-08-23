@@ -39,7 +39,7 @@ SystemManager::SystemManager() : m_running(false), m_config() {
   // 5. 启动服务
   send_service_->start();
 
-  loadModbusDevices();
+//   loadModbusDevices();
   // 5. 设置连接状态回调（由Reporter触发）
   // 这里需要在Reporter中集成连接状态检测
 
@@ -191,64 +191,64 @@ size_t SystemManager::getBacklogCount() const {
     return true;
 }
 
-void SystemManager::loadModbusDevices() {
-  ModbusConfigLoader loader;
+// void SystemManager::loadModbusDevices() {
+//   ModbusConfigLoader loader;
 
-  for (const auto &entry :
-       std::filesystem::directory_iterator("./config/modbus/")) {
-    if (entry.path().extension() != ".json")
-      continue;
+//   for (const auto &entry :
+//        std::filesystem::directory_iterator("./config/modbus/")) {
+//     if (entry.path().extension() != ".json")
+//       continue;
 
-    // 1. 加载 JSON，得到设备配置 + 寄存器列表
-    auto loadResult = loader.loadFromJSON(entry.path().string());
-    if (loadResult.is_fail()) {
-      spdlog::error("Failed to load {}: {}", entry.path().string(),
-                    loadResult.unwrap_err().what());
-      continue;
-    }
+//     // 1. 加载 JSON，得到设备配置 + 寄存器列表
+//     auto loadResult = loader.loadFromJSON(entry.path().string());
+//     if (loadResult.is_fail()) {
+//       spdlog::error("Failed to load {}: {}", entry.path().string(),
+//                     loadResult.unwrap_err().what());
+//       continue;
+//     }
 
-    auto &result = loadResult.unwrap_returnLeftValue();
-    auto &deviceConfig = result.device_config; // 设备级参数
-    auto &registers = result.registers;        // 寄存器列表
+//     auto &result = loadResult.unwrap_returnLeftValue();
+//     auto &deviceConfig = result.device_config; // 设备级参数
+//     auto &registers = result.registers;        // 寄存器列表
 
-    // 2. ✅ 创建专属 Mediator 并连接
-    auto mediator = std::make_shared<ModbusMediator>();
-    auto connectResult =
-        mediator->connect(deviceConfig.ip_address, deviceConfig.port);
-    if (connectResult.is_fail()) {
-      spdlog::error("Failed to connect to {}: {}", deviceConfig.ip_address,
-                    connectResult.unwrap_err().what());
-      continue;
-    }
+//     // 2. ✅ 创建专属 Mediator 并连接
+//     auto mediator = std::make_shared<ModbusMediator>();
+//     auto connectResult =
+//         mediator->connect(deviceConfig.ip_address, deviceConfig.port);
+//     if (connectResult.is_fail()) {
+//       spdlog::error("Failed to connect to {}: {}", deviceConfig.ip_address,
+//                     connectResult.unwrap_err().what());
+//       continue;
+//     }
 
-    // 3. ✅ 存入映射表（以 IP 为键）
-    m_modbusClients[deviceConfig.ip_address] = mediator;
+//     // 3. ✅ 存入映射表（以 IP 为键）
+//     m_modbusClients[deviceConfig.ip_address] = mediator;
 
-    // 4. ✅ 遍历寄存器，创建 ModbusDataNode
-    for (auto &reg : registers) {
-      // 填充从站 ID（从设备配置继承）
-      reg.slave_id = deviceConfig.slave_id;
+//     // 4. ✅ 遍历寄存器，创建 ModbusDataNode
+//     for (auto &reg : registers) {
+//       // 填充从站 ID（从设备配置继承）
+//       reg.slave_id = deviceConfig.slave_id;
 
-      // 创建节点，传入 Mediator 和配置
-      auto node = std::make_shared<ModbusDataNode>(mediator, &reg);
+//       // 创建节点，传入 Mediator 和配置
+//       auto node = std::make_shared<ModbusDataNode>(mediator, &reg);
 
-      // 连接信号，让数据自动入队
-      connect(node.get(), &ModbusDataNode::batchDataReady, this,
-              [this](const std::vector<PLCData> &dataVec) {
-                for (auto &element : dataVec) {
-                  this->m_queue.enqueue(std::move(element));
-                }
-              });
+//       // 连接信号，让数据自动入队
+//       connect(node.get(), &ModbusDataNode::batchDataReady, this,
+//               [this](const std::vector<PLCData> &dataVec) {
+//                 for (auto &element : dataVec) {
+//                   this->m_queue.enqueue(std::move(element));
+//                 }
+//               });
 
-      m_modbusNodes.push_back(node);
-      spdlog::debug("Created Modbus node: {} (address: {})", reg.variable_name,
-                    reg.address);
-    }
+//       m_modbusNodes.push_back(node);
+//       spdlog::debug("Created Modbus node: {} (address: {})", reg.variable_name,
+//                     reg.address);
+//     }
 
-    spdlog::info("Loaded {} registers from {}", registers.size(),
-                 entry.path().string());
-  }
-}
+//     spdlog::info("Loaded {} registers from {}", registers.size(),
+//                  entry.path().string());
+//   }
+// }
 
 bool SystemManager::isHealthy() const {
     // 检查采集线程是否都活着

@@ -41,8 +41,6 @@ Result<bool, RichError> S7DataRepository::CheckIpAddressFileName(const QString& 
 
 
 //  S7_MainWindows_UI------------------------------------------------------- 
-
-
 void S7_MainWindows_UI::onTreeItemClicked(QTreeWidgetItem *item, int column) {
   if (!item)
     return;
@@ -522,6 +520,8 @@ void S7_MainWindows_UI::initialize_Add_Device_Page() {
     m_port_edit = new QLineEdit("4840");
     m_slot_edit = new QLineEdit("1");
     m_rack_edit = new QLineEdit("0");
+    m_urlPrefix_edit = new QLineEdit("opc.tcp://");   
+    m_organizesId_edit = new QLineEdit(); 
 
     m_communicate_type_box = new QComboBox();
     m_communicate_type_box->addItem("Offset Address");
@@ -533,6 +533,8 @@ void S7_MainWindows_UI::initialize_Add_Device_Page() {
     formLayout->addRow("PLC IP Address:", m_ip_Address_edit);
     formLayout->addRow("PLC Slot:", m_slot_edit);
     formLayout->addRow("PLC Rack:", m_rack_edit);
+    formLayout->addRow("PLC urlPrefix:", m_urlPrefix_edit);
+    formLayout->addRow("PLC organizeId:", m_organizesId_edit);
 
     formLayout->addRow("PLC Type:", m_communicate_type_box);
     m_addDevice_layout->addLayout(formLayout);
@@ -639,20 +641,25 @@ void S7_MainWindows_UI::initialize_Add_Device_Page() {
             this, &S7_MainWindows_UI::onLoadExternalDataBlock);
     connect(m_DeviceMenu.loadInternalDataConfigAction, &QAction::triggered,
             this, &S7_MainWindows_UI::onLoadInternalDataBlock);
-    connect(m_DeviceMenu.loadOPCUAInlineBrowseAction, &QAction::triggered,
-            this, [this]{
-              auto file_path = this->onLoadInlineBrowse();
+    connect(m_DeviceMenu.loadOPCUAInlineBrowseAction, &QAction::triggered, this,
+            [this] {
+              auto identify =
+                  m_lastSelectItem.m_lastest_device_TreeWidget_item->text(0);
+              auto result = m_manager->handleParseFile(identify, identify);
+              if(!result)
               {
+                spdlog::info("handleParse is fail");
+              } else {
                 QTreeWidgetItem *dataBlockFolder = new QTreeWidgetItem(
                     this->m_lastSelectItem.m_lastest_device_TreeWidget_item);
                 DeviceTableInfo m_tableInfo;
 
                 m_tableInfo.connectWay = m_lastSelectItem.m_info->connectWay;
-                m_tableInfo.dataBlockName = file_path.toStdString();
+                m_tableInfo.dataBlockName = "2";
                 m_tableInfo.ip_Address = m_lastSelectItem.m_info->ip_Address;
                 m_deviceTableVector.push_back(std::move(m_tableInfo));
 
-                dataBlockFolder->setText(0, file_path);
+                dataBlockFolder->setText(0, identify);
               }
             });
     connect(m_deleteDevice_page.okButton, &QPushButton::clicked, m_deleteDevice_page.deleteDevice_page,
@@ -675,17 +682,17 @@ void S7_MainWindows_UI::initialize_Add_Device_Page() {
     connect(
         drop_Area, &DropArea::requestFile, this,
         [this](QStringList &fileNameList) {
-          auto ip_Address =
+          auto identify =
               m_lastSelectItem.m_lastest_device_TreeWidget_item->text(0);
           for (auto &filePath : fileNameList) {
             QFileInfo fileInfo(filePath);
             bool result =
-                checkRepeatDeviceTable(ip_Address, fileInfo.fileName());
+                checkRepeatDeviceTable(identify, filePath);
             if (result) {
               std::cout << "there is repeat dataBlock table" << std::endl;
               continue;
             } else {
-              result = m_manager->handleParseFile(filePath, ip_Address);
+              result = m_manager->handleParseFile(filePath, identify);
               if (result) {
                 //  build new treeWidget item
                 QTreeWidgetItem *dataBlockFolder = new QTreeWidgetItem(
@@ -697,7 +704,7 @@ void S7_MainWindows_UI::initialize_Add_Device_Page() {
                 m_tableInfo.ip_Address = m_lastSelectItem.m_info->ip_Address;
                 m_deviceTableVector.push_back(std::move(m_tableInfo));
 
-                dataBlockFolder->setText(0, fileInfo.fileName());
+                dataBlockFolder->setText(0, filePath);
               }
             }
           }
@@ -711,11 +718,11 @@ void S7_MainWindows_UI::initialize_Add_Device_Page() {
             &S7_MainWindows_UI::onTabChanged);
   }
 
-bool S7_MainWindows_UI::checkRepeatDeviceTable(const QString &ip_Address,const QString &dataBlockName)
+bool S7_MainWindows_UI::checkRepeatDeviceTable(const QString &identify,const QString &dataBlockName)
 {
   for(auto &item : m_deviceTableVector)
   {
-    if(item.ip_Address == ip_Address.toStdString() && item.dataBlockName == dataBlockName.toStdString())
+    if(item.ip_Address == identify.toStdString() && item.dataBlockName == dataBlockName.toStdString())
     {
       return true;
     }
@@ -734,30 +741,43 @@ void S7_MainWindows_UI::onAddDevice() {
   QString slot(m_slot_edit->text());
   QString rack(m_rack_edit->text());
   auto string_ipAddress = ipAddress.toStdString();
-  auto string_port = port.toInt();
-  auto string_nameSpace = nameSpace.toInt();
-  auto string_slot = slot.toInt();
-  auto string_rack = rack.toInt();
+  auto int_port = port.toInt();
+  auto int_nameSpace = nameSpace.toInt();
+  auto int_slot = slot.toInt();
+  auto int_rack = rack.toInt();
+  auto urlPrefix = m_urlPrefix_edit->text().toStdString();
+  auto organizesId = m_organizesId_edit->text();
 
   DeviceTableInfo *item = new DeviceTableInfo();
+  QString identifier{QString::fromStdString(urlPrefix) + ipAddress + "-" +
+                     m_communicate_type_box->currentText()};
   //  INITALIZE DEVICE_POINTER
-  if (m_communicate_type_box->currentText() == "OPC_UA Address") {
-    m_manager->handleExternalOPCUAConnectRequest(ipAddress,
-                                               string_nameSpace, string_port);
+  if (m_communicate_type_box->currentText() == "OPC_UA Address" ) {
+    if(organizesId=="")
+    {
+      m_manager->handleExternalOPCUAConnectRequest(ipAddress,
+                                                 int_nameSpace, int_port,identifier);
+      item->ip_Address = (string_ipAddress);
+      item->connectWay = "OPC_UA";
+    }
+    else
+    {
+      m_manager->handleExternalOPCUAInlineBrowsetConnectRequest(
+          ipAddress, int_nameSpace, int_port, urlPrefix, organizesId.toInt(),identifier);
+    }
     item->ip_Address = (string_ipAddress);
     item->connectWay = "OPC_UA";
 
   } else if (m_communicate_type_box->currentText() == "Offset Address") {
-    m_manager->handleExternalS7ConnectRequest(ipAddress, string_rack,
-                                            string_slot);
+    m_manager->handleExternalS7ConnectRequest(ipAddress, int_rack, int_slot,identifier);
     item->ip_Address = (string_ipAddress);
     item->connectWay = "S7_Offset";
   }
 
   //  INTIALIZE QTREEWIDGET ITEM
   QTreeWidgetItem *device_item = new QTreeWidgetItem();
-  std::string name{ipAddress.toStdString() + "-" + item->connectWay };
-  device_item->setText(0, name.data());
+
+  device_item->setText(0, identifier);
   device_item->setData(0, Qt::UserRole,
                        QVariant::fromValue(static_cast<void *>(item)));
   this->update_lastest_itemPointer(device_item, nullptr);
@@ -858,15 +878,6 @@ void S7_MainWindows_UI::onDeleteDataBlock() {
 }
 
 void S7_MainWindows_UI::onLoadInternalDataBlock() {}
-
-QString S7_MainWindows_UI::onLoadInlineBrowse() {
-  m_manager->handleExternalOPCUAInlineBrowsetRequest("192.168.0.2-OPC_UA", 3, 4840);
-  return QString{"192.168.0.2-OPC_UA"
-                 "-"
-                 "3"
-                 "-"
-                 "4840"};
-}
 
 void S7_MainWindows_UI::update_parent_item_color(bool status)
 {
@@ -1005,35 +1016,23 @@ void S7_DeviceManager::handleMetricSendRequest(int times) {
     std::cout << "handleMetricSendRequest call !\n";
 }
 
-// Result<QWidget *, RichError>
-// S7_DeviceManager::handleGetViewRequest(const std::string &ip_Address,
-//                                        const std::string &dataBlockName) {
-//   QWidget *ptr =
-//       m_dataBlockManager->getView(QString::fromStdString(ip_Address),
-//                                        QString::fromStdString(dataBlockName));
-//   if (ptr == nullptr) {
-//     return Result<QWidget *, RichError>(
-//         RichError{"the dataBlock do not find successfully : " + dataBlockName});
-//   }
-//   return Result<QWidget *, RichError>(ptr);
-// }
-
 void S7_DeviceManager::handleExternalOPCUAConnectRequest(const QString &ip_Address, 
                                                        int nameSpace,
-                                                       int port) {
-    m_OPCUAdataBlockManager->buildOPCUAConnect(ip_Address, nameSpace, port);
+                                                       int port,const QString &identifier) {
+    m_OPCUAdataBlockManager->buildOPCUAConnect(ip_Address, nameSpace, port,identifier);
 }
 
-void S7_DeviceManager::handleExternalOPCUAInlineBrowsetRequest(const QString &ip_Address, 
+void S7_DeviceManager::handleExternalOPCUAInlineBrowsetConnectRequest(const QString &ip_Address, 
                                                        int nameSpace,
-                                                       int port) {
-    m_OPCUAdataBlockManager->buildOPCUAInlineBrowse(ip_Address, nameSpace, port);
+                                                       int port,const std::string &urlPrefix,const int &objectId,const QString &identifier) {
+  m_OPCUAdataBlockManager->buildOPCUAInlineBrowseConnect(ip_Address, nameSpace, port,
+                                                  urlPrefix, objectId,identifier);
 }
 
 void S7_DeviceManager::handleExternalS7ConnectRequest(const QString &ip_Address, 
                                                     int rack,
-                                                    int slot) {
-    m_OPCUAdataBlockManager->buildS7Connect(ip_Address, rack, slot);
+                                                    int slot,const QString &identifier) {
+  m_OPCUAdataBlockManager->buildS7Connect(ip_Address, rack, slot, identifier);
 }
 
 bool S7_DeviceManager::handleConnectRequest(const QString &ip_Address,const std::string &connectWay
@@ -1042,30 +1041,26 @@ bool S7_DeviceManager::handleConnectRequest(const QString &ip_Address,const std:
 }
 
 bool S7_DeviceManager::handleParseFile(const QString &filePath,
-                                       const QString &ip_Address) {
-  bool result = false;
-  {
-    bool singleResult =
-        m_OPCUAdataBlockManager->buildDataFromFile(ip_Address, filePath);
+                                       const QString &identify) {
+  bool singleResult =
+      m_OPCUAdataBlockManager->buildDataFromFile(identify, filePath);
 
-    if (singleResult == false) {
-      std::cout << "deal with parse file : " << filePath.toStdString()
-                << " is fail \n";
-    }
-    result = singleResult;
+  if (singleResult == false) {
+    std::cout << "deal with parse file : " << filePath.toStdString()
+              << " is fail \n";
   }
-  return result;
-};
+  return singleResult;
+}
 
-QWidget* S7_DeviceManager::handleSwithView(const QString &ip_Address, const QString &dataBlockName) {
-    QWidget* ptr = m_OPCUAdataBlockManager->getView(ip_Address, dataBlockName);
-    if(!ptr)
-    {
-      std::cout<<ip_Address.data()<<" do not find corresponding view "<<std::endl;
-      return nullptr;
-    }
-    else
-    {
-      return ptr;
-    }
+
+QWidget *S7_DeviceManager::handleSwithView(const QString &identifier,
+                                           const QString &filePath) {
+  QWidget *ptr = m_OPCUAdataBlockManager->getView(identifier, filePath);
+  if (!ptr) {
+    std::cout << identifier.data() << " do not find corresponding view "
+              << std::endl;
+    return nullptr;
+  } else {
+    return ptr;
   }
+}

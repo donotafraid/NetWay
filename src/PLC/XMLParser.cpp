@@ -1,10 +1,5 @@
 #include "PLC/XMLParser.h"
 
-// 构造函数
-OPCUAXMLParser::OPCUAXMLParser(const std::string& content) 
-    : xml_content(content) {
-}
-
 // XML 转义字符解码
 std::string OPCUAXMLParser::decode_xml_entities(const std::string& input) {
     std::string result = input;
@@ -320,23 +315,47 @@ bool OPCUAXMLParser::shouldKeepVariable(const std::string& var_name,
 }
 
 // 主解析函数
-std::shared_ptr<OPCUAParseResult> OPCUAXMLParser::parse() {
-    // 按顺序解析各部分
-    parse_aliases();
-    parse_namespace_uris();
-    parse_extensions();
-    parse_all_uavariables();
-    for (auto &var : result.variables) {
-      // 过滤掉系统变量（如EnumValues、EngineeringRevision等）
-      if (!this->shouldKeepVariable(
-              var.variable_name, var.variable_nodeID, var.data_type,
-              var.browse_name,
-              var.filter_reason)) { // 过滤数组索引如"0","1"等
-        continue;
-      }
+std::vector<OPCUAModernDataStruct>
+OPCUAXMLParser::parse(const std::string &filePath) {
+  // 读取XML文件
+  std::ifstream file(filePath);
+  if (!file.is_open()) {
+    return std::vector<OPCUAModernDataStruct>{};
+  }
+
+  std::string content((std::istreambuf_iterator<char>(file)),
+                          std::istreambuf_iterator<char>());
+  file.close();
+  xml_content= content;
+
+  // 按顺序解析各部分
+  parse_aliases();
+  parse_namespace_uris();
+  parse_extensions();
+  parse_all_uavariables();
+  for (auto &var : result.variables) {
+    // 过滤掉系统变量（如EnumValues、EngineeringRevision等）
+    if (!this->shouldKeepVariable(
+            var.variable_name, var.variable_nodeID, var.data_type,
+            var.browse_name,
+            var.filter_reason)) { // 过滤数组索引如"0","1"等
+      continue;
     }
 
-      // 移动result到智能指针
-      auto resultPtr = std::make_shared<OPCUAParseResult>(std::move(result));
-      return resultPtr;
+    // initialize var status
+    {
+      auto it = typeMap.find(var.raw_data_type);
+      if (it != typeMap.end()) {
+        var.data_type_enum = it->second;
+        var.dataValue = 0;
+      } else {
+        var.data_type_enum = S7DataType::UNKNOWN;
+      }
     }
+  }
+
+  // 移动result到智能指针
+  auto resultPtr =
+      std::vector<OPCUAModernDataStruct>(std::move(result.variables));
+  return resultPtr;
+}

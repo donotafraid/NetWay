@@ -111,7 +111,6 @@ std::string OPCUACSVParser::cleanField(const std::string &field) {
   return result;
 }
 
-
 // 解析所有数据
 std::vector<OPCUAModernDataStructFromCSV>
 OPCUACSVParser::parseAllData(const std::vector<std::string> &lines,
@@ -194,7 +193,7 @@ std::string OPCUACSVParser::escapeCSVQuotesToJson(const std::string& field) {
     
      // 使用字符数组，不涉及字符串字面量解析问题
     const char TARGET[] = "\"\"";      // 两个双引号
-    const char REPLACE[] = "\\\"";     // 反斜杠 + 双引号
+    const char REPLACE[] = "\"";     // 反斜杠 + 双引号
 
     while ((pos = result.find(TARGET, pos)) != std::string::npos) {
       result.replace(pos, 2, REPLACE);

@@ -16,35 +16,38 @@ CollectorThread::CollectorThread(
     , m_config(config)
     , m_sequenceCounter(0)
     , m_successCount(0)
-    , m_failCount(0) {
+    {
 
-  {
-    // 2. 建立连接
-    auto connect_result = mediator.connect("172.28.80.1", 502);
-    if (connect_result.is_fail()) {
-      spdlog::error("Connection failed: {}", connect_result.unwrap_err().what());
     }
+//     , m_failCount(0) {
 
-    // 设置超时参数（所有业务模块共用）
-    mediator.setResponseTimeout(1, 500); // 1.5秒
-  }
-    // 启动线程（构造函数中自动启动）
-    m_thread = std::thread(&CollectorThread::run, this);
+//   {
+//     // 2. 建立连接
+//     auto connect_result = mediator.connect("172.28.80.1", 502);
+//     if (connect_result.is_fail()) {
+//       spdlog::error("Connection failed: {}", connect_result.unwrap_err().what());
+//     }
+
+//     // 设置超时参数（所有业务模块共用）
+//     mediator.setResponseTimeout(1, 500); // 1.5秒
+//   }
+//     // 启动线程（构造函数中自动启动）
+//     m_thread = std::thread(&CollectorThread::run, this);
     
-    if (m_config.enableLogging) {
-        spdlog::info("[Collector {}] Created", m_threadId);
-    }
-}
+//     if (m_config.enableLogging) {
+//         spdlog::info("[Collector {}] Created", m_threadId);
+//     }
+// }
 
 
 CollectorThread::~CollectorThread() {
-    if (m_thread.joinable()) {
-        m_thread.join();
-    }
-    if (m_config.enableLogging) {
-        spdlog::info("[Collector {}] Destroyed (success={}, fail={})", 
-                     m_threadId, m_successCount, m_failCount);
-    }
+    // if (m_thread.joinable()) {
+    //     m_thread.join();
+    // }
+    // if (m_config.enableLogging) {
+    //     spdlog::info("[Collector {}] Destroyed (success={}, fail={})", 
+    //                  m_threadId, m_successCount, m_failCount);
+    // }
 }
 
 void CollectorThread::run() {

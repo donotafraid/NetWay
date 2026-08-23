@@ -10,6 +10,7 @@
 
 #include "load_config/Qt_library.h"
 #include "PLC/Struct.h"
+#include <iostream>
 
 struct NodeInfo {
     std::string nodeId;         // 节点ID

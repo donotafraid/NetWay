@@ -15,19 +15,20 @@ set(
     ${CMAKE_CURRENT_SOURCE_DIR}/XMLParser.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/OPCUACSV.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/OPCUACSVCovert.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/Modbus.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/ModbusDataNode.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/StructuredDataNode.cpp
-
+    # ${CMAKE_CURRENT_SOURCE_DIR}/Modbus.cpp
+    # ${CMAKE_CURRENT_SOURCE_DIR}/ModbusDataNode.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/OpcUaDataNode.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/GenericTreeBuilder.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/ParsingStrategy.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/MapperStragegy.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/TreeNode.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/OPCUABrowser.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/CreateContextStrategy.cpp
 )
 
 set (MOC_HEADERS
     ${CMAKE_CURRENT_SOURCE_DIR}/../../include/PLC/TransformS7AndOPCUA.h
-    # ${CMAKE_CURRENT_SOURCE_DIR}/../../include/PLC/OPC_UA.h
     ${CMAKE_CURRENT_SOURCE_DIR}/../../include/PLC/OPCUAManager.h
-    # ${CMAKE_CURRENT_SOURCE_DIR}/../../include/PLC/DataBlockView.h
-    # ${CMAKE_CURRENT_SOURCE_DIR}/../../include/PLC/XMLParser.h
-    # ${CMAKE_CURRENT_SOURCE_DIR}/../../include/PLC/Struct.h
 )
 
 #设置源头文件目录
