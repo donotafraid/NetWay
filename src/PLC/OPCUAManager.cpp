@@ -1777,7 +1777,7 @@ bool OPCUADataBlockManager::buildOPCUAConnect(const QString &ipAddress,
 
   if (!context) {
     auto reader = std::make_shared<OPCUA_Access>(ipAddress.toStdString(),
-                                                 nameSpace, port);
+                                                 nameSpace, port,identifier);
     std::shared_ptr<IStringLengthProbe> probe = reader;
     auto mapper = std::make_shared<OpcUaMapper>();
 

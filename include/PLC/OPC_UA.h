@@ -27,6 +27,8 @@ enum class ConnectionState {
 };
 
 class ReadResponseGuard;
+class OPC_UA_Client;
+class UAVariantGuard;
 
 class S7_Access : public IDeviceReader, public IStringLengthProbe {
 public:
@@ -115,46 +117,124 @@ private:
                                 PhysicalAddress &dataQuality);
 };
 
-class OPCUA_Access :public IDeviceReader,public IStringLengthProbe{
+class UAVariantGuard {
 public:
-  OPCUA_Access(const std::string &ip_Address, int nameSpace, int port)
-      : m_ip_Address(ip_Address), m_nameSpace(nameSpace), m_port(port) {
+  UAVariantGuard(UA_Variant *var) : m_access(var) {}
 
-    try {
-      m_readValueNodeID =
-          static_cast<UA_ReadValueId *>(UA_malloc(sizeof(UA_ReadValueId)));
-      if (!m_readValueNodeID)
-        throw std::bad_alloc{};
-      UA_ReadValueId_init(m_readValueNodeID);
-    } catch (...) {
-      // 清理已经分配的内存
-      if (m_readValueNodeID) {
-        UA_free(m_readValueNodeID);
-      }
-      throw; // 重新抛出异常
-    }
-
-    // 创建客户端
-    m_client_pointer = UA_Client_new();
-    if (m_client_pointer) {
-      configureClient();
+  ~UAVariantGuard() {
+    if (m_access) {
+      UA_Variant_clear(m_access);
     }
   }
 
-  ~OPCUA_Access() {
-    std::cout << "~OPCUA call " << std::endl;
-    if (m_readValueNodeID) {
-      UA_free(m_readValueNodeID);
+  // 禁止拷贝
+  UAVariantGuard(const UAVariantGuard &) = delete;
+  UAVariantGuard &operator=(const UAVariantGuard &) = delete;
+
+  // 允许移动
+  UAVariantGuard(UAVariantGuard &&other) noexcept : m_access(other.m_access) {
+    other.m_access = nullptr;
+  }
+
+  UAVariantGuard &operator=(UAVariantGuard &&other) noexcept {
+    if (this != &other) {
+      if (m_access)
+        UA_Variant_clear(m_access);
+      m_access = other.m_access;
+      other.m_access = nullptr;
     }
-    // Step 2: 释放客户端所有资源（内存、线程、网络句柄等）
-    CleanupBatchNodes();
-    disconnect();
-    if(m_client_pointer)
+    return *this;
+  }
+
+  void release() {
+    m_access = nullptr; // 不再自动清理
+  }
+
+  UA_Variant &get() const 
+  {
+    return *m_access;
+  }
+
+private:
+  UA_Variant *m_access;
+};
+
+class OPC_UA_Client {
+public:
+  static Result<std::unique_ptr<OPC_UA_Client>, RichError>
+  create(int port, int m_nameSpace, const std::string &endpointUrl) {
+
+    auto member_pointer = UA_Client_new();
+    auto client = std::unique_ptr<OPC_UA_Client>(
+        new OPC_UA_Client(port, m_nameSpace, endpointUrl, member_pointer));
+    auto connectResult = client->connect();
+
+    if (connectResult.is_fail()) {
+      return Result<std::unique_ptr<OPC_UA_Client>, RichError>(
+          RichError{connectResult.unwrap_err().what()});
+    } else {
+      return Result<std::unique_ptr<OPC_UA_Client>, RichError>(std::move(client));
+    }
+  }
+
+  OPC_UA_Client(const OPC_UA_Client &) = delete;
+  OPC_UA_Client &operator=(const OPC_UA_Client &) = delete;
+  OPC_UA_Client(OPC_UA_Client &&other) noexcept; // 转移指针并将other置null
+  OPC_UA_Client &
+  operator=(OPC_UA_Client &&other) noexcept; // 转移指针并将other置null
+
+  ~OPC_UA_Client() noexcept;
+  Result<std::vector<UAVariantGuard>, RichError>
+  batchRead(const std::vector<UA_ReadValueId> &m_batchReadNodes) const;
+  Result<std::vector<UA_StatusCode>, RichError>
+  batchWrite(const std::vector<UA_WriteValue> &m_batchWriteNodes);
+
+private:
+  UA_Client *m_client_pointer = nullptr;
+
+  mutable std::recursive_mutex lock;
+
+  int m_port;
+  int m_nameSpace;
+  std::string m_ip_Address;
+  std::string endpointUrl;
+
+  // 清理客户端资源
+  void cleanupClient();
+
+  bool isConnectedInternal() const;
+
+  // trait function
+  Result<bool, RichError> waitForSessionActivation(int timeoutMs);
+
+  /**
+   * @brief 配置客户端参数（超时、重试策略等）
+   */
+  void configureClient();
+
+  Result<bool, RichError> connect();
+  bool isConnected();
+  Result<bool, RichError> disconnect();
+
+  explicit OPC_UA_Client(int port, int m_nameSpace,
+                         const std::string &endpointUrl, UA_Client *client);
+};
+
+class OPCUA_Access : public IDeviceReader, public IStringLengthProbe {
+public:
+  OPCUA_Access(const std::string &ip_Address, int nameSpace, int port,const std::string &identifier)
+      : m_ip_Address(ip_Address), m_nameSpace(nameSpace), m_port(port) {
+
+    // 创建客户端
+    auto result = OPC_UA_Client::create(m_port,m_nameSpace,identifier);
+    if(result.is_success())
     {
-      UA_Client_delete(m_client_pointer);
+      client_pointer = std::move(result.unwrap_returnLeftValue());
     }
-    m_client_pointer = nullptr; // 避免悬空指针
-    std::cout << "~OPCUA call end " << std::endl;
+  }
+
+  ~OPCUA_Access() noexcept{
+    CleanupBatchNodes();
   };
 
   // (IDeviceReader)
@@ -165,7 +245,7 @@ public:
   Result<bool, RichError> connect() override;
   Result<bool, RichError> reconnect(int maxRetries, int retryDelayMs) override;
   Result<bool, RichError> isConnected() override;
-  Result<bool, RichError>  disconnect() override;
+  Result<bool, RichError> disconnect() override;
   void
   setAddressMap(std::unordered_map<std::string, PhysicalAddress> &map) override;
 
@@ -181,13 +261,13 @@ public:
 
   void Set_Read_NodeID(UA_ReadValueId &nodeID, PhysicalAddress &node);
 
-  void PrepareBatchRead(const std::vector<std::string> &requestVec); 
-  void PrepareBatchWrite(const std::vector<WriteRequest> &requestVec); 
+  void PrepareBatchRead(const std::vector<std::string> &requestVec);
+  void PrepareBatchWrite(const std::vector<WriteRequest> &requestVec);
 
   UA_Client *getClient();
   void Clear_Read_Respondse();
   void Clear_Write_Respondse();
-  void CleanupBatchNodes(); 
+  void CleanupBatchNodes();
 
 private:
   std::unordered_map<std::string, PhysicalAddress>
@@ -202,7 +282,7 @@ private:
   std::vector<UA_WriteValue> m_batchWriteNodes;
 
   UA_Client *m_client_pointer = nullptr;
-  UA_ReadValueId *m_readValueNodeID = nullptr;
+  std::unique_ptr<OPC_UA_Client> client_pointer= nullptr;
 
   UA_WriteResponse m_write_response;
 
@@ -244,89 +324,135 @@ private:
     UA_Variant_init(src); // 这个函数会将所有字段重置为 0/NULL
   }
 
-    // UA->Normal
-    Result<bool, RichError> Set_UA_To_Read_Normal_Scalar(
-        const S7DataType &S7_type, ValueType &dataVar, int i,
-        const std::vector<UA_Variant> &batchReadVariant);
-    template <typename T>
-    void Covert_UA_Scalar_To_Specific(
-        T & value, int i, const std::vector<UA_Variant> &batchReadVariant);
+  template <typename S7Type>
+  struct UATypeTraits; // 特化提供 UA_DataType* 和转换函数
 
-    // Normal->UA
-    Result<bool, RichError> batchSet_Normal_To_Write_UA_Scalar(
-        PhysicalAddress & var, UA_WriteValue & WriteNode,
-        const ValueType &value);
-    template <typename T>
-    Result<bool, RichError> batchSet_UA_Scalar_StatusCode(
-        int nameSpace, PhysicalAddress &SourceData_var, T &source_var,
-        UA_WriteValue &destValue);
-
-    // 辅助函数模板
-    template <typename VariantType, typename TargetType>
-    bool tryGetVariantValue(const VariantType &variant, TargetType &outValue) {
-      if (const TargetType *pValue = std::get_if<TargetType>(&variant)) {
-        outValue = *pValue;
-        return true;
-      }
-      return false;
-    }
+  template<S7DataType> struct S7TypeToUATraits; // 主模板未定义
+  template <> struct S7TypeToUATraits<S7DataType::BOOL> {
+    using type = UATypeTraits<bool>;
+  };
+  template <> struct S7TypeToUATraits<S7DataType::BYTE> {
+    using type = UATypeTraits<uint8_t>;
+  };
+  template<S7DataType> struct S7TypeToUATraits; // 主模板未定义
+  template <> struct S7TypeToUATraits<S7DataType::INT> {
+    using type = UATypeTraits<int16_t>;
+  };
+  template <> struct S7TypeToUATraits<S7DataType::WORD> {
+    using type = UATypeTraits<uint16_t>;
+  };
+  template<S7DataType> struct S7TypeToUATraits; // 主模板未定义
+  template <> struct S7TypeToUATraits<S7DataType::DINT> {
+    using type = UATypeTraits<int32_t>;
+  };
+  template <> struct S7TypeToUATraits<S7DataType::UDINT> {
+    using type = UATypeTraits<uint32_t>;
+  };
+  template <> struct S7TypeToUATraits<S7DataType::DWORD> {
+    using type = UATypeTraits<uint32_t>;
+  };
+  template <> struct S7TypeToUATraits<S7DataType::REAL> {
+    using type = UATypeTraits<float>;
+  };
+  template <> struct S7TypeToUATraits<S7DataType::STRING> {
+    using type = UATypeTraits<std::string>;
   };
 
-  class ReadResponseGuard {
-  public:
-    ReadResponseGuard(OPCUA_Access *access) : m_access(access) {}
+  // UA->Normal
+  template <S7DataType type>
+  Result<bool, RichError>
+  setNormalScalar(int i, const std::vector<UAVariantGuard> &batchReadVariant,
+                  ValueType &dataVar) {
+    using Traits = typename S7TypeToUATraits<type>::type;
+    auto val = Traits::convert(batchReadVariant[i].get());
+    dataVar = val; // 需要值类型与 ValueType 的赋值兼容（你可能需要进一步特化）
+    return Result<bool, RichError>{true};
+  }
 
-    ~ReadResponseGuard() {
-      if (m_access) {
-        m_access->Clear_Read_Respondse();
-      }
+  Result<bool, RichError>
+  Set_UA_To_Read_Normal_Scalar(const S7DataType &S7_type, ValueType &dataVar,
+                               int i,
+                               const std::vector<UAVariantGuard> &batchReadVariant);
+  template <typename T>
+  void
+  Covert_UA_Scalar_To_Specific(T &value, int i,
+                               const std::vector<UAVariantGuard> &batchReadVariant) const ;
+
+  // Normal->UA
+  Result<bool, RichError> batchSet_Normal_To_Write_UA_Scalar(
+      PhysicalAddress &var, UA_WriteValue &WriteNode, const ValueType &value);
+  template <typename T>
+  Result<bool, RichError>
+  batchSet_UA_Scalar_StatusCode(int nameSpace, PhysicalAddress &SourceData_var,
+                                T &source_var, UA_WriteValue &destValue);
+
+  // 辅助函数模板
+  template <typename VariantType, typename TargetType>
+  bool tryGetVariantValue(const VariantType &variant, TargetType &outValue) {
+    if (const TargetType *pValue = std::get_if<TargetType>(&variant)) {
+      outValue = *pValue;
+      return true;
     }
+    return false;
+  }
+};
 
-    // 禁止拷贝
-    ReadResponseGuard(const ReadResponseGuard &) = delete;
-    ReadResponseGuard &operator=(const ReadResponseGuard &) = delete;
+class ReadResponseGuard {
+public:
+  ReadResponseGuard(OPCUA_Access *access) : m_access(access) {}
 
-    // 允许移动
-    ReadResponseGuard(ReadResponseGuard &&other) noexcept
-        : m_access(other.m_access) {
-      other.m_access = nullptr;
+  ~ReadResponseGuard() {
+    if (m_access) {
+      m_access->Clear_Read_Respondse();
     }
+  }
 
-    void release() {
-      m_access = nullptr; // 不再自动清理
+  // 禁止拷贝
+  ReadResponseGuard(const ReadResponseGuard &) = delete;
+  ReadResponseGuard &operator=(const ReadResponseGuard &) = delete;
+
+  // 允许移动
+  ReadResponseGuard(ReadResponseGuard &&other) noexcept
+      : m_access(other.m_access) {
+    other.m_access = nullptr;
+  }
+
+  void release() {
+    m_access = nullptr; // 不再自动清理
+  }
+
+private:
+  OPCUA_Access *m_access;
+};
+
+class WriteResponseGuard {
+public:
+  WriteResponseGuard(OPCUA_Access *access) : m_access(access) {}
+
+  ~WriteResponseGuard() {
+    if (m_access) {
+      m_access->Clear_Write_Respondse();
     }
+  }
 
-  private:
-    OPCUA_Access *m_access;
-  };
+  // 禁止拷贝
+  WriteResponseGuard(const WriteResponseGuard &) = delete;
+  WriteResponseGuard &operator=(const WriteResponseGuard &) = delete;
+
+  // 允许移动
+  WriteResponseGuard(WriteResponseGuard &&other) noexcept
+      : m_access(other.m_access) {
+    other.m_access = nullptr;
+  }
+
+  void release() {
+    m_access = nullptr; // 不再自动清理
+  }
+
+private:
+  OPCUA_Access *m_access;
+};
 
 
-  class WriteResponseGuard {
-  public:
-    WriteResponseGuard(OPCUA_Access *access) : m_access(access) {}
-
-    ~WriteResponseGuard() {
-      if (m_access) {
-        m_access->Clear_Write_Respondse();
-      }
-    }
-
-    // 禁止拷贝
-    WriteResponseGuard(const WriteResponseGuard &) = delete;
-    WriteResponseGuard &operator=(const WriteResponseGuard &) = delete;
-
-    // 允许移动
-    WriteResponseGuard(WriteResponseGuard &&other) noexcept
-        : m_access(other.m_access) {
-      other.m_access = nullptr;
-    }
-
-    void release() {
-      m_access = nullptr; // 不再自动清理
-    }
-
-  private:
-    OPCUA_Access *m_access;
-  };
 
 #endif

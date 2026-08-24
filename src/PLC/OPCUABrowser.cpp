@@ -27,6 +27,7 @@ OPCUABrowser::OPCUABrowser(const std::string &endpointUrl,const int &objectId) {
   spdlog::info("set defalut success: {}", UA_StatusCode_name(retval));
 
   nodeId = UA_NODEID_NUMERIC(0, objectId);
+  m_endpointUrl = std::move(endpointUrl);
 }
 
 OPCUABrowser::~OPCUABrowser() {
@@ -463,4 +464,247 @@ bool OPCUABrowser::readAndPrintVariable(UA_Client *client, const UA_NodeId &node
   UA_Variant_clear(&value);
 
   return success;
+}
+
+
+  // connect mechanism
+Result<bool, RichError> OPCUABrowser::connect() {
+  std::lock_guard<std::mutex> lock(m_mutex);
+
+  // 1. 检查是否已连接
+  if (m_isConnected && client_) {
+    auto stateResult = isConnectedInternal();
+    if (stateResult.is_success()) {
+      spdlog::info("Already connected to OPC UA server");
+      return Result<bool, RichError>(true);
+    }
+    // 状态不一致，标记为未连接
+    m_isConnected = false;
+  }
+
+  // 2. 检查客户端指针
+  if (!client_) {
+    client_ = UA_Client_new();
+    if (!client_) {
+      return Result<bool, RichError>(
+          RichError("Failed to create OPC UA client"));
+    }
+    configureClient();
+  }
+
+  // 3. 构建连接 URL
+  std::string endpointUrl = m_endpointUrl;
+  spdlog::info("Connecting to OPC UA server: {}", endpointUrl);
+
+  // 4. 尝试连接
+  UA_StatusCode result =
+      UA_Client_connect(client_, endpointUrl.c_str());
+
+  if (result != UA_STATUSCODE_GOOD) {
+    std::string errorMsg =
+        "Connection failed: " + std::string(UA_StatusCode_name(result)) +
+        " (Error code: " + std::to_string(result) + ")";
+    spdlog::error(errorMsg);
+    return Result<bool, RichError>(RichError(errorMsg));
+  }
+
+  // 5. 等待会话激活
+  auto activationResult = waitForSessionActivation(5000);
+  if (!activationResult.is_success()) {
+    UA_Client_disconnect(client_);
+    return Result<bool, RichError>(RichError("Session activation timeout"));
+  }
+
+  // 6. 标记为已连接
+  m_isConnected = true;
+  spdlog::info("Successfully connected to OPC UA server");
+  return Result<bool, RichError>(true);
+}
+Result<bool, RichError> OPCUABrowser::reconnect(int maxRetries,
+                                                int retryDelayMs) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+
+    // 1. 先断开当前连接
+    if (m_isConnected && client_) {
+        UA_Client_disconnect(client_);
+        m_isConnected = false;
+    }
+
+    // 2. 清理并重建客户端
+    cleanupClient();
+    client_ = UA_Client_new();
+    if (!client_) {
+        return Result<bool, RichError>(
+            RichError("Failed to create new client for reconnection"));
+    }
+    configureClient();
+
+    // 3. 重连循环
+    std::string endpointUrl = buildEndpointUrl();
+
+    for (int attempt = 1; attempt <= maxRetries; ++attempt) {
+        spdlog::info("Reconnection attempt {}/{}", attempt, maxRetries);
+
+        // 尝试连接
+        UA_StatusCode result = UA_Client_connect(client_, endpointUrl.c_str());
+
+        if (result == UA_STATUSCODE_GOOD) {
+            // 等待会话激活
+            auto activationResult = waitForSessionActivation(5000);
+            if (activationResult.is_success()) {
+                m_isConnected = true;
+                spdlog::info("Reconnection successful");
+                return Result<bool, RichError>(true);
+            }
+            
+            // 会话激活失败，继续重试
+            spdlog::warn("Session activation timeout, retrying...");
+            UA_Client_disconnect(client_);
+            // 注意：断开后需要清理并重建客户端
+            cleanupClient();
+            client_ = UA_Client_new();
+            if (client_) {
+                configureClient();
+            }
+        }
+
+        // 连接失败
+        spdlog::error("Reconnection attempt {} failed: {} (code: {})", 
+                      attempt,
+                      UA_StatusCode_name(result),
+                      result);
+
+        // 如果不是最后一次尝试，等待后重试
+        if (attempt < maxRetries) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(retryDelayMs));
+            // 清理并重建客户端以备下次尝试
+            cleanupClient();
+            client_ = UA_Client_new();
+            if (client_) {
+                configureClient();
+            }
+        }
+    }
+
+    return Result<bool, RichError>(
+        RichError("Reconnection failed after " + std::to_string(maxRetries) + " attempts"));
+}
+Result<bool, RichError> OPCUABrowser::isConnected() {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return isConnectedInternal();
+}
+
+Result<bool, RichError> OPCUABrowser::disconnect() {
+    std::lock_guard<std::mutex> lock(m_mutex);
+
+    // 1. 如果已经断开，直接返回
+    if (!m_isConnected || !client_) {
+        return Result<bool, RichError>(true);
+    }
+
+    // 2. 断开连接
+    spdlog::info("Disconnecting from OPC UA server");
+    UA_Client_disconnect(client_);
+    
+    // 3. 清理状态
+    m_isConnected = false;
+    
+    spdlog::info("Disconnected from OPC UA server");
+    return Result<bool, RichError>(true);
+}
+
+Result<bool, RichError> OPCUABrowser::isConnectedInternal() const {
+  // 1. 快速检查
+  if (!client_ || !m_isConnected) {
+    return Result<bool, RichError>(false);
+  }
+
+  // 2. 获取实际状态
+  UA_SecureChannelState channelState;
+  UA_SessionState sessionState;
+  UA_Client_getState(client_, &channelState, &sessionState, nullptr);
+
+  bool connected = (channelState == UA_SECURECHANNELSTATE_OPEN &&
+                    sessionState == UA_SESSIONSTATE_ACTIVATED);
+
+  // 3. 如果状态不一致，更新缓存
+  if (!connected && m_isConnected) {
+    // 缓存状态与实际状态不符，但因为是 const 方法，不能修改
+    // 可以在非 const 方法中修复
+    const_cast<OPCUA_Access *>(this)->m_isConnected = false;
+  }
+
+  return Result<bool, RichError>(connected);
+}
+
+//  configure  mechanism
+void OPCUABrowser::configureClient() {
+  if (!client_)
+    return;
+
+  UA_ClientConfig *config = UA_Client_getConfig(client_);
+  if (!config)
+    return;
+
+  UA_ClientConfig_setDefault(config);
+
+  // 1. 根据现场网络状况调整超时
+  // 如果是本地网络（<10ms 延迟）：5 秒足够
+  // 如果是远程/4G 网络（>100ms 延迟）：15-30 秒
+  config->timeout = 10000; // 10 秒（适中）
+
+  // 2. 会话超时：根据业务空闲时间调整
+  // 如果频繁操作：600000 (10分钟)
+  // 如果长时间空闲：3600000 (1小时)
+  config->requestedSessionTimeout = 600000; // 10分钟
+
+  // 3. 安全通道：稍长于会话超时
+  config->secureChannelLifeTime = 600000; // 10分钟
+
+  // 4. 连接检查：根据网络稳定性调整
+  // 稳定网络：30-60 秒
+  // 不稳定网络：5-10 秒
+  config->connectivityCheckInterval = 10000; // 10秒
+
+  // 5. 启用自动重连（工业场景推荐）
+  config->noReconnect = false;
+  config->noNewSession = false;
+
+  // 6. 添加自定义重连回调
+  config->stateCallback =
+      [](UA_Client *client, UA_SecureChannelState channelState,
+         UA_SessionState sessionState, UA_StatusCode status) {
+        // 处理状态变化
+        switch (channelState) {
+        case UA_SECURECHANNELSTATE_OPEN:
+          spdlog::info("Secure channel is open");
+          break;
+        case UA_SECURECHANNELSTATE_CLOSED:
+          spdlog::warn("Secure channel is closed");
+          break;
+        case UA_SECURECHANNELSTATE_CONNECTING:
+          spdlog::debug("Secure channel is connecting");
+          break;
+        default:
+          break;
+        }
+
+        switch (sessionState) {
+        case UA_SESSIONSTATE_ACTIVATED:
+          spdlog::info("Session is activated");
+          break;
+        case UA_SESSIONSTATE_CLOSED:
+          spdlog::warn("Session is closed");
+          break;
+        case UA_SESSIONSTATE_CREATED:
+          spdlog::debug("Session is created");
+          break;
+        default:
+          break;
+        }
+
+        if (status != UA_STATUSCODE_GOOD) {
+          spdlog::error("Connection status: {}", UA_StatusCode_name(status));
+        }
+      };
 }

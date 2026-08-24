@@ -25,6 +25,22 @@ public:
 private:
   UA_Client *client_;
   UA_NodeId nodeId;
+  mutable std::mutex m_mutex; // 线程安全
+  bool m_isConnected = false; // 缓存连接状态
+  std::string m_endpointUrl;
+
+  // connect mechanism
+  Result<bool, RichError> connect() ;
+  Result<bool, RichError> reconnect(int maxRetries, int retryDelayMs) ;
+  Result<bool, RichError> isConnected() ;
+  Result<bool, RichError> disconnect() ;
+
+  Result<bool, RichError> isConnectedInternal() const;
+
+
+  //  configure  mechanism
+  void configureClient(); 
+
   // 内部辅助方法（非静态，可访问成员变量）
   void processReferences(UA_BrowseResult &result, int depth, int maxDepth,
                          RawDataTable &out) const ;

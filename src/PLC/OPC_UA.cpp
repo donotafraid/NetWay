@@ -943,9 +943,6 @@ void OPCUA_Access::Clear_Read_Respondse() {
   for (auto &element : m_batchReadVariant) {
     UA_Variant_clear(&element);
   }
-
-  // 2. 再清理响应
-  UA_ReadResponse_clear(&m_read_response);
 }
 
 void OPCUA_Access::Clear_Write_Respondse() {
@@ -956,9 +953,6 @@ void OPCUA_Access::Clear_Write_Respondse() {
         &element); // 这会清理 nodeId, value, indexRange 等所有字段
   }
   m_batchWriteNodes.clear();
-
-  //  CLEAR RESOURCE AFTER SUCCESS LOOP
-  UA_WriteResponse_clear(&(m_write_response));
 }
 
 void OPCUA_Access::CleanupBatchNodes() {
@@ -1150,17 +1144,13 @@ OPCUA_Access::batchRead(std::vector<std::string> &requestVec) {
   //  CLEAR ELEMEMT EXISTED BEFORE
   this->PrepareBatchRead(requestVec);
 
-  // RAII 守卫：确保在任何退出路径下都会清理
-  ReadResponseGuard guard(this);
-
-  auto it = this->read();
-  if (it.is_success()) {
-    //  RECORD RESPONSE_VALUE
-    for (int i = 0; i < m_batchReadNodes.size(); ++i) {
-      UA_Variant_copy(&m_read_response.results[i].value,
-                      &m_batchReadVariant[i]);
-    }
-
+  auto result = client_pointer->batchRead(m_batchReadNodes);
+  if(result.is_fail())
+  {
+    return Result<std::unordered_map<std::string, ValueType>, RichError>(
+        RichError{result.unwrap_err()});
+  } else {
+    auto readVariant = result.unwrap_returnLeftValue();
     int i = 0;
     std::unordered_map<std::string, ValueType> resultMap;
     for (auto &request : requestVec) {
@@ -1172,7 +1162,7 @@ OPCUA_Access::batchRead(std::vector<std::string> &requestVec) {
         }
         ValueType value;
         auto result = Set_UA_To_Read_Normal_Scalar(
-            quality.second.dataType, value, i, m_batchReadVariant);
+            quality.second.dataType, value, i, readVariant);
         if (result.is_fail()) {
         } else {
           resultMap[quality.second.nodeId] = std::move(value);
@@ -1180,21 +1170,87 @@ OPCUA_Access::batchRead(std::vector<std::string> &requestVec) {
       }
       ++i;
     }
-
     return Result<std::unordered_map<std::string, ValueType>, RichError>(
-        std::move(resultMap));
-  } else {
-    return Result<std::unordered_map<std::string, ValueType>, RichError>(RichError(it.unwrap_err()));
+      std::move(resultMap));
   }
 }
+
+template<>
+struct OPCUA_Access::UATypeTraits<bool> {
+    static const UA_DataType* uaType() { return &UA_TYPES[UA_TYPES_BOOLEAN]; }
+    static bool convert(const UA_Variant& var) { 
+        if (!var.data|| var.type != uaType()) throw std::runtime_error("type mismatch");
+        return *static_cast<const bool*>(var.data);
+    }
+};
+
+template<>
+struct OPCUA_Access::UATypeTraits<uint8_t> {
+    static const UA_DataType* uaType() { return &UA_TYPES[UA_TYPES_BYTE]; }
+    static uint8_t convert(const UA_Variant& var) { 
+        if (!var.data|| var.type != uaType()) throw std::runtime_error("type mismatch");
+        return *static_cast<const uint8_t*>(var.data);
+    }
+};
+
+template<>
+struct OPCUA_Access::UATypeTraits<int16_t> {
+    static const UA_DataType* uaType() { return &UA_TYPES[UA_TYPES_INT16]; }
+    static int16_t convert(const UA_Variant& var) { 
+        if (!var.data|| var.type != uaType()) throw std::runtime_error("type mismatch");
+        return *static_cast<const int16_t*>(var.data);
+    }
+};
+
+
+template<>
+struct OPCUA_Access::UATypeTraits<int32_t> {
+    static const UA_DataType* uaType() { return &UA_TYPES[UA_TYPES_INT32]; }
+    static int32_t convert(const UA_Variant& var) { 
+        if (!var.data || var.type != uaType()) throw std::runtime_error("type mismatch");
+        return *static_cast<const int32_t*>(var.data);
+    }
+};
+
+template<>
+struct OPCUA_Access::UATypeTraits<uint32_t> {
+    static const UA_DataType* uaType() { return &UA_TYPES[UA_TYPES_UINT32]; }
+    static uint32_t convert(const UA_Variant& var) { 
+        if (!var.data || var.type != uaType()) throw std::runtime_error("type mismatch");
+        return *static_cast<const uint32_t*>(var.data);
+    }
+};
+
+template<>
+struct OPCUA_Access::UATypeTraits<float> {
+    static const UA_DataType* uaType() { return &UA_TYPES[UA_TYPES_FLOAT]; }
+    static float convert(const UA_Variant& var) { 
+        if (!var.data || var.type != uaType()) throw std::runtime_error("type mismatch");
+        return *static_cast<const float*>(var.data);
+    }
+};
+
+template<>
+struct OPCUA_Access::UATypeTraits<std::string> {
+    static const UA_DataType* uaType() { return &UA_TYPES[UA_TYPES_STRING]; }
+    static std::string convert(const UA_Variant& var) {
+      if (!var.data || var.type != uaType())
+        throw std::runtime_error("type mismatch");
+      const UA_String *src = static_cast<const UA_String *>(var.data);
+      if (!src->data)
+        return {};
+      return *static_cast<const std::string *>(var.data);
+    }
+};
+
 
 // String Special Function --------- Covert_UA_Scalar_To_Specific
 template <>
 void OPCUA_Access::Covert_UA_Scalar_To_Specific(
     std::string &SourceData_var, int i,
-    const std::vector<UA_Variant> &batchReadVariant) {
+    const std::vector<UAVariantGuard> &batchReadVariant) const  {
   const UA_String *src =
-      static_cast<const UA_String *>(batchReadVariant[i].data);
+      static_cast<const UA_String *>(batchReadVariant[i].get().data);
   if (src && src->data && src->length > 0) {
     SourceData_var.assign(reinterpret_cast<const char *>((src->data)),
                           src->length);
@@ -1205,22 +1261,18 @@ void OPCUA_Access::Covert_UA_Scalar_To_Specific(
 
 template <typename T>
 void OPCUA_Access::Covert_UA_Scalar_To_Specific(
-    T &SourceData_var, int i, const std::vector<UA_Variant> &batchReadVariant) {
+    T &SourceData_var, int i, const std::vector<UAVariantGuard> &batchReadVariant)const {
   // ELSE UA TPYE MATCH S7 DATA TYPE
-  memcpy(&SourceData_var, ((static_cast<T *>(batchReadVariant[i].data))),
+  memcpy(&SourceData_var, ((static_cast<T *>(batchReadVariant[i].get().data))),
          sizeof(T));
 }
 
-
 Result<bool, RichError> OPCUA_Access::Set_UA_To_Read_Normal_Scalar(
     const S7DataType &s7_type, ValueType &dataVar, int i,
-    const std::vector<UA_Variant> &batchReadVariant) {
+    const std::vector<UAVariantGuard> &batchReadVariant) {
   if (s7_type == S7DataType::BOOL) {
-    bool tmp;
-    {
-      Covert_UA_Scalar_To_Specific(tmp, i, batchReadVariant);
-      dataVar = (tmp != 0); // 或者 (tmp ? true : false)
-    }
+    bool tmp = UATypeTraits<bool>::convert(batchReadVariant[i].get());
+    dataVar = (tmp != 0); // 或者 (tmp ? true : false)
   } else if (s7_type == S7DataType::BYTE) {
     uint8_t tmp;
     {
@@ -1275,8 +1327,6 @@ Result<bool, RichError> OPCUA_Access::Set_UA_To_Read_Normal_Scalar(
   }
   return Result<bool, RichError>(true);
 }
-
-
 
   Result<bool, RichError>
   OPCUA_Access::waitForSessionActivation(int timeoutMs) {
@@ -1596,3 +1646,376 @@ Result<bool, RichError> OPCUA_Access::batchSet_Normal_To_Write_UA_Scalar(
   }
   }
 }
+
+//=================OPC_UA_Client=======================
+OPC_UA_Client::OPC_UA_Client(int port, int nameSpace,
+                             const std::string &endpointUrl, UA_Client *client)
+    : m_port(port), m_nameSpace(nameSpace), endpointUrl(endpointUrl),
+      m_client_pointer(client) {}
+
+OPC_UA_Client::~OPC_UA_Client() {
+  std::lock_guard<std::recursive_mutex> lock_guard(lock);
+  cleanupClient(); // 或直接 UA_Client_delete
+}
+
+Result<bool, RichError> OPC_UA_Client::connect() {
+  std::lock_guard<std::recursive_mutex> lock_guard(lock);
+
+  // 1. 检查是否已连接
+  if (m_client_pointer) {
+    auto stateResult = isConnectedInternal();
+    if (stateResult) {
+      spdlog::info("Already connected to OPC UA server");
+      return Result<bool, RichError>(true);
+    }
+  }
+
+  // 2. 检查客户端指针
+  if (!m_client_pointer) {
+    m_client_pointer = UA_Client_new();
+    if (!m_client_pointer) {
+      return Result<bool, RichError>(
+          RichError("Failed to create OPC UA client"));
+    }
+    configureClient();
+  }
+
+  // 4. 尝试连接
+  UA_StatusCode result =
+      UA_Client_connect(m_client_pointer, endpointUrl.c_str());
+
+  if (result != UA_STATUSCODE_GOOD) {
+    std::string errorMsg =
+        "Connection failed: " + std::string(UA_StatusCode_name(result)) +
+        " (Error code: " + std::to_string(result) + ")";
+    spdlog::error(errorMsg);
+    return Result<bool, RichError>(RichError(errorMsg));
+  }
+
+  // 5. 等待会话激活
+  auto activationResult = waitForSessionActivation(5000);
+  if (!activationResult.is_success()) {
+    UA_Client_disconnect(m_client_pointer);
+    return Result<bool, RichError>(RichError("Session activation timeout"));
+  }
+
+  // 6. 标记为已连接
+  spdlog::info("Successfully connected to OPC UA server");
+  return Result<bool, RichError>(true);
+}
+
+bool OPC_UA_Client::isConnectedInternal() const {
+  // 1. 快速检查
+  if (!m_client_pointer) {
+    return (false);
+  }
+
+  // 2. 获取实际状态
+  UA_SecureChannelState channelState;
+  UA_SessionState sessionState;
+  UA_Client_getState(m_client_pointer, &channelState, &sessionState, nullptr);
+
+  bool connected = (channelState == UA_SECURECHANNELSTATE_OPEN &&
+                    sessionState == UA_SESSIONSTATE_ACTIVATED);
+
+  return bool(connected);
+}
+
+void OPC_UA_Client::configureClient() {
+  if (!m_client_pointer)
+    return;
+
+  UA_ClientConfig *config = UA_Client_getConfig(m_client_pointer);
+  if (!config)
+    return;
+
+  UA_ClientConfig_setDefault(config);
+
+  // 1. 根据现场网络状况调整超时
+  // 如果是本地网络（<10ms 延迟）：5 秒足够
+  // 如果是远程/4G 网络（>100ms 延迟）：15-30 秒
+  config->timeout = 10000; // 10 秒（适中）
+
+  // 2. 会话超时：根据业务空闲时间调整
+  // 如果频繁操作：600000 (10分钟)
+  // 如果长时间空闲：3600000 (1小时)
+  config->requestedSessionTimeout = 600000; // 10分钟
+
+  // 3. 安全通道：稍长于会话超时
+  config->secureChannelLifeTime = 600000; // 10分钟
+
+  // 4. 连接检查：根据网络稳定性调整
+  // 稳定网络：30-60 秒
+  // 不稳定网络：5-10 秒
+  config->connectivityCheckInterval = 10000; // 10秒
+
+  // 5. 启用自动重连（工业场景推荐）
+  config->noReconnect = false;
+  config->noNewSession = false;
+
+  // 6. 添加自定义重连回调
+  config->stateCallback =
+      [](UA_Client *client, UA_SecureChannelState channelState,
+         UA_SessionState sessionState, UA_StatusCode status) {
+        // 处理状态变化
+        switch (channelState) {
+        case UA_SECURECHANNELSTATE_OPEN:
+          spdlog::trace("Secure channel is open");
+          break;
+        case UA_SECURECHANNELSTATE_CLOSED:
+          spdlog::trace("Secure channel is closed");
+          break;
+        case UA_SECURECHANNELSTATE_CONNECTING:
+          spdlog::trace("Secure channel is connecting");
+          break;
+        default:
+          break;
+        }
+
+        switch (sessionState) {
+        case UA_SESSIONSTATE_ACTIVATED:
+          spdlog::trace("Session is activated");
+          break;
+        case UA_SESSIONSTATE_CLOSED:
+          spdlog::trace("Session is closed");
+          break;
+        case UA_SESSIONSTATE_CREATED:
+          spdlog::trace("Session is created");
+          break;
+        default:
+          break;
+        }
+
+        if (status != UA_STATUSCODE_GOOD) {
+          spdlog::error("Connection status: {}", UA_StatusCode_name(status));
+        }
+      };
+}
+
+// ============ 断开连接 ============
+Result<bool, RichError> OPC_UA_Client::disconnect() {
+    std::lock_guard<std::recursive_mutex> lock_guard(lock);
+    // 1. 如果已经断开，直接返回
+    if (!m_client_pointer) {
+        return Result<bool, RichError>(true);
+    }
+
+    // 2. 断开连接
+    spdlog::info("Disconnecting from OPC UA server");
+    UA_Client_disconnect(m_client_pointer);
+    
+    spdlog::info("Disconnected from OPC UA server");
+    return Result<bool, RichError>(true);
+}
+
+// ============ 检查连接状态 ============
+bool OPC_UA_Client::isConnected() {
+  std::lock_guard<std::recursive_mutex> lock_guard(lock);
+  return isConnectedInternal();
+}
+
+OPC_UA_Client::OPC_UA_Client(OPC_UA_Client &&other) noexcept
+    : m_client_pointer(other.m_client_pointer), m_port(other.m_port),
+      m_nameSpace(other.m_nameSpace),
+      m_ip_Address(std::move(other.m_ip_Address)),
+      endpointUrl(std::move(other.endpointUrl)) {
+
+  other.m_client_pointer = nullptr;
+  other.m_port = 0;
+  other.m_nameSpace = 0;
+  other.m_ip_Address = "";
+  other.endpointUrl = "";
+  // 不需要操作锁，新对象的 lock 会默认初始化，源对象的 lock 保持不变
+}
+
+OPC_UA_Client &OPC_UA_Client::operator=(OPC_UA_Client &&other) noexcept {
+  std::lock_guard<std::recursive_mutex> lock_guard(lock);
+  if (&other == this) {
+    return *this;
+  } else {
+    if (m_client_pointer) {
+      cleanupClient();
+    }
+
+    m_client_pointer = other.m_client_pointer;
+    m_port = other.m_port;
+    m_nameSpace = other.m_nameSpace;
+    m_ip_Address = std::move(other.m_ip_Address);
+    endpointUrl = std::move(other.endpointUrl);
+
+    other.m_client_pointer = nullptr;
+    other.m_port = 0;
+    other.m_nameSpace = 0;
+    other.m_ip_Address = "";
+    other.endpointUrl = "";
+    // 不需要操作锁，新对象的 lock 会默认初始化，源对象的 lock 保持不变
+  }
+  return *this;
+}
+
+void OPC_UA_Client::cleanupClient() {
+  if (m_client_pointer) {
+    UA_Client_delete(m_client_pointer);
+  }
+}
+
+Result<bool, RichError> OPC_UA_Client::waitForSessionActivation(int timeoutMs) {
+  auto startTime = std::chrono::steady_clock::now();
+  const int checkIntervalMs = 50;
+
+  while (true) {
+    UA_SecureChannelState channelState;
+    UA_SessionState sessionState;
+    UA_Client_getState(m_client_pointer, &channelState, &sessionState, nullptr);
+
+    // 检查是否已激活
+    if (channelState == UA_SECURECHANNELSTATE_OPEN &&
+        sessionState == UA_SESSIONSTATE_ACTIVATED) {
+      return Result<bool, RichError>(true);
+    }
+
+    // 检查是否出错
+    if (sessionState == UA_SESSIONSTATE_CLOSED ||
+        channelState == UA_SECURECHANNELSTATE_CLOSED) {
+      std::stringstream ss;
+      ss << " sessionState :" << sessionState
+         << " channelState :" << channelState;
+      return Result<bool, RichError>(RichError{std::move(ss.str())});
+    }
+
+    // 超时检查
+    auto now = std::chrono::steady_clock::now();
+    if (now - startTime > std::chrono::milliseconds(timeoutMs)) {
+      std::stringstream ss;
+      ss << "waitFor Session is over time !";
+      return Result<bool, RichError>(RichError{std::move(ss.str())});
+    }
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(checkIntervalMs));
+  }
+}
+
+Result<std::vector<UAVariantGuard>, RichError>
+OPC_UA_Client::batchRead(const std::vector<UA_ReadValueId> &m_batchReadNodes) const {
+
+  UA_ReadRequest request;
+  UA_ReadRequest_init(&request);
+  // Open62541's read API does not modify the nodesToRead array,
+  // so const_cast is safe here. The vector itself is not const.
+  request.nodesToRead = const_cast<UA_ReadValueId*>(m_batchReadNodes.data());
+  request.nodesToReadSize = m_batchReadNodes.size();
+  request.timestampsToReturn = UA_TIMESTAMPSTORETURN_NEITHER;
+
+  UA_ReadResponse m_read_response;
+  UA_ReadResponse_init(&m_read_response); // 始终初始化
+  const int MAX_RETRIES = 3;
+  const int INITIAL_DELAY_MS = 100;
+
+  for (int retry = 0; retry < MAX_RETRIES; ++retry) {
+    UA_ReadResponse_clear(&m_read_response);
+    {
+      std::lock_guard<std::recursive_mutex> lock_guard(lock);
+      if (!m_client_pointer) {
+        return Result<std::vector<UAVariantGuard>, RichError>(
+            RichError("Client was moved during retry"));
+      }
+      m_read_response = UA_Client_Service_read(m_client_pointer, request);
+    }
+
+    if (m_read_response.responseHeader.serviceResult !=
+            UA_STATUSCODE_BADCONNECTIONCLOSED &&
+        m_read_response.responseHeader.serviceResult !=
+            UA_STATUSCODE_BADCOMMUNICATIONERROR) {
+      break; // 非瞬态错误，立即退出
+    }
+
+    if (retry < MAX_RETRIES - 1) {
+      std::this_thread::sleep_for(
+          std::chrono::milliseconds(INITIAL_DELAY_MS * (retry + 1)));
+    }
+  }
+
+  if (m_read_response.responseHeader.serviceResult != UA_STATUSCODE_GOOD ||
+      m_read_response.resultsSize == 0 ||
+      !m_read_response.results || 
+      !m_read_response.results[0].hasValue) {
+    std::stringstream ss;
+    ss << "read fail :"
+       << " read_response.responseHeader.serviceResult : "
+       << m_read_response.responseHeader.serviceResult
+       << " read_response.resultsSize : " << m_read_response.resultsSize;
+
+    UA_ReadResponse_clear(&m_read_response);
+    UA_ReadRequest_clear(&request);
+    return Result<std::vector<UAVariantGuard>, RichError>(RichError(ss.str()));
+  }
+
+  std::vector<UAVariantGuard> resultVec;
+  //  RECORD RESPONSE_VALUE
+  for (int i = 0; i < m_batchReadNodes.size(); ++i) {
+    UA_Variant var;
+    UA_Variant_init(&var);
+    UA_Variant_copy(&m_read_response.results[i].value, &var);
+    UAVariantGuard var_(&var);
+    resultVec.push_back(std::move(var_));
+  }
+
+  UA_ReadResponse_clear(&m_read_response);
+  UA_ReadRequest_clear(&request);
+  return Result<std::vector<UAVariantGuard>, RichError>(std::move(resultVec));
+}
+
+Result<std::vector<UA_StatusCode>, RichError>
+OPC_UA_Client::batchWrite(const std::vector<UA_WriteValue> &m_batchWriteNodes) {
+  // 2. 准备写入请求
+  UA_WriteRequest request;
+  UA_WriteRequest_init(&request);
+
+  // 分配写入节点数组（需要预先准备好要写入的节点和值）
+  // Open62541's read API does not modify the nodesToRead array,
+  // so const_cast is safe here. The vector itself is not const.
+  request.nodesToWrite = const_cast<UA_WriteValue*>(m_batchWriteNodes.data());
+  request.nodesToWriteSize = m_batchWriteNodes.size();
+
+  UA_WriteResponse response;
+  UA_WriteResponse_init(&response); // 始终初始化
+  std::vector<UA_StatusCode> resultVec;
+
+  const int MAX_RETRIES = 3;
+  const int INITIAL_DELAY_MS = 100;
+
+  for (int retry = 0; retry < MAX_RETRIES; ++retry) {
+    UA_WriteResponse_clear(&response); // 清空旧数据
+    {
+      std::lock_guard<std::recursive_mutex> lock_guard(lock);
+      if (!m_client_pointer) {
+        return Result<std::vector<UA_StatusCode>, RichError>(
+            RichError("Client was moved during retry"));
+      }
+      // 3. 执行批量写入
+      response = UA_Client_Service_write(m_client_pointer, request);
+    }
+
+    if (response.responseHeader.serviceResult == UA_STATUSCODE_GOOD)
+      break; // 成功
+    if (response.responseHeader.serviceResult !=
+            UA_STATUSCODE_BADCONNECTIONCLOSED &&
+        response.responseHeader.serviceResult !=
+            UA_STATUSCODE_BADCOMMUNICATIONERROR) {
+      break; // 非瞬态错误，立即退出
+    }
+    if (retry < MAX_RETRIES - 1) {
+      std::this_thread::sleep_for(
+          std::chrono::milliseconds(INITIAL_DELAY_MS * (retry + 1)));
+    }
+  }
+
+  // 直接按值拷贝进 vector！深拷贝 4 字节整数，极速且安全！
+  if (response.resultsSize > 0 && response.results) {
+    resultVec.assign(response.results, response.results + response.resultsSize);
+  }
+  UA_WriteRequest_clear(&request);
+  UA_WriteResponse_clear(&response); // 释放 response 自身的内存
+  return Result<std::vector<UA_StatusCode>, RichError>(std::move(resultVec));
+}
+
