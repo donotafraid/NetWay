@@ -374,9 +374,9 @@ public:
       if (m_hitCount % 10 == 0) {
         qDebug() << "indexAt cache hit:" << m_hitCount << "times";
       }
-      return Result<QModelIndex, RichError>(m_cachedIndex);
+      return Result<QModelIndex, RichError>(SuccessTag{},m_cachedIndex);
     }
-    return Result<QModelIndex, RichError>(RichError("Cache miss or expired"));
+    return Result<QModelIndex, RichError>(ErrorTag{},RichError("Cache miss or expired"));
   }
 
   // 获取视觉行号
@@ -385,7 +385,7 @@ public:
   // 获取节点
   Result<TreeNode *, RichError> getNodeByGlobalRow(int globalRow) const;
   // 获取列号
-  Result<int, RichError> getColumnAtX(const QPoint &pos) const;
+  Result<FindRelativeIndex, RichError> getColumnAtX(const QPoint &pos,TreeNode *node) const;
 
   // 查找索引
   Result<QModelIndex, RichError> findIndexByNode(const FindRelativeIndex &item) const;

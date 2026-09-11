@@ -1468,7 +1468,7 @@ void OPCUADataBlockView::buildConnection()
             if (result.is_fail()) {
               return;
             }
-            TreeNode *Node = result.unwrap_returnLeftValue();
+            TreeNode *Node = result.value_or(nullptr);
             if (!Node || Node->getChildCount() == 0) {
               return;
             }
@@ -1486,7 +1486,7 @@ void OPCUADataBlockView::buildConnection()
             if (result.is_fail()) {
               return;
             }
-            TreeNode *Node = result.unwrap_returnLeftValue();
+            TreeNode *Node = result.value_or(nullptr);
             if (!Node || Node->getChildCount() == 0) {
               return;
             }
@@ -1560,11 +1560,14 @@ bool OPCUADataBlockController::onbuildOPCUADataBlockFromMap(
     spdlog::info("error in load rawVec"); 
     return false;
   }
-  auto &dataVec = rawVecResult.unwrap_returnLeftValue();
-  std::shared_ptr<TreeNode> rootTreeNode;
-  if (rawVecResult.is_fail()) {
+  auto dataVec = rawVecResult.value_or({});
+  if(dataVec.size()==0)
+  {
+    spdlog::info("error in dataVec size = 0");
     return false;
-  } else {
+  }
+  std::shared_ptr<TreeNode> rootTreeNode;
+  {
     m_registry.m_mappers->setProbe(m_registry.m_probes);
     auto OpcDataVec = m_registry.m_mappers->map(dataVec);
     dataNodeVec = std::move(OpcDataVec);
@@ -1602,7 +1605,7 @@ void OPCUADataBlockController::onViewReadRequested() {
     if (result.is_fail()) {
       return;
     } else {
-      auto resultMap = result.unwrap_returnLeftValue();
+      auto resultMap = result.value_or({});
       for (auto &nodePtr : dataNodeVec) {
         if (!nodePtr)
           continue;
@@ -1639,7 +1642,7 @@ void OPCUADataBlockController::onViewWriteRequested() {
 
   auto result = m_registry.m_readers->batchWrite(nodeIds);
   if (result.is_fail()) {
-    spdlog::info("batchWrite error:{}", result.unwrap_err().what());
+    spdlog::info("batchWrite error:{}", result.get_error());
     return;
   }
 
@@ -1669,14 +1672,10 @@ bool OPCUADataBlockManager::createTableView(const QString &identifier,
   if (!createStrategy) {
     return false;
   }
-  auto createResult = createStrategy->create(identifier, object, it->second);
-  if(createResult.is_fail())
-  {
+  m_blockMap[key] =
+      createStrategy->create(identifier, object, it->second).value_or({});
+  if (m_blockMap.find(key) == m_blockMap.end()) {
     return false;
-  }
-  else
-  {
-    m_blockMap[key] = std::move(createResult.unwrap_returnLeftValue());
   }
 
   return true;
@@ -1918,19 +1917,19 @@ SpecialTreeView::~SpecialTreeView() {
 Result<QModelIndex, RichError>
 SpecialTreeView::findIndexByNode(const FindRelativeIndex &item) const {
   if (!item.node || item.node == m_model->getRootNode().get()) {
-    return Result<QModelIndex, RichError>(QModelIndex());
+    return Result<QModelIndex, RichError>(SuccessTag{},QModelIndex());
   }
 
   // 获取父节点
   std::shared_ptr<TreeNode> parentNode = item.node->getParent();
   if (!parentNode) {
-    return Result<QModelIndex, RichError>(QModelIndex());
+    return Result<QModelIndex, RichError>(SuccessTag{},QModelIndex());
   }
 
   // 获取 node 在父节点中的行号
   int row = findChildIndex(parentNode, item.node);
   if (row < 0) {
-    return Result<QModelIndex, RichError>(QModelIndex());
+    return Result<QModelIndex, RichError>(SuccessTag{},QModelIndex());
   }
 
   // 需要获取父节点的 QModelIndex
@@ -1942,24 +1941,26 @@ SpecialTreeView::findIndexByNode(const FindRelativeIndex &item) const {
     auto result = findIndexByNode(
         FindRelativeIndex{parentNode.get(), 0}); // 获取父节点的第0列
                                                  // 在 manualIndexAt 中添加
-    if (result.is_fail()) {
-      return Result<QModelIndex, RichError>(result);
+    parentIdx = result.value_or({});
+    if(!parentIdx.isValid())
+    {
+      return result;
     }
-    parentIdx = result.unwrap_returnLeftValue();
   }
 
   // 返回目标列的索引
   return Result<QModelIndex, RichError>(
-      QModelIndex(m_model->index(row, item.col, parentIdx)));
+      SuccessTag{}, QModelIndex(m_model->index(row, item.col, parentIdx)));
 }
 
-Result<int, RichError> SpecialTreeView::getColumnAtX(const QPoint &pos) const {
+Result<SpecialTreeView::FindRelativeIndex, RichError> SpecialTreeView::getColumnAtX(const QPoint &pos,TreeNode *node) const {
   int col = calculateColumnAtX(pos.x());
   if (col < 0) {
-    return Result<int, RichError>(
-        RichError("Invalid column: " + std::to_string(col)));
+    return Result<SpecialTreeView::FindRelativeIndex, RichError>(
+        ErrorTag{}, RichError("Invalid column: " + std::to_string(col)));
   }
-  return Result<int, RichError>(col);
+  FindRelativeIndex item{node,col};
+  return Result<SpecialTreeView::FindRelativeIndex, RichError>(SuccessTag{},std::move(item));
 }
 
 Result<TreeNode *, RichError>
@@ -1967,11 +1968,12 @@ SpecialTreeView::getNodeByGlobalRow(int globalRow) const {
   TreeNode *node = m_model->getNodeByVisualRow(globalRow);
   if (!node) {
     return Result<TreeNode *, RichError>(
+        ErrorTag{},
         RichError("No node found for row: " + std::to_string(globalRow)));
   }
   qDebug() << "select item :" << node->getDisplayName();
           
-  return Result<TreeNode *, RichError>(node);
+  return Result<TreeNode *, RichError>(SuccessTag{},node);
 }
 
 Result<int, RichError> SpecialTreeView::getGlobalRow(const QPoint &pos) const {
@@ -1983,7 +1985,7 @@ Result<int, RichError> SpecialTreeView::getGlobalRow(const QPoint &pos) const {
   int visualRow = (relativeY - 0) / rowHeight;
   //  visualRow means the distance between No.0 and the No.X
   if (visualRow < 0) {
-    return Result<int, RichError>(RichError("Invalid visual row: negative"));
+    return Result<int, RichError>(ErrorTag{},RichError("Invalid visual row: negative"));
   }
 
   int globalRow = scrollValue + visualRow;
@@ -1992,33 +1994,31 @@ Result<int, RichError> SpecialTreeView::getGlobalRow(const QPoint &pos) const {
            << "rowHeight:" << rowHeight << "HeaderHeight:" << headerHeight;
   qDebug() << "scrollValue:" << scrollValue << "visualRow:" << visualRow
            << "globalRow:" << globalRow;
-  return Result<int, RichError>(globalRow);
+  return Result<int, RichError>(SuccessTag{},globalRow);
 }
 
 QModelIndex SpecialTreeView::indexAt(const QPoint &pos) const {
   // 1. 缓存检查 - 快速路径
-  auto cacheResult = checkCache(pos);
-  if (cacheResult.is_success()) {
-    return cacheResult.unwrap_returnLeftValue();
+  auto cacheResult = checkCache(pos).value_or({});
+  if(cacheResult.isValid())
+  {
+    return cacheResult;
   }
 
   // 2. 主流程 - 使用管道式处理
-  auto result = getGlobalRow(pos)
-                    .and_then([this](int row) { return getNodeByGlobalRow(row); })
-                    .and_then([this, pos](TreeNode *node) {
-                      return getColumnAtX(pos).transform_func([node](int col) {
-                        return FindRelativeIndex(node, col);
-                      });
-                    })
-                    .and_then([this](FindRelativeIndex &item) {
-                      return findIndexByNode(item);
-                    });
+  auto result =
+      getGlobalRow(pos)
+          .and_then([this](int row) { return getNodeByGlobalRow(row); })
+          .and_then([this, pos](TreeNode *node) { return getColumnAtX(pos,node); })
+          .and_then([this](FindRelativeIndex item) {
+            return findIndexByNode(item);
+          });
 
   // 3. 结果处理
   if (result.is_success()) {
-    return result.unwrap_returnLeftValue();
+    return result.value_or({});
   } else {
-    spdlog::error("{}", result.unwrap_err().what());
+    spdlog::error("{}", result.get_error()->what());
     return QModelIndex();
   }
 }

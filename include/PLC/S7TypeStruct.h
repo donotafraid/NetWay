@@ -18,17 +18,21 @@ using NormalDataType = std::variant<
 
 enum class S7DataType
 {
-    BOOL,  //QCheckBox 
-    BYTE,   //QSpinBox
-    INT,    //QSpinBox
-    WORD,   //QSpinBox
-    DINT,   //QSpinBox
-    UDINT,  //QLineEdit
-    DWORD,  //QLineEdit
-    REAL,   //QDoubleSpinBox
-    STRING, //QLineEdit
-    ARRAY, 
-    STRUCT,
+    BOOL,    // QCheckBox 
+    SINT,    // QSpinBox (范围: -128 ~ 127)  ← 新增
+    BYTE,    // QSpinBox (范围: 0 ~ 255)
+    INT,     // QSpinBox (范围: -32768 ~ 32767)
+    WORD,    // QSpinBox (范围: 0 ~ 65535)
+    DINT,    // QSpinBox (范围: -2147483648 ~ 2147483647)
+    UDINT,   // QLineEdit (范围: 0 ~ 4294967295)
+    DWORD,   // QLineEdit (范围: 0 ~ 4294967295)
+    LINT,    // QLineEdit (范围: -2^63 ~ 2^63-1)  ← 新增
+    ULINT,   // QLineEdit (范围: 0 ~ 2^64-1)      ← 新增
+    REAL,    // QDoubleSpinBox (单精度浮点数)
+    LREAL,   // QDoubleSpinBox (双精度浮点数)      ← 新增
+    STRING,  // QLineEdit
+    ARRAY,   // 自定义控件或QListWidget
+    STRUCT,  // 自定义控件或QGroupBox
     UNKNOWN 
 };
 

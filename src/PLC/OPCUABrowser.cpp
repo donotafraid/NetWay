@@ -504,21 +504,11 @@ Result<bool, RichError> OPCUABrowser::connect() {
     std::string errorMsg =
         "Connection failed: " + std::string(UA_StatusCode_name(result)) +
         " (Error code: " + std::to_string(result) + ")";
-    spdlog::error(errorMsg);
-    return Result<bool, RichError>(RichError(errorMsg));
+    return Result<bool, RichError>::error(RichError(errorMsg));
   }
 
   // 5. 等待会话激活
-  auto activationResult = waitForSessionActivation(5000);
-  if (!activationResult.is_success()) {
-    UA_Client_disconnect(client_);
-    return Result<bool, RichError>(RichError("Session activation timeout"));
-  }
-
-  // 6. 标记为已连接
-  m_isConnected = true;
-  spdlog::info("Successfully connected to OPC UA server");
-  return Result<bool, RichError>(true);
+  return Result<bool, RichError>::success(true);
 }
 Result<bool, RichError> OPCUABrowser::reconnect(int maxRetries,
                                                 int retryDelayMs) {

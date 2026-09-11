@@ -17,21 +17,21 @@ struct ServiceRegistry {
 class IContextCreationStrategy {
 public:
     virtual ~IContextCreationStrategy() = default;
-    virtual Result<std::unique_ptr<OPCUADataBlockContext>, RichError>
+    virtual Result<std::shared_ptr<OPCUADataBlockContext>, RichError>
     create(const QString& identifier, const QString& dataBlockName,
            const ServiceRegistry& registry) const = 0;
 };
 
 class InlineBrowseStrategy : public IContextCreationStrategy
 {
-  Result<std::unique_ptr<OPCUADataBlockContext>, RichError>
+  Result<std::shared_ptr<OPCUADataBlockContext>, RichError>
     create(const QString& identifier, const QString& dataBlockName,
            const ServiceRegistry& registry) const override;
 };
 
 class FileContextStrategy : public IContextCreationStrategy
 {
-   Result<std::unique_ptr<OPCUADataBlockContext>, RichError>
+   Result<std::shared_ptr<OPCUADataBlockContext>, RichError>
     create(const QString& identifier, const QString& dataBlockName,
            const ServiceRegistry& registry) const override;
 };

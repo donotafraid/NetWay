@@ -29,7 +29,7 @@ ContextStrategyFactory::createStrategy(const QString &identifier) const {
 }
 
 //===============InlineBrowse====================
-  Result<std::unique_ptr<OPCUADataBlockContext>, RichError>
+  Result<std::shared_ptr<OPCUADataBlockContext>, RichError>
  InlineBrowseStrategy::create(const QString &identifier, const QString &dataBlockName,
        const ServiceRegistry &registry) const {
 
@@ -51,7 +51,7 @@ ContextStrategyFactory::createStrategy(const QString &identifier) const {
   context->controller->buildConnection();
 
   if (!context->view || !context->model || !context->delegate) {
-    return Result<std::unique_ptr<OPCUADataBlockContext>, RichError>(
+    return Result<std::shared_ptr<OPCUADataBlockContext>, RichError>(
         RichError{"view || model || delegate is nullptr"});
   }
 
@@ -59,14 +59,14 @@ ContextStrategyFactory::createStrategy(const QString &identifier) const {
   context->view->getModel(context->model.get());
   context->view->getDelegate(context->delegate.get());
 
-  return Result<std::unique_ptr<OPCUADataBlockContext>, RichError>(
+  return Result<std::shared_ptr<OPCUADataBlockContext>, RichError>(
       std::move(context));
   ;
 }
 
 
 //===============FileContextStrategy====================
-  Result<std::unique_ptr<OPCUADataBlockContext>, RichError>
+  Result<std::shared_ptr<OPCUADataBlockContext>, RichError>
  FileContextStrategy::create(const QString &identifier, const QString &dataBlockName,
        const ServiceRegistry &registry) const {
 
@@ -88,7 +88,7 @@ ContextStrategyFactory::createStrategy(const QString &identifier) const {
   context->controller->buildConnection();
 
   if (!context->view || !context->model || !context->delegate) {
-    return Result<std::unique_ptr<OPCUADataBlockContext>, RichError>(
+    return Result<std::shared_ptr<OPCUADataBlockContext>, RichError>(
         RichError{"view || model || delegate is nullptr"});
   }
 
@@ -96,7 +96,7 @@ ContextStrategyFactory::createStrategy(const QString &identifier) const {
   context->view->getModel(context->model.get());
   context->view->getDelegate(context->delegate.get());
 
-  return Result<std::unique_ptr<OPCUADataBlockContext>, RichError>(
+  return Result<std::shared_ptr<OPCUADataBlockContext>, RichError>(
       std::move(context));
   ;
 }
