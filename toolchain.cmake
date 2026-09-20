@@ -1,4 +1,5 @@
 # toolchain.cmake
+# 用于配合build.profile进行选项设置，Make成功后，CMakeLists实际使用的是内部生成的相关文件:DCMAKE_TOOLCHAIN_FILE=../conan_debug_build/conan_toolchain.cmake
 set(CMAKE_SYSTEM_NAME Linux)
 set(CMAKE_SYSTEM_PROCESSOR x86_64)
 

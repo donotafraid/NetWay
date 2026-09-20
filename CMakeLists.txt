@@ -5,7 +5,6 @@ cmake_minimum_required(VERSION 3.15)
 project(CrossPlatformApp LANGUAGES CXX C)
 
 # 包含 Conan 工具链文件
-#${CMAKE_PREFIX_PATH} 是 CMake 的内置变量，find_package()会在这个路径下寻找是否存在可用的文件(系统标准路径 PATH 也是路径之一)
 set(CONAN_DIR "${CMAKE_CURRENT_SOURCE_DIR}/conan_debug_build"
     CACHE PATH "Conan 依赖目录（可按环境覆盖）")
 if(EXISTS ${CONAN_DIR})
@@ -18,9 +17,8 @@ set(OPEN62541_ROOT "/root/open62541-v1.4.14-noSanitizer"
 set(OPEN62541_BUILD "${OPEN62541_ROOT}/build"
     CACHE PATH "open62541 build dir")
 
-# ... 在 include(conan_toolchain.cmake) 之后 ...
 # ============================================================
-# Sanitizer 选项（ASan+UBSan 和 TSan 互斥）
+# Sanitizer 选项（ASan+UBSan / LSan / TSan 互斥）
 # ============================================================
 option(ENABLE_ASAN "Enable AddressSanitizer + UBSan" OFF)
 option(ENABLE_LSAN "Enable AddressSanitizer + LSan (leak only)" OFF)
@@ -59,13 +57,17 @@ if(ENABLE_ASAN)
     endif()
 
     add_compile_options(-fsanitize=address,undefined)
-    add_compile_options(-fno-sanitize=function)
     add_compile_options(-fno-omit-frame-pointer)
     add_compile_options(-g)
     add_compile_options(-fno-optimize-sibling-calls)
 
     add_link_options(-fsanitize=address,undefined)
-    add_link_options(-fno-sanitize=function)
+
+    # ★ 关键修复：-fno-sanitize=function 是 Clang 专属，GCC 不认
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        add_compile_options(-fno-sanitize=function)
+        add_link_options(-fno-sanitize=function)
+    endif()
 
     set(ASAN_LOG_DIR "${CMAKE_BINARY_DIR}/asan_logs")
     file(MAKE_DIRECTORY ${ASAN_LOG_DIR})
@@ -104,20 +106,25 @@ else()
     message(STATUS "Sanitizers: DISABLED")
 endif()
 
-
-# 添加 Clang 特有编译选项
+# ============================================================
+# 编译器专属选项：Clang 与 GCC 分派
+# ============================================================
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     add_compile_options(
-        -fstandalone-debug      # 更好的调试信息
-        -Wthread-safety         # 线程安全分析
+        -fstandalone-debug           # 更好的调试信息（Clang 专属）
+        -Wthread-safety              # 线程安全分析（Clang 专属）
         -Wno-unused-command-line-argument
     )
-else()
-    # GCC 下对应的合理替代（可选）
-    add_compile_options(-Wno-unused-command-line-argument)
+elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    # GCC 没有 -Wthread-safety / -fstandalone-debug；
+    # -Wno-unused-command-line-argument 也不是 GCC 的选项，这里不加。
+    # 如需 GCC 下的额外警告，可在此追加，例如：
+    # add_compile_options(-Wno-maybe-uninitialized)
+elseif(CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
+    # MSVC 走 /W4 之类的选项；当前项目未声明 MSVC 支持，保留占位
 endif()
 
-# 修改构建类型配置
+# 修改构建类型配置（仅 Clang 的 Debug 附加项）
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
     if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
         add_compile_options(
@@ -130,97 +137,84 @@ endif()
 # 确保生成 compile_commands.json
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-#设置 Qt5 以及其他模块 的路径
+# ============================================================
+# 依赖查找
+# ============================================================
 find_package(fmt REQUIRED)
-find_package(spdlog REQUIRED)   
+find_package(spdlog REQUIRED)
 find_package(OpenSSL REQUIRED)
 find_package(Backward REQUIRED)
-find_package(Boost REQUIRED)
 find_package(nlohmann_json REQUIRED)
 find_package(CURL REQUIRED)
 find_package(GTest REQUIRED)
 
-
 # 兼容别名：CMake 标准 target 是 OpenSSL::SSL / OpenSSL::Crypto，
-# 但项目历史代码用 openssl::openssl，这里补一个 alias，
-# 避免改动 src/tests 里的 target_link_libraries。
+# 但项目历史代码用 openssl::openssl，这里补一个 alias。
 if(NOT TARGET openssl::openssl)
     add_library(openssl::openssl INTERFACE IMPORTED)
     set_target_properties(openssl::openssl PROPERTIES
         INTERFACE_LINK_LIBRARIES "OpenSSL::SSL;OpenSSL::Crypto")
 endif()
 
-# 导入库
+# ============================================================
+# open62541 导入库
+# ============================================================
 add_library(open62541_lib SHARED IMPORTED)
 set_target_properties(open62541_lib PROPERTIES
     IMPORTED_LOCATION "${OPEN62541_BUILD}/bin/libopen62541.so"
     INTERFACE_INCLUDE_DIRECTORIES
-        "${OPEN62541_BUILD}/src_generated;${OPEN62541_ROOT}/include;${OPEN62541_ROOT}/plugins/include"   
+        "${OPEN62541_BUILD}/src_generated;${OPEN62541_ROOT}/include;${OPEN62541_ROOT}/plugins/include"
 )
 get_target_property(OPEN62541_INCLUDE_DIRS open62541_lib INTERFACE_INCLUDE_DIRECTORIES)
 message(STATUS "open62541_lib INTERFACE_INCLUDE_DIRECTORIES: ${OPEN62541_INCLUDE_DIRS}")
 
-
-#设置第三方依赖项 
+# ============================================================
+# 第三方依赖聚合 target
+# ============================================================
 add_library(third_party_deps INTERFACE)
-target_link_libraries(third_party_deps INTERFACE 
+target_link_libraries(third_party_deps INTERFACE
     spdlog::spdlog
     Backward::Backward
-    Boost::headers
     open62541_lib
     CURL::libcurl
     GTest::gtest_main
 )
 
-# set(CMAKE_AUTOMOC ON)
-# set(CMAKE_AUTORCC ON)
-# set(CMAKE_AUTOUIC ON)
-
-# 设置构建类型为 Debug 模式。此模式下，CMake 会 自动启用编译器调试选项（如 -g）并 禁用优化（如 -O0）。
-# 对于 GNU 编译器（gcc/g++），Debug 模式通常隐含以下行为：
-# 生成调试符号（-g）。
-# 禁用大部分优化（-O0），确保代码结构与源代码一致。
-# 启用断言（-D_DEBUG）和其他调试宏。
+# Debug 下强制 -O0（GCC / Clang 通用）
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
     add_compile_options(-O0)
 endif()
 
-#添加子目录 （自动执行子目录的 CMakeLists.txt ）
-#${CMAKE_BINARY_DIR} 是 CMake 的内置变量，它会自动指向你执行 构建makefile 命令时所在的目录
+# ============================================================
+# 子目录
+# ============================================================
+set(InternalrootDir "${CMAKE_CURRENT_SOURCE_DIR}")
+
 add_subdirectory(
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/OPCUAPacking/
-    OPCUAPacking-build         
+    ${InternalrootDir}/src/OPCUAPacking/
+    OPCUAPacking-build
 )
 enable_testing()
 add_subdirectory(
-    ${CMAKE_CURRENT_SOURCE_DIR}/tests/
-    tests-build         
+    ${InternalrootDir}/tests/
+    tests-build
 )
 
+# ============================================================
+# 可执行文件
+# ============================================================
+set(SRC_DIR "${InternalrootDir}/src")
 
-#设置头文件目录
-set(CurrentFolder "${CMAKE_CURRENT_SOURCE_DIR}")
-set(SRC_DIR "${CurrentFolder}/src")
+add_executable(file_platform ${SRC_DIR}/main_uaPacking.cpp)
 
+target_include_directories(file_platform PRIVATE "${InternalrootDir}/include")
 
-#创建可执行文件 
-add_executable(file_platform  src/main_uaPacking.cpp)
+target_link_libraries(file_platform PRIVATE
+    third_party_deps
+    OPCUAPacking::OPCUAPacking
+)
 
-#限制头文件的传播范围，避免污染
-target_include_directories(file_platform PRIVATE "${CurrentFolder}/include")
-
-#设置动态库/静态库目录,里面包括了 .lib ，.include 的消息
-target_link_libraries(file_platform PRIVATE 
- third_party_deps
- OPCUAPacking::OPCUAPacking
- )
-
-
-#设置输出目录
 set_target_properties(
     file_platform PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY "${CurrentFolder}/bin"
+    RUNTIME_OUTPUT_DIRECTORY "${InternalrootDir}/tmp/bin"
 )
-
-
-
