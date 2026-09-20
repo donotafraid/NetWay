@@ -1,0 +1,65 @@
+Running main() from /root/.conan2/p/b/gtestfd5ccee71f8a1/b/src/googletest/src/gtest_main.cc
+Note: Google Test filter = Client.T3_*:Client.TA2_*:Client.TC_*:Client.T5_*:Client.T16_*:Client.T17_*:Client.T18_*:Client.T25_*
+[==========] Running 7 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 7 tests from Client
+[ RUN      ] Client.T3_TransientDisconnectRecoversWithoutGiveUp_Mock
+[2026-09-20 12:01:18.326 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Fresh, SessionState: Closed, ConnectStatus: BadConnectionClosed
+[       OK ] Client.T3_TransientDisconnectRecoversWithoutGiveUp_Mock (1 ms)
+[ RUN      ] Client.TC_ConcurrentShutdownIdempotent
+[2026-09-20 12:01:18.327] [info] Watchdog thread started
+[2026-09-20 12:01:18.328 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Fresh, SessionState: Closed, ConnectStatus: BadConnectionClosed
+[       OK ] Client.TC_ConcurrentShutdownIdempotent (3 ms)
+[ RUN      ] Client.TA2_ConcurrentConnect_ExactlyOneWins
+[TA2][tid=140737352322880] test begin
+[TA2][tid=140737352322880] -> createWithSdk
+[2026-09-20 12:01:18.330] [info] Watchdog thread started
+[TA2][tid=140737352322880] <- createWithSdk ok, client=0x7b08000005c0
+[TA2][tid=140737352322880] -> c->disconnect()
+[TA2][tid=140737352322880] <- c->disconnect() done, success=1
+[TA2][tid=140737352322880] <- initial disconnect ok
+[TA2][tid=140737280726592] thread a: -> c->connect()
+[TA2][tid=140737352322880] main: -> inConnect.wait()
+[TA2][tid=140737280726592] HOOK called, hookCalls=1
+[TA2][tid=140737280726592] HOOK count_down(inConnect) done
+[TA2][tid=140737280726592] HOOK -> entering releaseConnect.wait()
+[TA2][tid=140737352322880] main: <- inConnect.wait() returned, hookCalls=1
+[TA2][tid=140737289119296] thread b: -> c->connect()
+[TA2][tid=140737352322880] main: -> bDoneFut.wait_for(500ms)
+[TA2][tid=140737289119296] classify[b] = THREADBUSY
+[TA2][tid=140737289119296] thread b: <- c->connect(), set bDone
+[TA2][tid=140737352322880] main: <- bDoneFut.wait_for, ready=1, hookCalls=1
+[TA2][tid=140737352322880] main: b ready, releasing hook
+[TA2][tid=140737352322880] main: -> aDoneFut.wait_for(2s)
+[TA2][tid=140737280726592] HOOK <- releaseConnect.wait() returned
+[TA2][tid=140737280726592] classify[a] = success
+[TA2][tid=140737280726592] thread a: <- c->connect(), set aDone
+[TA2][tid=140737352322880] main: <- aDoneFut.wait_for, ready=1
+[TA2][tid=140737352322880] main: a and b futures ready, joining threads
+[TA2][tid=140737352322880] main: joined, ok=1 fail=1 busy=1 other=0
+[2026-09-20 12:01:18.331 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Fresh, SessionState: Closed, ConnectStatus: BadConnectionClosed
+[       OK ] Client.TA2_ConcurrentConnect_ExactlyOneWins (3 ms)
+[ RUN      ] Client.T16_ShutdownWaitsForInFlightRead_NoUAF
+[2026-09-20 12:01:18.332] [info] Watchdog thread started
+[2026-09-20 12:01:18.633 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Fresh, SessionState: Closed, ConnectStatus: BadConnectionClosed
+[       OK ] Client.T16_ShutdownWaitsForInFlightRead_NoUAF (302 ms)
+[ RUN      ] Client.T17_ShutdownTimeout_ForceCleanup_NoUAF
+[2026-09-20 12:01:18.634] [info] Watchdog thread started
+[2026-09-20 12:01:20.635] [warning] shutdownInternal: task counter did not reach zero within 2000 ms, forcing cleanup (counter=1)
+[2026-09-20 12:01:20.636 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Fresh, SessionState: Closed, ConnectStatus: BadConnectionClosed
+[       OK ] Client.T17_ShutdownTimeout_ForceCleanup_NoUAF (2002 ms)
+[ RUN      ] Client.T18_RecreateVsInFlightRead_OldFailsNewUsable
+[2026-09-20 12:01:20.637] [info] Watchdog thread started
+[2026-09-20 12:01:20.739] [info] Watchdog thread started
+[2026-09-20 12:01:20.739 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Fresh, SessionState: Closed, ConnectStatus: BadConnectionClosed
+[2026-09-20 12:01:20.740 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Fresh, SessionState: Closed, ConnectStatus: BadConnectionClosed
+[       OK ] Client.T18_RecreateVsInFlightRead_OldFailsNewUsable (104 ms)
+[ RUN      ] Client.T25_ConcurrentLifecycle_TSan
+[2026-09-20 12:01:20.741] [info] Watchdog thread started
+[2026-09-20 12:01:23.746 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Fresh, SessionState: Closed, ConnectStatus: BadConnectionClosed
+[       OK ] Client.T25_ConcurrentLifecycle_TSan (3006 ms)
+[----------] 7 tests from Client (5421 ms total)
+
+[----------] Global test environment tear-down
+[==========] 7 tests from 1 test suite ran. (5422 ms total)
+[  PASSED  ] 7 tests.

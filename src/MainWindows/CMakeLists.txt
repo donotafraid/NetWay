@@ -30,8 +30,8 @@ set_target_properties(${appleName} PROPERTIES AUTOMOC ON)
 
 #确保编译器能找到头文件进行编译,用于 #include 指令
 target_include_directories(${appleName} PUBLIC
-$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../../include>
-$<INSTALL_INTERFACE:include>
+${CMAKE_SOURCE_DIR}/include
+
 )
 
 #对本地动态库/静态库文件链接进应用程序里

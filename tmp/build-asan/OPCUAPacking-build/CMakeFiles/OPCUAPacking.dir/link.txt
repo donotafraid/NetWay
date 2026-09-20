@@ -1,0 +1,2 @@
+/usr/bin/ar qc libOPCUAPacking.a CMakeFiles/OPCUAPacking.dir/ua.cpp.o
+/usr/bin/ranlib libOPCUAPacking.a

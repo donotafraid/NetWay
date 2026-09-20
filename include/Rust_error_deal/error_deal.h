@@ -3,15 +3,92 @@
 #include <variant>
 #include <string>
 
-struct RichError {
-std::string context; // 额外的上下文信息
+#include <cstdint>
+#include <string>
+#include <utility>
 
-RichError(const std::string& context):context(std::move(context)){}
-const char* what() const {
-    return context.c_str();
-}
+class RichError {
+public:
+    enum class ErrorCode : uint8_t {
+        // ---- 状态机非法 ----
+        INVALID_STATE = 0,
+        RECREATING,
+        NOT_GIVEN_UP,
+        ALREADY_TERMINATED,
+        NOT_INITIALIZED,
+
+        // ---- 参数 / 配置 ----
+        INVALID_ARGUMENT,
+        INVALID_CONFIG,
+        TYPE_MISMATCH,
+        CONVERSION_FAILED,
+
+        // ---- 连接 / 会话 ----
+        NOT_CONNECTED,
+        CONNECT_TIMEOUT,
+        SESSION_NOT_ACTIVATED,
+        CHANNEL_NOT_OPEN,
+
+        // ---- 并发 / 资源 ----
+        THREAD_BUSY,
+        IN_FLIGHT_TIMEOUT,
+        BUDGET_EXCEEDED,
+
+        // ---- SDK / 服务 ----
+        SERVICE_FAILED,
+        SERVICE_RETRY_EXHAUSTED,
+        SDK_ERROR,
+
+        // ---- 内部 ----
+        INTERNAL_ERROR,
+        UNKNOWN,
+    };
+
+    RichError() = default;
+    RichError(ErrorCode code, std::string context)
+        : code_(code), context_(std::move(context)) {}
+
+    // 兼容旧调用：只有 context 时归为 UNKNOWN
+    explicit RichError(std::string context)
+        : code_(ErrorCode::UNKNOWN), context_(std::move(context)) {}
+
+    ErrorCode   code()    const noexcept { return code_; }
+    const std::string& context() const noexcept { return context_; }
+
+    const char* what() const noexcept { return context_.c_str(); }
+
+    // 便于日志/断言输出
+    const char* codeName() const noexcept {
+        switch (code_) {
+            case ErrorCode::INVALID_STATE:          return "INVALID_STATE";
+            case ErrorCode::RECREATING:             return "RECREATING";
+            case ErrorCode::NOT_GIVEN_UP:           return "NOT_GIVEN_UP";
+            case ErrorCode::ALREADY_TERMINATED:     return "ALREADY_TERMINATED";
+            case ErrorCode::NOT_INITIALIZED:        return "NOT_INITIALIZED";
+            case ErrorCode::INVALID_ARGUMENT:       return "INVALID_ARGUMENT";
+            case ErrorCode::INVALID_CONFIG:         return "INVALID_CONFIG";
+            case ErrorCode::TYPE_MISMATCH:          return "TYPE_MISMATCH";
+            case ErrorCode::CONVERSION_FAILED:      return "CONVERSION_FAILED";
+            case ErrorCode::NOT_CONNECTED:          return "NOT_CONNECTED";
+            case ErrorCode::CONNECT_TIMEOUT:        return "CONNECT_TIMEOUT";
+            case ErrorCode::SESSION_NOT_ACTIVATED:  return "SESSION_NOT_ACTIVATED";
+            case ErrorCode::CHANNEL_NOT_OPEN:       return "CHANNEL_NOT_OPEN";
+            case ErrorCode::THREAD_BUSY:            return "THREAD_BUSY";
+            case ErrorCode::IN_FLIGHT_TIMEOUT:      return "IN_FLIGHT_TIMEOUT";
+            case ErrorCode::BUDGET_EXCEEDED:        return "BUDGET_EXCEEDED";
+            case ErrorCode::SERVICE_FAILED:         return "SERVICE_FAILED";
+            case ErrorCode::SERVICE_RETRY_EXHAUSTED:return "SERVICE_RETRY_EXHAUSTED";
+            case ErrorCode::SDK_ERROR:              return "SDK_ERROR";
+            case ErrorCode::INTERNAL_ERROR:         return "INTERNAL_ERROR";
+            case ErrorCode::UNKNOWN:                return "UNKNOWN";
+        }
+        return "UNKNOWN";
+    }
+
+private:
+    ErrorCode   code_{ErrorCode::UNKNOWN};
+    std::string context_;
 };
-
 
 struct Unit {};
 
@@ -37,12 +114,12 @@ public:
   Result(ErrorTag,E &&fail) : result(std::move(fail)) {}
 
   // 辅助工厂函数
-  static Result success(T &&value) {
-    return Result(SuccessTag{}, std::forward<T>(value));
+  static Result success(T value) {
+    return Result(SuccessTag{}, std::move(value));
   }
 
-  static Result error(E &&error) {
-    return Result(ErrorTag{}, std::forward<E>(error));
+  static Result error(E error) {
+    return Result(ErrorTag{}, std::move(error));
   }
 
   //  check result type function

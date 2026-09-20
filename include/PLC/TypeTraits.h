@@ -7,16 +7,15 @@
 #include "PLC/S7TypeStruct.h"
 #include "PLC/WriteRequestAddres.h"
 
-namespace opcua::readTraits { 
-template<typename T, int TYPE_ENUM>
-struct UATypeTraitsBase {
-    static const UA_DataType* uaType() { return &UA_TYPES[TYPE_ENUM]; }
-    static Result<T, RichError> convert(const UA_Variant& var) {
-        if (!var.data || var.type != uaType()) {
-            return Result<T, RichError>::error(RichError{"type mismatch"});
-        }
-        return Result<T, RichError>::success(*static_cast<const T*>(var.data));
+namespace opcua::readTraits {
+template <typename T, int TYPE_ENUM> struct UATypeTraitsBase {
+  static const UA_DataType *uaType() { return &UA_TYPES[TYPE_ENUM]; }
+  static Result<T, RichError> convert(const UA_Variant &var) {
+    if (!var.data || var.type != uaType()) {
+      return Result<T, RichError>::error(RichError{"type mismatch"});
     }
+    return Result<T, RichError>::success(*static_cast<const T *>(var.data));
+  }
 };
 
 template <typename S7Type>
@@ -43,7 +42,7 @@ template <> struct UATypeTraits<std::string> {
     } else {
       const UA_String *src = static_cast<const UA_String *>(var.data);
       if (!src->data) {
-        return Result<std::string, RichError>::error(std::string{});
+        return Result<std::string, RichError>::error(RichError{"src->data is nullptr"});
       }
       return Result<std::string, RichError>::success(
           std::string(reinterpret_cast<const char *>(src->data), src->length));
@@ -102,11 +101,11 @@ template <typename T, int TYPE_ENUM> struct UATypeTraitsBase {
                                         const S7DataType &dataType,
                                         UA_WriteValue &destValue,
                                         const ValueType &VariableItem) {
-    T value;
+    T value{};
     if (const T *pValue = std::get_if<T>(&VariableItem)) {
       value = *pValue;
     } else {
-      Result<Unit, RichError>::error(RichError{"type not match "});
+      return Result<Unit, RichError>::error(RichError{"type not match "});
     }
 
     //  INIT WRITE UA_VALUE
@@ -127,6 +126,15 @@ template <typename T, int TYPE_ENUM> struct UATypeTraitsBase {
           RichError("OPCUADataCovert : batchSet_UA_Scalar_StatusCode fail"));
     }
     destValue.value.hasValue = true;
+    if (!destValue.value.hasValue) {
+      return Result<Unit, RichError>::error(RichError{"hasValue false"});
+    }
+    if (!destValue.value.value.type) {
+      return Result<Unit, RichError>::error(RichError{"value.type null"});
+    }
+    if (!destValue.value.value.data) {
+      return Result<Unit, RichError>::error(RichError{"value.data null"});
+    }
     return Result<Unit, RichError>::success(Unit{});
   }
 };
@@ -172,11 +180,11 @@ template <> struct UATypeTraits<std::string> {
                                         const S7DataType &dataType,
                                         UA_WriteValue &destValue,
                                         const ValueType &VariableItem) {
-    std::string value;
+    std::string value{""};
     if (const std::string *pValue = std::get_if<std::string>(&VariableItem)) {
       value = *pValue;
     } else {
-      Result<Unit, RichError>::error(RichError{"type not match "});
+      return Result<Unit, RichError>::error(RichError{"type not match "});
     }
 
     //  INIT WRITE UA_VALUE
@@ -199,6 +207,16 @@ template <> struct UATypeTraits<std::string> {
           RichError("OPCUADataCovert : batchSet_UA_Scalar_StatusCode fail"));
     }
     destValue.value.hasValue = true;
+   
+    if (!destValue.value.hasValue) {
+      return Result<Unit, RichError>::error(RichError{"hasValue false"});
+    }
+    if (!destValue.value.value.type) {
+      return Result<Unit, RichError>::error(RichError{"value.type null"});
+    }
+    if (!destValue.value.value.data) {
+      return Result<Unit, RichError>::error(RichError{"value.data null"});
+    }
     return Result<Unit, RichError>::success(Unit{});
   }
 };

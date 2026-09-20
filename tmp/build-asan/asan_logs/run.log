@@ -1,0 +1,719 @@
+Running main() from /root/.conan2/p/b/gtest511cb9818fdc1/b/src/googletest/src/gtest_main.cc
+Note: Google Test filter = Client.T1_*:Client.T2_*:Client.T3_*:Client.T4_*:Client.T8*:Client.TD_*:Client.T16_*:Client.T17_*:Client.T18_*:Client.T19_*:Client.T20_*:Client.T21_*:Client.T22_*:Client.T23_*:Client.T26_*:Client.T28_*:Client.T29_*:Client.T30_*:Client.T9_*:ClientTest.T2_*:ClientTest.T3_*:ClientTest.T5_*:ClientTest.TD_*:ClientConfigTest.*
+[==========] Running 23 tests from 3 test suites.
+[----------] Global test environment set-up.
+[----------] 18 tests from Client
+[ RUN      ] Client.T1_ConnectSuccess
+/root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/tests/test1.cpp:13: Skipped
+T1 是集成测试，需 OPCUA_RUN_INTEGRATION=1 且真实设备可达
+[  SKIPPED ] Client.T1_ConnectSuccess (1 ms)
+[ RUN      ] Client.T2_ConnectFailureDrivesRunIterate
+[2026-09-20 20:05:57.353 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Fresh, SessionState: Closed, ConnectStatus: BadConnectionClosed
+[       OK ] Client.T2_ConnectFailureDrivesRunIterate (1 ms)
+[ RUN      ] Client.T3_TransientDisconnectRecoversWithoutGiveUp_Mock
+[2026-09-20 20:05:57.353 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Fresh, SessionState: Closed, ConnectStatus: BadConnectionClosed
+[       OK ] Client.T3_TransientDisconnectRecoversWithoutGiveUp_Mock (0 ms)
+[ RUN      ] Client.T8B_RecreateRequiresGivenUpState_Mock
+[2026-09-20 20:05:57.354] [info] Watchdog thread started
+[2026-09-20 20:05:57.354 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Fresh, SessionState: Closed, ConnectStatus: BadConnectionClosed
+[       OK ] Client.T8B_RecreateRequiresGivenUpState_Mock (2 ms)
+[ RUN      ] Client.T8C1_ShutdownRejectedWhileRecreating
+[2026-09-20 20:05:57.355] [info] Watchdog thread started
+[2026-09-20 20:05:57.406] [info] Watchdog thread started
+[2026-09-20 20:05:57.406 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Fresh, SessionState: Closed, ConnectStatus: BadConnectionClosed
+[2026-09-20 20:05:57.456 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Fresh, SessionState: Closed, ConnectStatus: BadConnectionClosed
+[       OK ] Client.T8C1_ShutdownRejectedWhileRecreating (102 ms)
+[ RUN      ] Client.T8C2_DestructorAfterRecreate_CompletesPromptly
+[2026-09-20 20:05:57.457] [info] Watchdog thread started
+[2026-09-20 20:05:57.458] [info] Watchdog thread started
+[2026-09-20 20:05:57.458 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Fresh, SessionState: Closed, ConnectStatus: BadConnectionClosed
+[2026-09-20 20:05:57.458 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Fresh, SessionState: Closed, ConnectStatus: BadConnectionClosed
+[       OK ] Client.T8C2_DestructorAfterRecreate_CompletesPromptly (2 ms)
+[ RUN      ] Client.T16_ShutdownWaitsForInFlightRead_NoUAF
+[2026-09-20 20:05:57.459] [info] Watchdog thread started
+[2026-09-20 20:05:57.760 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Fresh, SessionState: Closed, ConnectStatus: BadConnectionClosed
+[       OK ] Client.T16_ShutdownWaitsForInFlightRead_NoUAF (302 ms)
+[ RUN      ] Client.T17_ShutdownTimeout_ForceCleanup_NoUAF
+[2026-09-20 20:05:57.761] [info] Watchdog thread started
+[2026-09-20 20:05:59.762] [warning] shutdownInternal: task counter did not reach zero within 2000 ms, forcing cleanup (counter=1)
+[2026-09-20 20:05:59.762 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Fresh, SessionState: Closed, ConnectStatus: BadConnectionClosed
+[       OK ] Client.T17_ShutdownTimeout_ForceCleanup_NoUAF (2002 ms)
+[ RUN      ] Client.T18_RecreateVsInFlightRead_OldFailsNewUsable
+[2026-09-20 20:05:59.764] [info] Watchdog thread started
+[2026-09-20 20:05:59.866] [info] Watchdog thread started
+[2026-09-20 20:05:59.866 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Fresh, SessionState: Closed, ConnectStatus: BadConnectionClosed
+[2026-09-20 20:05:59.866 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Fresh, SessionState: Closed, ConnectStatus: BadConnectionClosed
+[       OK ] Client.T18_RecreateVsInFlightRead_OldFailsNewUsable (104 ms)
+[ RUN      ] Client.T19_GiveUp_ThresholdBoundary_VirtualClock
+[2026-09-20 20:05:59.867] [info] Watchdog thread started
+[2026-09-20 20:06:02.879 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Fresh, SessionState: Closed, ConnectStatus: BadConnectionClosed
+[       OK ] Client.T19_GiveUp_ThresholdBoundary_VirtualClock (3012 ms)
+[ RUN      ] Client.T20_AllReadWriteErrorPaths_NoLeak
+[2026-09-20 20:06:02.880] [info] Watchdog thread started
+[2026-09-20 20:06:02.881 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Fresh, SessionState: Closed, ConnectStatus: BadConnectionClosed
+[       OK ] Client.T20_AllReadWriteErrorPaths_NoLeak (2 ms)
+[ RUN      ] Client.T21_BatchRead_RetriesTransientThenSucceeds
+[2026-09-20 20:06:02.881] [info] Watchdog thread started
+[2026-09-20 20:06:02.892 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Fresh, SessionState: Closed, ConnectStatus: BadConnectionClosed
+[       OK ] Client.T21_BatchRead_RetriesTransientThenSucceeds (11 ms)
+[ RUN      ] Client.T22_BatchRead_BudgetExceeded_VirtualClock
+[2026-09-20 20:06:02.893] [info] Watchdog thread started
+[T22] error           = batchRead: total time budget exceeded
+[T22] calls           = 9
+[T22] virtual elapsed = 450
+[T22] budget          = 440
+[2026-09-20 20:06:02.980 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Fresh, SessionState: Closed, ConnectStatus: BadConnectionClosed
+[       OK ] Client.T22_BatchRead_BudgetExceeded_VirtualClock (89 ms)
+[ RUN      ] Client.T23_CreateWithInvalidConfig_useDefaultFalse_Rejected
+[2026-09-20 20:06:02.981 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Fresh, SessionState: Closed, ConnectStatus: BadConnectionClosed
+[       OK ] Client.T23_CreateWithInvalidConfig_useDefaultFalse_Rejected (0 ms)
+[ RUN      ] Client.T26_RecreateFailureKeepsOldImpl
+[2026-09-20 20:06:02.982] [info] Watchdog thread started
+[2026-09-20 20:06:02.982 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Fresh, SessionState: Closed, ConnectStatus: BadConnectionClosed
+[2026-09-20 20:06:02.982 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Fresh, SessionState: Closed, ConnectStatus: BadConnectionClosed
+[T26] baseline=1 after=2
+[       OK ] Client.T26_RecreateFailureKeepsOldImpl (2 ms)
+[ RUN      ] Client.T28_MalformedReadResponse_NoLeak
+[2026-09-20 20:06:02.983] [info] Watchdog thread started
+[2026-09-20 20:06:02.984 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Fresh, SessionState: Closed, ConnectStatus: BadConnectionClosed
+[       OK ] Client.T28_MalformedReadResponse_NoLeak (1 ms)
+[ RUN      ] Client.T29_PerItemBadAndTypeMismatch_MapToNullopt
+[2026-09-20 20:06:02.984] [info] Watchdog thread started
+[2026-09-20 20:06:02.985 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Fresh, SessionState: Closed, ConnectStatus: BadConnectionClosed
+[       OK ] Client.T29_PerItemBadAndTypeMismatch_MapToNullopt (1 ms)
+[ RUN      ] Client.T30_MalformedWriteResponse_Rejected
+[2026-09-20 20:06:02.986] [info] Watchdog thread started
+[2026-09-20 20:06:02.986 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Fresh, SessionState: Closed, ConnectStatus: BadConnectionClosed
+[       OK ] Client.T30_MalformedWriteResponse_Rejected (2 ms)
+[----------] 18 tests from Client (5636 ms total)
+
+[----------] 4 tests from ClientTest
+[ RUN      ] ClientTest.T2_ConnectSuccess
+[2026-09-20 20:06:02.987 (UTC+0800)] [32minfo/eventloop[0m	Starting the EventLoop
+[2026-09-20 20:06:02.987 (UTC+0800)] [33mwarn/server[0m	AccessControl: Unconfigured AccessControl. Users have all permissions.
+[2026-09-20 20:06:02.987 (UTC+0800)] [32minfo/server[0m	AccessControl: Anonymous login is enabled
+[2026-09-20 20:06:02.987 (UTC+0800)] [33mwarn/server[0m	x509 Certificate Authentication configured, but no encrypting SecurityPolicy. This can leak credentials on the network.
+[2026-09-20 20:06:02.989 (UTC+0800)] [32minfo/session[0m	TCP 0	| SC 0	| Session "Administrator"	| AddNode (i=15303): No TypeDefinition. Use the default TypeDefinition for the Variable/Object
+[2026-09-20 20:06:02.993 (UTC+0800)] [32minfo/session[0m	TCP 0	| SC 0	| Session "Administrator"	| AddNode (i=25451): No TypeDefinition. Use the default TypeDefinition for the Variable/Object
+[2026-09-20 20:06:03.026 (UTC+0800)] [33mwarn/userland[0m	ServerUrls already set. Overriding.
+[2026-09-20 20:06:03.026 (UTC+0800)] [33mwarn/server[0m	AccessControl: Unconfigured AccessControl. Users have all permissions.
+[2026-09-20 20:06:03.026 (UTC+0800)] [32minfo/server[0m	AccessControl: Anonymous login is enabled
+[2026-09-20 20:06:03.026 (UTC+0800)] [33mwarn/server[0m	x509 Certificate Authentication configured, but no encrypting SecurityPolicy. This can leak credentials on the network.
+[2026-09-20 20:06:03.026 (UTC+0800)] [33mwarn/server[0m	x509 Certificate Authentication configured, but no encrypting SecurityPolicy. This can leak credentials on the network.
+[2026-09-20 20:06:03.028 (UTC+0800)] [32minfo/network[0m	TCP 4	| Creating listen socket for "127.0.0.1" on port 4841
+[2026-09-20 20:06:03.029 (UTC+0800)] [32minfo/server[0m	New DiscoveryUrl added: opc.tcp://127.0.0.1:4841
+[2026-09-20 20:06:03.030 (UTC+0800)] [32minfo/eventloop[0m	Starting the EventLoop
+[2026-09-20 20:06:03.033 (UTC+0800)] [32minfo/network[0m	TCP 6	| Opening a connection to "127.0.0.1" on port 4841
+[2026-09-20 20:06:03.033 (UTC+0800)] [32minfo/network[0m	TCP 7	| Connection opened from "127.0.0.1" via the server socket 4
+[2026-09-20 20:06:03.033 (UTC+0800)] [32minfo/channel[0m	TCP 7	| SC 1	| SecureChannel created
+[2026-09-20 20:06:03.033 (UTC+0800)] [32minfo/channel[0m	TCP 7	| SC 1	| SecureChannel opened with SecurityPolicy http://opcfoundation.org/UA/SecurityPolicy#None and a revised lifetime of 600.00s
+[2026-09-20 20:06:03.033 (UTC+0800)] [32minfo/channel[0m	TCP 6	| SC 1	| SecureChannel opened with SecurityPolicy http://opcfoundation.org/UA/SecurityPolicy#None and a revised lifetime of 600.00s
+[2026-09-20 20:06:03.034 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Open, SessionState: Closed, ConnectStatus: Good
+[2026-09-20 20:06:03.034 (UTC+0800)] [32minfo/client[0m	Selected endpoint with EndpointUrl opc.tcp://127.0.0.1:4841, SecurityMode None and SecurityPolicy http://opcfoundation.org/UA/SecurityPolicy#None
+[2026-09-20 20:06:03.041 (UTC+0800)] [32minfo/session[0m	TCP 7	| SC 1	| Session "ns=1;g=a2a293f0-94bd-3219-72b7-bb3b5015a18a"	| Session created
+[2026-09-20 20:06:03.041 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Open, SessionState: Created, ConnectStatus: Good
+[2026-09-20 20:06:03.041 (UTC+0800)] [32minfo/session[0m	TCP 7	| SC 1	| Session "ns=1;g=a2a293f0-94bd-3219-72b7-bb3b5015a18a"	| ActivateSession: Session activated with ClientUserId ""
+[2026-09-20 20:06:03.041 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Open, SessionState: Activated, ConnectStatus: Good
+[2026-09-20 20:06:03.042] [info] Watchdog thread started
+[2026-09-20 20:06:03.141 (UTC+0800)] [32minfo/session[0m	TCP 7	| SC 1	| Session "ns=1;g=a2a293f0-94bd-3219-72b7-bb3b5015a18a"	| Closing the Session
+[2026-09-20 20:06:03.141 (UTC+0800)] [32minfo/channel[0m	TCP 6	| SC 1	| SecureChannel closed
+[2026-09-20 20:06:03.141 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Fresh, SessionState: Closed, ConnectStatus: BadConnectionClosed
+[2026-09-20 20:06:03.141 (UTC+0800)] [32minfo/network[0m	TCP 6	| Socket closed
+[2026-09-20 20:06:03.141 (UTC+0800)] [32minfo/channel[0m	TCP 7	| SC 1	| SecureChannel closed
+[2026-09-20 20:06:03.141 (UTC+0800)] [32minfo/network[0m	TCP 7	| Socket closed
+[2026-09-20 20:06:03.241 (UTC+0800)] [32minfo/eventloop[0m	Stopping the EventLoop
+[2026-09-20 20:06:03.241 (UTC+0800)] [32minfo/network[0m	UDP	| Shutting down the ConnectionManager
+[2026-09-20 20:06:03.241 (UTC+0800)] [32minfo/network[0m	TCP	| Shutting down the ConnectionManager
+[2026-09-20 20:06:03.241 (UTC+0800)] [32minfo/eventloop[0m	The EventLoop has stopped
+[2026-09-20 20:06:03.643 (UTC+0800)] [32minfo/network[0m	TCP 4	| Socket closed
+[2026-09-20 20:06:03.742 (UTC+0800)] [32minfo/eventloop[0m	Stopping the EventLoop
+[2026-09-20 20:06:03.742 (UTC+0800)] [32minfo/network[0m	ETH	| Shutting down the ConnectionManager
+[2026-09-20 20:06:03.742 (UTC+0800)] [32minfo/network[0m	UDP	| Shutting down the ConnectionManager
+[2026-09-20 20:06:03.742 (UTC+0800)] [32minfo/network[0m	TCP	| Shutting down the ConnectionManager
+[2026-09-20 20:06:03.742 (UTC+0800)] [32minfo/eventloop[0m	The EventLoop has stopped
+[2026-09-20 20:06:03.742 (UTC+0800)] [32minfo/server[0m	PubSub cleanup was called.
+[       OK ] ClientTest.T2_ConnectSuccess (757 ms)
+[ RUN      ] ClientTest.T3_ReadTestInt
+[2026-09-20 20:06:03.744 (UTC+0800)] [32minfo/eventloop[0m	Starting the EventLoop
+[2026-09-20 20:06:03.744 (UTC+0800)] [33mwarn/server[0m	AccessControl: Unconfigured AccessControl. Users have all permissions.
+[2026-09-20 20:06:03.744 (UTC+0800)] [32minfo/server[0m	AccessControl: Anonymous login is enabled
+[2026-09-20 20:06:03.744 (UTC+0800)] [33mwarn/server[0m	x509 Certificate Authentication configured, but no encrypting SecurityPolicy. This can leak credentials on the network.
+[2026-09-20 20:06:03.746 (UTC+0800)] [32minfo/session[0m	TCP 0	| SC 0	| Session "Administrator"	| AddNode (i=15303): No TypeDefinition. Use the default TypeDefinition for the Variable/Object
+[2026-09-20 20:06:03.750 (UTC+0800)] [32minfo/session[0m	TCP 0	| SC 0	| Session "Administrator"	| AddNode (i=25451): No TypeDefinition. Use the default TypeDefinition for the Variable/Object
+[2026-09-20 20:06:03.784 (UTC+0800)] [33mwarn/userland[0m	ServerUrls already set. Overriding.
+[2026-09-20 20:06:03.784 (UTC+0800)] [33mwarn/server[0m	AccessControl: Unconfigured AccessControl. Users have all permissions.
+[2026-09-20 20:06:03.784 (UTC+0800)] [32minfo/server[0m	AccessControl: Anonymous login is enabled
+[2026-09-20 20:06:03.784 (UTC+0800)] [33mwarn/server[0m	x509 Certificate Authentication configured, but no encrypting SecurityPolicy. This can leak credentials on the network.
+[2026-09-20 20:06:03.784 (UTC+0800)] [33mwarn/server[0m	x509 Certificate Authentication configured, but no encrypting SecurityPolicy. This can leak credentials on the network.
+[2026-09-20 20:06:03.784 (UTC+0800)] [32minfo/network[0m	TCP 4	| Creating listen socket for "127.0.0.1" on port 4842
+[2026-09-20 20:06:03.784 (UTC+0800)] [32minfo/server[0m	New DiscoveryUrl added: opc.tcp://127.0.0.1:4842
+[2026-09-20 20:06:03.785 (UTC+0800)] [32minfo/eventloop[0m	Starting the EventLoop
+[2026-09-20 20:06:03.785 (UTC+0800)] [32minfo/network[0m	TCP 6	| Opening a connection to "127.0.0.1" on port 4842
+[2026-09-20 20:06:03.785 (UTC+0800)] [32minfo/network[0m	TCP 7	| Connection opened from "127.0.0.1" via the server socket 4
+[2026-09-20 20:06:03.785 (UTC+0800)] [32minfo/channel[0m	TCP 7	| SC 1	| SecureChannel created
+[2026-09-20 20:06:03.786 (UTC+0800)] [32minfo/channel[0m	TCP 7	| SC 1	| SecureChannel opened with SecurityPolicy http://opcfoundation.org/UA/SecurityPolicy#None and a revised lifetime of 600.00s
+[2026-09-20 20:06:03.786 (UTC+0800)] [32minfo/channel[0m	TCP 6	| SC 1	| SecureChannel opened with SecurityPolicy http://opcfoundation.org/UA/SecurityPolicy#None and a revised lifetime of 600.00s
+[2026-09-20 20:06:03.786 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Open, SessionState: Closed, ConnectStatus: Good
+[2026-09-20 20:06:03.787 (UTC+0800)] [32minfo/client[0m	Selected endpoint with EndpointUrl opc.tcp://127.0.0.1:4842, SecurityMode None and SecurityPolicy http://opcfoundation.org/UA/SecurityPolicy#None
+[2026-09-20 20:06:03.794 (UTC+0800)] [32minfo/session[0m	TCP 7	| SC 1	| Session "ns=1;g=8df963d9-39b2-1e9d-4eb4-2ba24dc4cc8c"	| Session created
+[2026-09-20 20:06:03.794 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Open, SessionState: Created, ConnectStatus: Good
+[2026-09-20 20:06:03.794 (UTC+0800)] [32minfo/session[0m	TCP 7	| SC 1	| Session "ns=1;g=8df963d9-39b2-1e9d-4eb4-2ba24dc4cc8c"	| ActivateSession: Session activated with ClientUserId ""
+[2026-09-20 20:06:03.794 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Open, SessionState: Activated, ConnectStatus: Good
+[2026-09-20 20:06:03.795] [info] Watchdog thread started
+[2026-09-20 20:06:03.845 (UTC+0800)] [32minfo/session[0m	TCP 7	| SC 1	| Session "ns=1;g=8df963d9-39b2-1e9d-4eb4-2ba24dc4cc8c"	| Closing the Session
+[2026-09-20 20:06:03.845 (UTC+0800)] [32minfo/channel[0m	TCP 6	| SC 1	| SecureChannel closed
+[2026-09-20 20:06:03.845 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Fresh, SessionState: Closed, ConnectStatus: BadConnectionClosed
+[2026-09-20 20:06:03.845 (UTC+0800)] [32minfo/network[0m	TCP 6	| Socket closed
+[2026-09-20 20:06:03.845 (UTC+0800)] [32minfo/channel[0m	TCP 7	| SC 1	| SecureChannel closed
+[2026-09-20 20:06:03.845 (UTC+0800)] [32minfo/network[0m	TCP 7	| Socket closed
+[2026-09-20 20:06:03.944 (UTC+0800)] [32minfo/eventloop[0m	Stopping the EventLoop
+[2026-09-20 20:06:03.944 (UTC+0800)] [32minfo/network[0m	UDP	| Shutting down the ConnectionManager
+[2026-09-20 20:06:03.944 (UTC+0800)] [32minfo/network[0m	TCP	| Shutting down the ConnectionManager
+[2026-09-20 20:06:03.944 (UTC+0800)] [32minfo/eventloop[0m	The EventLoop has stopped
+[2026-09-20 20:06:04.345 (UTC+0800)] [32minfo/network[0m	TCP 4	| Socket closed
+[2026-09-20 20:06:04.444 (UTC+0800)] [32minfo/eventloop[0m	Stopping the EventLoop
+[2026-09-20 20:06:04.444 (UTC+0800)] [32minfo/network[0m	ETH	| Shutting down the ConnectionManager
+[2026-09-20 20:06:04.445 (UTC+0800)] [32minfo/network[0m	UDP	| Shutting down the ConnectionManager
+[2026-09-20 20:06:04.445 (UTC+0800)] [32minfo/network[0m	TCP	| Shutting down the ConnectionManager
+[2026-09-20 20:06:04.445 (UTC+0800)] [32minfo/eventloop[0m	The EventLoop has stopped
+[2026-09-20 20:06:04.445 (UTC+0800)] [32minfo/server[0m	PubSub cleanup was called.
+[       OK ] ClientTest.T3_ReadTestInt (702 ms)
+[ RUN      ] ClientTest.T5_ConcurrentReadWrite_BoundedFail
+[2026-09-20 20:06:04.446 (UTC+0800)] [32minfo/eventloop[0m	Starting the EventLoop
+[2026-09-20 20:06:04.447 (UTC+0800)] [33mwarn/server[0m	AccessControl: Unconfigured AccessControl. Users have all permissions.
+[2026-09-20 20:06:04.447 (UTC+0800)] [32minfo/server[0m	AccessControl: Anonymous login is enabled
+[2026-09-20 20:06:04.447 (UTC+0800)] [33mwarn/server[0m	x509 Certificate Authentication configured, but no encrypting SecurityPolicy. This can leak credentials on the network.
+[2026-09-20 20:06:04.448 (UTC+0800)] [32minfo/session[0m	TCP 0	| SC 0	| Session "Administrator"	| AddNode (i=15303): No TypeDefinition. Use the default TypeDefinition for the Variable/Object
+[2026-09-20 20:06:04.452 (UTC+0800)] [32minfo/session[0m	TCP 0	| SC 0	| Session "Administrator"	| AddNode (i=25451): No TypeDefinition. Use the default TypeDefinition for the Variable/Object
+[2026-09-20 20:06:04.484 (UTC+0800)] [33mwarn/userland[0m	ServerUrls already set. Overriding.
+[2026-09-20 20:06:04.484 (UTC+0800)] [33mwarn/server[0m	AccessControl: Unconfigured AccessControl. Users have all permissions.
+[2026-09-20 20:06:04.484 (UTC+0800)] [32minfo/server[0m	AccessControl: Anonymous login is enabled
+[2026-09-20 20:06:04.484 (UTC+0800)] [33mwarn/server[0m	x509 Certificate Authentication configured, but no encrypting SecurityPolicy. This can leak credentials on the network.
+[2026-09-20 20:06:04.484 (UTC+0800)] [33mwarn/server[0m	x509 Certificate Authentication configured, but no encrypting SecurityPolicy. This can leak credentials on the network.
+[2026-09-20 20:06:04.485 (UTC+0800)] [32minfo/network[0m	TCP 4	| Creating listen socket for "127.0.0.1" on port 4843
+[2026-09-20 20:06:04.485 (UTC+0800)] [32minfo/server[0m	New DiscoveryUrl added: opc.tcp://127.0.0.1:4843
+[2026-09-20 20:06:04.485 (UTC+0800)] [32minfo/eventloop[0m	Starting the EventLoop
+[2026-09-20 20:06:04.486 (UTC+0800)] [32minfo/network[0m	TCP 6	| Opening a connection to "127.0.0.1" on port 4843
+[2026-09-20 20:06:04.486 (UTC+0800)] [32minfo/network[0m	TCP 7	| Connection opened from "127.0.0.1" via the server socket 4
+[2026-09-20 20:06:04.486 (UTC+0800)] [32minfo/channel[0m	TCP 7	| SC 1	| SecureChannel created
+[2026-09-20 20:06:04.486 (UTC+0800)] [32minfo/channel[0m	TCP 7	| SC 1	| SecureChannel opened with SecurityPolicy http://opcfoundation.org/UA/SecurityPolicy#None and a revised lifetime of 600.00s
+[2026-09-20 20:06:04.486 (UTC+0800)] [32minfo/channel[0m	TCP 6	| SC 1	| SecureChannel opened with SecurityPolicy http://opcfoundation.org/UA/SecurityPolicy#None and a revised lifetime of 600.00s
+[2026-09-20 20:06:04.486 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Open, SessionState: Closed, ConnectStatus: Good
+[2026-09-20 20:06:04.487 (UTC+0800)] [32minfo/client[0m	Selected endpoint with EndpointUrl opc.tcp://127.0.0.1:4843, SecurityMode None and SecurityPolicy http://opcfoundation.org/UA/SecurityPolicy#None
+[2026-09-20 20:06:04.493 (UTC+0800)] [32minfo/session[0m	TCP 7	| SC 1	| Session "ns=1;g=70698cbc-0682-fd5c-0430-43a48ab8db5d"	| Session created
+[2026-09-20 20:06:04.493 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Open, SessionState: Created, ConnectStatus: Good
+[2026-09-20 20:06:04.494 (UTC+0800)] [32minfo/session[0m	TCP 7	| SC 1	| Session "ns=1;g=70698cbc-0682-fd5c-0430-43a48ab8db5d"	| ActivateSession: Session activated with ClientUserId ""
+[2026-09-20 20:06:04.494 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Open, SessionState: Activated, ConnectStatus: Good
+[2026-09-20 20:06:04.494] [info] Watchdog thread started
+[2026-09-20 20:06:04.706 (UTC+0800)] [32minfo/session[0m	TCP 7	| SC 1	| Session "ns=1;g=70698cbc-0682-fd5c-0430-43a48ab8db5d"	| Closing the Session
+[2026-09-20 20:06:04.706 (UTC+0800)] [32minfo/channel[0m	TCP 6	| SC 1	| SecureChannel closed
+[2026-09-20 20:06:04.706 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Fresh, SessionState: Closed, ConnectStatus: BadConnectionClosed
+[2026-09-20 20:06:04.706 (UTC+0800)] [32minfo/network[0m	TCP 6	| Socket closed
+[2026-09-20 20:06:04.706 (UTC+0800)] [32minfo/channel[0m	TCP 7	| SC 1	| SecureChannel closed
+[2026-09-20 20:06:04.707 (UTC+0800)] [32minfo/network[0m	TCP 7	| Socket closed
+[2026-09-20 20:06:04.806 (UTC+0800)] [32minfo/eventloop[0m	Stopping the EventLoop
+[2026-09-20 20:06:04.806 (UTC+0800)] [32minfo/network[0m	UDP	| Shutting down the ConnectionManager
+[2026-09-20 20:06:04.806 (UTC+0800)] [32minfo/network[0m	TCP	| Shutting down the ConnectionManager
+[2026-09-20 20:06:04.806 (UTC+0800)] [32minfo/eventloop[0m	The EventLoop has stopped
+[2026-09-20 20:06:05.207 (UTC+0800)] [32minfo/network[0m	TCP 4	| Socket closed
+[2026-09-20 20:06:05.306 (UTC+0800)] [32minfo/eventloop[0m	Stopping the EventLoop
+[2026-09-20 20:06:05.306 (UTC+0800)] [32minfo/network[0m	ETH	| Shutting down the ConnectionManager
+[2026-09-20 20:06:05.306 (UTC+0800)] [32minfo/network[0m	UDP	| Shutting down the ConnectionManager
+[2026-09-20 20:06:05.306 (UTC+0800)] [32minfo/network[0m	TCP	| Shutting down the ConnectionManager
+[2026-09-20 20:06:05.306 (UTC+0800)] [32minfo/eventloop[0m	The EventLoop has stopped
+[2026-09-20 20:06:05.306 (UTC+0800)] [32minfo/server[0m	PubSub cleanup was called.
+[       OK ] ClientTest.T5_ConcurrentReadWrite_BoundedFail (861 ms)
+[ RUN      ] ClientTest.TD_CreateShutdownLifecycleNoLeak
+[2026-09-20 20:06:05.308 (UTC+0800)] [32minfo/eventloop[0m	Starting the EventLoop
+[2026-09-20 20:06:05.308 (UTC+0800)] [33mwarn/server[0m	AccessControl: Unconfigured AccessControl. Users have all permissions.
+[2026-09-20 20:06:05.308 (UTC+0800)] [32minfo/server[0m	AccessControl: Anonymous login is enabled
+[2026-09-20 20:06:05.308 (UTC+0800)] [33mwarn/server[0m	x509 Certificate Authentication configured, but no encrypting SecurityPolicy. This can leak credentials on the network.
+[2026-09-20 20:06:05.309 (UTC+0800)] [32minfo/session[0m	TCP 0	| SC 0	| Session "Administrator"	| AddNode (i=15303): No TypeDefinition. Use the default TypeDefinition for the Variable/Object
+[2026-09-20 20:06:05.312 (UTC+0800)] [32minfo/session[0m	TCP 0	| SC 0	| Session "Administrator"	| AddNode (i=25451): No TypeDefinition. Use the default TypeDefinition for the Variable/Object
+[2026-09-20 20:06:05.342 (UTC+0800)] [33mwarn/userland[0m	ServerUrls already set. Overriding.
+[2026-09-20 20:06:05.342 (UTC+0800)] [33mwarn/server[0m	AccessControl: Unconfigured AccessControl. Users have all permissions.
+[2026-09-20 20:06:05.342 (UTC+0800)] [32minfo/server[0m	AccessControl: Anonymous login is enabled
+[2026-09-20 20:06:05.342 (UTC+0800)] [33mwarn/server[0m	x509 Certificate Authentication configured, but no encrypting SecurityPolicy. This can leak credentials on the network.
+[2026-09-20 20:06:05.342 (UTC+0800)] [33mwarn/server[0m	x509 Certificate Authentication configured, but no encrypting SecurityPolicy. This can leak credentials on the network.
+[2026-09-20 20:06:05.342 (UTC+0800)] [32minfo/network[0m	TCP 4	| Creating listen socket for "127.0.0.1" on port 4844
+[2026-09-20 20:06:05.342 (UTC+0800)] [32minfo/server[0m	New DiscoveryUrl added: opc.tcp://127.0.0.1:4844
+[2026-09-20 20:06:05.343 (UTC+0800)] [32minfo/eventloop[0m	Starting the EventLoop
+[2026-09-20 20:06:05.343 (UTC+0800)] [32minfo/network[0m	TCP 6	| Opening a connection to "127.0.0.1" on port 4844
+[2026-09-20 20:06:05.343 (UTC+0800)] [32minfo/network[0m	TCP 7	| Connection opened from "127.0.0.1" via the server socket 4
+[2026-09-20 20:06:05.343 (UTC+0800)] [32minfo/channel[0m	TCP 7	| SC 1	| SecureChannel created
+[2026-09-20 20:06:05.344 (UTC+0800)] [32minfo/channel[0m	TCP 7	| SC 1	| SecureChannel opened with SecurityPolicy http://opcfoundation.org/UA/SecurityPolicy#None and a revised lifetime of 600.00s
+[2026-09-20 20:06:05.344 (UTC+0800)] [32minfo/channel[0m	TCP 6	| SC 1	| SecureChannel opened with SecurityPolicy http://opcfoundation.org/UA/SecurityPolicy#None and a revised lifetime of 600.00s
+[2026-09-20 20:06:05.344 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Open, SessionState: Closed, ConnectStatus: Good
+[2026-09-20 20:06:05.345 (UTC+0800)] [32minfo/client[0m	Selected endpoint with EndpointUrl opc.tcp://127.0.0.1:4844, SecurityMode None and SecurityPolicy http://opcfoundation.org/UA/SecurityPolicy#None
+[2026-09-20 20:06:05.352 (UTC+0800)] [32minfo/session[0m	TCP 7	| SC 1	| Session "ns=1;g=317a16fc-81b7-b76b-1751-a5da649669f6"	| Session created
+[2026-09-20 20:06:05.352 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Open, SessionState: Created, ConnectStatus: Good
+[2026-09-20 20:06:05.352 (UTC+0800)] [32minfo/session[0m	TCP 7	| SC 1	| Session "ns=1;g=317a16fc-81b7-b76b-1751-a5da649669f6"	| ActivateSession: Session activated with ClientUserId ""
+[2026-09-20 20:06:05.353 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Open, SessionState: Activated, ConnectStatus: Good
+[2026-09-20 20:06:05.353] [info] Watchdog thread started
+[2026-09-20 20:06:05.403 (UTC+0800)] [32minfo/session[0m	TCP 7	| SC 1	| Session "ns=1;g=317a16fc-81b7-b76b-1751-a5da649669f6"	| Closing the Session
+[2026-09-20 20:06:05.403 (UTC+0800)] [32minfo/channel[0m	TCP 6	| SC 1	| SecureChannel closed
+[2026-09-20 20:06:05.403 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Fresh, SessionState: Closed, ConnectStatus: BadConnectionClosed
+[2026-09-20 20:06:05.403 (UTC+0800)] [32minfo/network[0m	TCP 6	| Socket closed
+[2026-09-20 20:06:05.403 (UTC+0800)] [32minfo/channel[0m	TCP 7	| SC 1	| SecureChannel closed
+[2026-09-20 20:06:05.403 (UTC+0800)] [32minfo/network[0m	TCP 7	| Socket closed
+[2026-09-20 20:06:05.502 (UTC+0800)] [32minfo/eventloop[0m	Stopping the EventLoop
+[2026-09-20 20:06:05.502 (UTC+0800)] [32minfo/network[0m	UDP	| Shutting down the ConnectionManager
+[2026-09-20 20:06:05.502 (UTC+0800)] [32minfo/network[0m	TCP	| Shutting down the ConnectionManager
+[2026-09-20 20:06:05.502 (UTC+0800)] [32minfo/eventloop[0m	The EventLoop has stopped
+[2026-09-20 20:06:05.502 (UTC+0800)] [32minfo/eventloop[0m	Starting the EventLoop
+[2026-09-20 20:06:05.503 (UTC+0800)] [32minfo/network[0m	TCP 6	| Opening a connection to "127.0.0.1" on port 4844
+[2026-09-20 20:06:05.503 (UTC+0800)] [32minfo/network[0m	TCP 7	| Connection opened from "127.0.0.1" via the server socket 4
+[2026-09-20 20:06:05.503 (UTC+0800)] [32minfo/channel[0m	TCP 7	| SC 2	| SecureChannel created
+[2026-09-20 20:06:05.503 (UTC+0800)] [32minfo/channel[0m	TCP 7	| SC 2	| SecureChannel opened with SecurityPolicy http://opcfoundation.org/UA/SecurityPolicy#None and a revised lifetime of 600.00s
+[2026-09-20 20:06:05.503 (UTC+0800)] [32minfo/channel[0m	TCP 6	| SC 2	| SecureChannel opened with SecurityPolicy http://opcfoundation.org/UA/SecurityPolicy#None and a revised lifetime of 600.00s
+[2026-09-20 20:06:05.504 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Open, SessionState: Closed, ConnectStatus: Good
+[2026-09-20 20:06:05.504 (UTC+0800)] [32minfo/client[0m	Selected endpoint with EndpointUrl opc.tcp://127.0.0.1:4844, SecurityMode None and SecurityPolicy http://opcfoundation.org/UA/SecurityPolicy#None
+[2026-09-20 20:06:05.511 (UTC+0800)] [32minfo/session[0m	TCP 7	| SC 2	| Session "ns=1;g=b30b8d74-dab5-fe10-ebae-fa4f20829809"	| Session created
+[2026-09-20 20:06:05.512 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Open, SessionState: Created, ConnectStatus: Good
+[2026-09-20 20:06:05.512 (UTC+0800)] [32minfo/session[0m	TCP 7	| SC 2	| Session "ns=1;g=b30b8d74-dab5-fe10-ebae-fa4f20829809"	| ActivateSession: Session activated with ClientUserId ""
+[2026-09-20 20:06:05.512 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Open, SessionState: Activated, ConnectStatus: Good
+[2026-09-20 20:06:05.512] [info] Watchdog thread started
+[2026-09-20 20:06:05.562 (UTC+0800)] [32minfo/session[0m	TCP 7	| SC 2	| Session "ns=1;g=b30b8d74-dab5-fe10-ebae-fa4f20829809"	| Closing the Session
+[2026-09-20 20:06:05.562 (UTC+0800)] [32minfo/channel[0m	TCP 6	| SC 2	| SecureChannel closed
+[2026-09-20 20:06:05.562 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Fresh, SessionState: Closed, ConnectStatus: BadConnectionClosed
+[2026-09-20 20:06:05.562 (UTC+0800)] [32minfo/network[0m	TCP 6	| Socket closed
+[2026-09-20 20:06:05.562 (UTC+0800)] [32minfo/channel[0m	TCP 7	| SC 2	| SecureChannel closed
+[2026-09-20 20:06:05.562 (UTC+0800)] [32minfo/network[0m	TCP 7	| Socket closed
+[2026-09-20 20:06:05.661 (UTC+0800)] [32minfo/eventloop[0m	Stopping the EventLoop
+[2026-09-20 20:06:05.661 (UTC+0800)] [32minfo/network[0m	UDP	| Shutting down the ConnectionManager
+[2026-09-20 20:06:05.661 (UTC+0800)] [32minfo/network[0m	TCP	| Shutting down the ConnectionManager
+[2026-09-20 20:06:05.661 (UTC+0800)] [32minfo/eventloop[0m	The EventLoop has stopped
+[2026-09-20 20:06:05.661 (UTC+0800)] [32minfo/eventloop[0m	Starting the EventLoop
+[2026-09-20 20:06:05.662 (UTC+0800)] [32minfo/network[0m	TCP 6	| Opening a connection to "127.0.0.1" on port 4844
+[2026-09-20 20:06:05.662 (UTC+0800)] [32minfo/network[0m	TCP 7	| Connection opened from "127.0.0.1" via the server socket 4
+[2026-09-20 20:06:05.662 (UTC+0800)] [32minfo/channel[0m	TCP 7	| SC 3	| SecureChannel created
+[2026-09-20 20:06:05.663 (UTC+0800)] [32minfo/channel[0m	TCP 7	| SC 3	| SecureChannel opened with SecurityPolicy http://opcfoundation.org/UA/SecurityPolicy#None and a revised lifetime of 600.00s
+[2026-09-20 20:06:05.663 (UTC+0800)] [32minfo/channel[0m	TCP 6	| SC 3	| SecureChannel opened with SecurityPolicy http://opcfoundation.org/UA/SecurityPolicy#None and a revised lifetime of 600.00s
+[2026-09-20 20:06:05.663 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Open, SessionState: Closed, ConnectStatus: Good
+[2026-09-20 20:06:05.663 (UTC+0800)] [32minfo/client[0m	Selected endpoint with EndpointUrl opc.tcp://127.0.0.1:4844, SecurityMode None and SecurityPolicy http://opcfoundation.org/UA/SecurityPolicy#None
+[2026-09-20 20:06:05.670 (UTC+0800)] [32minfo/session[0m	TCP 7	| SC 3	| Session "ns=1;g=528b6875-a018-b399-38c3-2c92462492d9"	| Session created
+[2026-09-20 20:06:05.671 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Open, SessionState: Created, ConnectStatus: Good
+[2026-09-20 20:06:05.671 (UTC+0800)] [32minfo/session[0m	TCP 7	| SC 3	| Session "ns=1;g=528b6875-a018-b399-38c3-2c92462492d9"	| ActivateSession: Session activated with ClientUserId ""
+[2026-09-20 20:06:05.671 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Open, SessionState: Activated, ConnectStatus: Good
+[2026-09-20 20:06:05.671] [info] Watchdog thread started
+[2026-09-20 20:06:05.721 (UTC+0800)] [32minfo/session[0m	TCP 7	| SC 3	| Session "ns=1;g=528b6875-a018-b399-38c3-2c92462492d9"	| Closing the Session
+[2026-09-20 20:06:05.722 (UTC+0800)] [32minfo/channel[0m	TCP 6	| SC 3	| SecureChannel closed
+[2026-09-20 20:06:05.722 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Fresh, SessionState: Closed, ConnectStatus: BadConnectionClosed
+[2026-09-20 20:06:05.722 (UTC+0800)] [32minfo/network[0m	TCP 6	| Socket closed
+[2026-09-20 20:06:05.722 (UTC+0800)] [32minfo/channel[0m	TCP 7	| SC 3	| SecureChannel closed
+[2026-09-20 20:06:05.722 (UTC+0800)] [32minfo/network[0m	TCP 7	| Socket closed
+[2026-09-20 20:06:05.821 (UTC+0800)] [32minfo/eventloop[0m	Stopping the EventLoop
+[2026-09-20 20:06:05.821 (UTC+0800)] [32minfo/network[0m	UDP	| Shutting down the ConnectionManager
+[2026-09-20 20:06:05.821 (UTC+0800)] [32minfo/network[0m	TCP	| Shutting down the ConnectionManager
+[2026-09-20 20:06:05.821 (UTC+0800)] [32minfo/eventloop[0m	The EventLoop has stopped
+[2026-09-20 20:06:05.821 (UTC+0800)] [32minfo/eventloop[0m	Starting the EventLoop
+[2026-09-20 20:06:05.822 (UTC+0800)] [32minfo/network[0m	TCP 6	| Opening a connection to "127.0.0.1" on port 4844
+[2026-09-20 20:06:05.822 (UTC+0800)] [32minfo/network[0m	TCP 7	| Connection opened from "127.0.0.1" via the server socket 4
+[2026-09-20 20:06:05.822 (UTC+0800)] [32minfo/channel[0m	TCP 7	| SC 4	| SecureChannel created
+[2026-09-20 20:06:05.822 (UTC+0800)] [32minfo/channel[0m	TCP 7	| SC 4	| SecureChannel opened with SecurityPolicy http://opcfoundation.org/UA/SecurityPolicy#None and a revised lifetime of 600.00s
+[2026-09-20 20:06:05.822 (UTC+0800)] [32minfo/channel[0m	TCP 6	| SC 4	| SecureChannel opened with SecurityPolicy http://opcfoundation.org/UA/SecurityPolicy#None and a revised lifetime of 600.00s
+[2026-09-20 20:06:05.823 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Open, SessionState: Closed, ConnectStatus: Good
+[2026-09-20 20:06:05.823 (UTC+0800)] [32minfo/client[0m	Selected endpoint with EndpointUrl opc.tcp://127.0.0.1:4844, SecurityMode None and SecurityPolicy http://opcfoundation.org/UA/SecurityPolicy#None
+[2026-09-20 20:06:05.830 (UTC+0800)] [32minfo/session[0m	TCP 7	| SC 4	| Session "ns=1;g=09af02c4-595f-b14b-cb0c-2032c61c5135"	| Session created
+[2026-09-20 20:06:05.830 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Open, SessionState: Created, ConnectStatus: Good
+[2026-09-20 20:06:05.830 (UTC+0800)] [32minfo/session[0m	TCP 7	| SC 4	| Session "ns=1;g=09af02c4-595f-b14b-cb0c-2032c61c5135"	| ActivateSession: Session activated with ClientUserId ""
+[2026-09-20 20:06:05.830 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Open, SessionState: Activated, ConnectStatus: Good
+[2026-09-20 20:06:05.831] [info] Watchdog thread started
+[2026-09-20 20:06:05.880 (UTC+0800)] [32minfo/session[0m	TCP 7	| SC 4	| Session "ns=1;g=09af02c4-595f-b14b-cb0c-2032c61c5135"	| Closing the Session
+[2026-09-20 20:06:05.881 (UTC+0800)] [32minfo/channel[0m	TCP 6	| SC 4	| SecureChannel closed
+[2026-09-20 20:06:05.881 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Fresh, SessionState: Closed, ConnectStatus: BadConnectionClosed
+[2026-09-20 20:06:05.881 (UTC+0800)] [32minfo/network[0m	TCP 6	| Socket closed
+[2026-09-20 20:06:05.881 (UTC+0800)] [32minfo/channel[0m	TCP 7	| SC 4	| SecureChannel closed
+[2026-09-20 20:06:05.881 (UTC+0800)] [32minfo/network[0m	TCP 7	| Socket closed
+[2026-09-20 20:06:05.980 (UTC+0800)] [32minfo/eventloop[0m	Stopping the EventLoop
+[2026-09-20 20:06:05.980 (UTC+0800)] [32minfo/network[0m	UDP	| Shutting down the ConnectionManager
+[2026-09-20 20:06:05.980 (UTC+0800)] [32minfo/network[0m	TCP	| Shutting down the ConnectionManager
+[2026-09-20 20:06:05.980 (UTC+0800)] [32minfo/eventloop[0m	The EventLoop has stopped
+[2026-09-20 20:06:05.981 (UTC+0800)] [32minfo/eventloop[0m	Starting the EventLoop
+[2026-09-20 20:06:05.981 (UTC+0800)] [32minfo/network[0m	TCP 6	| Opening a connection to "127.0.0.1" on port 4844
+[2026-09-20 20:06:05.981 (UTC+0800)] [32minfo/network[0m	TCP 7	| Connection opened from "127.0.0.1" via the server socket 4
+[2026-09-20 20:06:05.981 (UTC+0800)] [32minfo/channel[0m	TCP 7	| SC 5	| SecureChannel created
+[2026-09-20 20:06:05.981 (UTC+0800)] [32minfo/channel[0m	TCP 7	| SC 5	| SecureChannel opened with SecurityPolicy http://opcfoundation.org/UA/SecurityPolicy#None and a revised lifetime of 600.00s
+[2026-09-20 20:06:05.982 (UTC+0800)] [32minfo/channel[0m	TCP 6	| SC 5	| SecureChannel opened with SecurityPolicy http://opcfoundation.org/UA/SecurityPolicy#None and a revised lifetime of 600.00s
+[2026-09-20 20:06:05.982 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Open, SessionState: Closed, ConnectStatus: Good
+[2026-09-20 20:06:05.982 (UTC+0800)] [32minfo/client[0m	Selected endpoint with EndpointUrl opc.tcp://127.0.0.1:4844, SecurityMode None and SecurityPolicy http://opcfoundation.org/UA/SecurityPolicy#None
+[2026-09-20 20:06:05.989 (UTC+0800)] [32minfo/session[0m	TCP 7	| SC 5	| Session "ns=1;g=bf021f63-a5e5-83ae-fd0f-10111441c47c"	| Session created
+[2026-09-20 20:06:05.989 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Open, SessionState: Created, ConnectStatus: Good
+[2026-09-20 20:06:05.989 (UTC+0800)] [32minfo/session[0m	TCP 7	| SC 5	| Session "ns=1;g=bf021f63-a5e5-83ae-fd0f-10111441c47c"	| ActivateSession: Session activated with ClientUserId ""
+[2026-09-20 20:06:05.990 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Open, SessionState: Activated, ConnectStatus: Good
+[2026-09-20 20:06:05.990] [info] Watchdog thread started
+[2026-09-20 20:06:06.040 (UTC+0800)] [32minfo/session[0m	TCP 7	| SC 5	| Session "ns=1;g=bf021f63-a5e5-83ae-fd0f-10111441c47c"	| Closing the Session
+[2026-09-20 20:06:06.040 (UTC+0800)] [32minfo/channel[0m	TCP 6	| SC 5	| SecureChannel closed
+[2026-09-20 20:06:06.040 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Fresh, SessionState: Closed, ConnectStatus: BadConnectionClosed
+[2026-09-20 20:06:06.040 (UTC+0800)] [32minfo/network[0m	TCP 6	| Socket closed
+[2026-09-20 20:06:06.040 (UTC+0800)] [32minfo/channel[0m	TCP 7	| SC 5	| SecureChannel closed
+[2026-09-20 20:06:06.040 (UTC+0800)] [32minfo/network[0m	TCP 7	| Socket closed
+[2026-09-20 20:06:06.140 (UTC+0800)] [32minfo/eventloop[0m	Stopping the EventLoop
+[2026-09-20 20:06:06.140 (UTC+0800)] [32minfo/network[0m	UDP	| Shutting down the ConnectionManager
+[2026-09-20 20:06:06.140 (UTC+0800)] [32minfo/network[0m	TCP	| Shutting down the ConnectionManager
+[2026-09-20 20:06:06.140 (UTC+0800)] [32minfo/eventloop[0m	The EventLoop has stopped
+[2026-09-20 20:06:06.140 (UTC+0800)] [32minfo/eventloop[0m	Starting the EventLoop
+[2026-09-20 20:06:06.140 (UTC+0800)] [32minfo/network[0m	TCP 6	| Opening a connection to "127.0.0.1" on port 4844
+[2026-09-20 20:06:06.140 (UTC+0800)] [32minfo/network[0m	TCP 7	| Connection opened from "127.0.0.1" via the server socket 4
+[2026-09-20 20:06:06.140 (UTC+0800)] [32minfo/channel[0m	TCP 7	| SC 6	| SecureChannel created
+[2026-09-20 20:06:06.141 (UTC+0800)] [32minfo/channel[0m	TCP 7	| SC 6	| SecureChannel opened with SecurityPolicy http://opcfoundation.org/UA/SecurityPolicy#None and a revised lifetime of 600.00s
+[2026-09-20 20:06:06.141 (UTC+0800)] [32minfo/channel[0m	TCP 6	| SC 6	| SecureChannel opened with SecurityPolicy http://opcfoundation.org/UA/SecurityPolicy#None and a revised lifetime of 600.00s
+[2026-09-20 20:06:06.141 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Open, SessionState: Closed, ConnectStatus: Good
+[2026-09-20 20:06:06.142 (UTC+0800)] [32minfo/client[0m	Selected endpoint with EndpointUrl opc.tcp://127.0.0.1:4844, SecurityMode None and SecurityPolicy http://opcfoundation.org/UA/SecurityPolicy#None
+[2026-09-20 20:06:06.149 (UTC+0800)] [32minfo/session[0m	TCP 7	| SC 6	| Session "ns=1;g=be649d9b-50d6-4cb0-ce4c-64d676578538"	| Session created
+[2026-09-20 20:06:06.150 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Open, SessionState: Created, ConnectStatus: Good
+[2026-09-20 20:06:06.150 (UTC+0800)] [32minfo/session[0m	TCP 7	| SC 6	| Session "ns=1;g=be649d9b-50d6-4cb0-ce4c-64d676578538"	| ActivateSession: Session activated with ClientUserId ""
+[2026-09-20 20:06:06.150 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Open, SessionState: Activated, ConnectStatus: Good
+[2026-09-20 20:06:06.150] [info] Watchdog thread started
+[2026-09-20 20:06:06.200 (UTC+0800)] [32minfo/session[0m	TCP 7	| SC 6	| Session "ns=1;g=be649d9b-50d6-4cb0-ce4c-64d676578538"	| Closing the Session
+[2026-09-20 20:06:06.200 (UTC+0800)] [32minfo/channel[0m	TCP 6	| SC 6	| SecureChannel closed
+[2026-09-20 20:06:06.200 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Fresh, SessionState: Closed, ConnectStatus: BadConnectionClosed
+[2026-09-20 20:06:06.200 (UTC+0800)] [32minfo/network[0m	TCP 6	| Socket closed
+[2026-09-20 20:06:06.201 (UTC+0800)] [32minfo/channel[0m	TCP 7	| SC 6	| SecureChannel closed
+[2026-09-20 20:06:06.201 (UTC+0800)] [32minfo/network[0m	TCP 7	| Socket closed
+[2026-09-20 20:06:06.300 (UTC+0800)] [32minfo/eventloop[0m	Stopping the EventLoop
+[2026-09-20 20:06:06.300 (UTC+0800)] [32minfo/network[0m	UDP	| Shutting down the ConnectionManager
+[2026-09-20 20:06:06.300 (UTC+0800)] [32minfo/network[0m	TCP	| Shutting down the ConnectionManager
+[2026-09-20 20:06:06.300 (UTC+0800)] [32minfo/eventloop[0m	The EventLoop has stopped
+[2026-09-20 20:06:06.300 (UTC+0800)] [32minfo/eventloop[0m	Starting the EventLoop
+[2026-09-20 20:06:06.300 (UTC+0800)] [32minfo/network[0m	TCP 6	| Opening a connection to "127.0.0.1" on port 4844
+[2026-09-20 20:06:06.300 (UTC+0800)] [32minfo/network[0m	TCP 7	| Connection opened from "127.0.0.1" via the server socket 4
+[2026-09-20 20:06:06.300 (UTC+0800)] [32minfo/channel[0m	TCP 7	| SC 7	| SecureChannel created
+[2026-09-20 20:06:06.301 (UTC+0800)] [32minfo/channel[0m	TCP 7	| SC 7	| SecureChannel opened with SecurityPolicy http://opcfoundation.org/UA/SecurityPolicy#None and a revised lifetime of 600.00s
+[2026-09-20 20:06:06.301 (UTC+0800)] [32minfo/channel[0m	TCP 6	| SC 7	| SecureChannel opened with SecurityPolicy http://opcfoundation.org/UA/SecurityPolicy#None and a revised lifetime of 600.00s
+[2026-09-20 20:06:06.301 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Open, SessionState: Closed, ConnectStatus: Good
+[2026-09-20 20:06:06.302 (UTC+0800)] [32minfo/client[0m	Selected endpoint with EndpointUrl opc.tcp://127.0.0.1:4844, SecurityMode None and SecurityPolicy http://opcfoundation.org/UA/SecurityPolicy#None
+[2026-09-20 20:06:06.309 (UTC+0800)] [32minfo/session[0m	TCP 7	| SC 7	| Session "ns=1;g=20254d82-cfb0-86e3-e10e-f02f221241f4"	| Session created
+[2026-09-20 20:06:06.309 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Open, SessionState: Created, ConnectStatus: Good
+[2026-09-20 20:06:06.309 (UTC+0800)] [32minfo/session[0m	TCP 7	| SC 7	| Session "ns=1;g=20254d82-cfb0-86e3-e10e-f02f221241f4"	| ActivateSession: Session activated with ClientUserId ""
+[2026-09-20 20:06:06.310 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Open, SessionState: Activated, ConnectStatus: Good
+[2026-09-20 20:06:06.310] [info] Watchdog thread started
+[2026-09-20 20:06:06.360 (UTC+0800)] [32minfo/session[0m	TCP 7	| SC 7	| Session "ns=1;g=20254d82-cfb0-86e3-e10e-f02f221241f4"	| Closing the Session
+[2026-09-20 20:06:06.360 (UTC+0800)] [32minfo/channel[0m	TCP 6	| SC 7	| SecureChannel closed
+[2026-09-20 20:06:06.360 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Fresh, SessionState: Closed, ConnectStatus: BadConnectionClosed
+[2026-09-20 20:06:06.360 (UTC+0800)] [32minfo/network[0m	TCP 6	| Socket closed
+[2026-09-20 20:06:06.360 (UTC+0800)] [32minfo/channel[0m	TCP 7	| SC 7	| SecureChannel closed
+[2026-09-20 20:06:06.360 (UTC+0800)] [32minfo/network[0m	TCP 7	| Socket closed
+[2026-09-20 20:06:06.459 (UTC+0800)] [32minfo/eventloop[0m	Stopping the EventLoop
+[2026-09-20 20:06:06.459 (UTC+0800)] [32minfo/network[0m	UDP	| Shutting down the ConnectionManager
+[2026-09-20 20:06:06.459 (UTC+0800)] [32minfo/network[0m	TCP	| Shutting down the ConnectionManager
+[2026-09-20 20:06:06.459 (UTC+0800)] [32minfo/eventloop[0m	The EventLoop has stopped
+[2026-09-20 20:06:06.459 (UTC+0800)] [32minfo/eventloop[0m	Starting the EventLoop
+[2026-09-20 20:06:06.460 (UTC+0800)] [32minfo/network[0m	TCP 6	| Opening a connection to "127.0.0.1" on port 4844
+[2026-09-20 20:06:06.460 (UTC+0800)] [32minfo/network[0m	TCP 7	| Connection opened from "127.0.0.1" via the server socket 4
+[2026-09-20 20:06:06.460 (UTC+0800)] [32minfo/channel[0m	TCP 7	| SC 8	| SecureChannel created
+[2026-09-20 20:06:06.460 (UTC+0800)] [32minfo/channel[0m	TCP 7	| SC 8	| SecureChannel opened with SecurityPolicy http://opcfoundation.org/UA/SecurityPolicy#None and a revised lifetime of 600.00s
+[2026-09-20 20:06:06.461 (UTC+0800)] [32minfo/channel[0m	TCP 6	| SC 8	| SecureChannel opened with SecurityPolicy http://opcfoundation.org/UA/SecurityPolicy#None and a revised lifetime of 600.00s
+[2026-09-20 20:06:06.461 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Open, SessionState: Closed, ConnectStatus: Good
+[2026-09-20 20:06:06.461 (UTC+0800)] [32minfo/client[0m	Selected endpoint with EndpointUrl opc.tcp://127.0.0.1:4844, SecurityMode None and SecurityPolicy http://opcfoundation.org/UA/SecurityPolicy#None
+[2026-09-20 20:06:06.468 (UTC+0800)] [32minfo/session[0m	TCP 7	| SC 8	| Session "ns=1;g=8bf977e7-2644-4e64-9cf9-0f0085e8eebe"	| Session created
+[2026-09-20 20:06:06.468 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Open, SessionState: Created, ConnectStatus: Good
+[2026-09-20 20:06:06.468 (UTC+0800)] [32minfo/session[0m	TCP 7	| SC 8	| Session "ns=1;g=8bf977e7-2644-4e64-9cf9-0f0085e8eebe"	| ActivateSession: Session activated with ClientUserId ""
+[2026-09-20 20:06:06.468 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Open, SessionState: Activated, ConnectStatus: Good
+[2026-09-20 20:06:06.469] [info] Watchdog thread started
+[2026-09-20 20:06:06.518 (UTC+0800)] [32minfo/session[0m	TCP 7	| SC 8	| Session "ns=1;g=8bf977e7-2644-4e64-9cf9-0f0085e8eebe"	| Closing the Session
+[2026-09-20 20:06:06.519 (UTC+0800)] [32minfo/channel[0m	TCP 6	| SC 8	| SecureChannel closed
+[2026-09-20 20:06:06.519 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Fresh, SessionState: Closed, ConnectStatus: BadConnectionClosed
+[2026-09-20 20:06:06.519 (UTC+0800)] [32minfo/network[0m	TCP 6	| Socket closed
+[2026-09-20 20:06:06.519 (UTC+0800)] [32minfo/channel[0m	TCP 7	| SC 8	| SecureChannel closed
+[2026-09-20 20:06:06.519 (UTC+0800)] [32minfo/network[0m	TCP 7	| Socket closed
+[2026-09-20 20:06:06.618 (UTC+0800)] [32minfo/eventloop[0m	Stopping the EventLoop
+[2026-09-20 20:06:06.618 (UTC+0800)] [32minfo/network[0m	UDP	| Shutting down the ConnectionManager
+[2026-09-20 20:06:06.618 (UTC+0800)] [32minfo/network[0m	TCP	| Shutting down the ConnectionManager
+[2026-09-20 20:06:06.618 (UTC+0800)] [32minfo/eventloop[0m	The EventLoop has stopped
+[2026-09-20 20:06:06.619 (UTC+0800)] [32minfo/eventloop[0m	Starting the EventLoop
+[2026-09-20 20:06:06.619 (UTC+0800)] [32minfo/network[0m	TCP 6	| Opening a connection to "127.0.0.1" on port 4844
+[2026-09-20 20:06:06.619 (UTC+0800)] [32minfo/network[0m	TCP 7	| Connection opened from "127.0.0.1" via the server socket 4
+[2026-09-20 20:06:06.619 (UTC+0800)] [32minfo/channel[0m	TCP 7	| SC 9	| SecureChannel created
+[2026-09-20 20:06:06.620 (UTC+0800)] [32minfo/channel[0m	TCP 7	| SC 9	| SecureChannel opened with SecurityPolicy http://opcfoundation.org/UA/SecurityPolicy#None and a revised lifetime of 600.00s
+[2026-09-20 20:06:06.620 (UTC+0800)] [32minfo/channel[0m	TCP 6	| SC 9	| SecureChannel opened with SecurityPolicy http://opcfoundation.org/UA/SecurityPolicy#None and a revised lifetime of 600.00s
+[2026-09-20 20:06:06.620 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Open, SessionState: Closed, ConnectStatus: Good
+[2026-09-20 20:06:06.620 (UTC+0800)] [32minfo/client[0m	Selected endpoint with EndpointUrl opc.tcp://127.0.0.1:4844, SecurityMode None and SecurityPolicy http://opcfoundation.org/UA/SecurityPolicy#None
+[2026-09-20 20:06:06.628 (UTC+0800)] [32minfo/session[0m	TCP 7	| SC 9	| Session "ns=1;g=dfb60d61-b4cf-3bb1-b1ab-da2d7e9769f6"	| Session created
+[2026-09-20 20:06:06.628 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Open, SessionState: Created, ConnectStatus: Good
+[2026-09-20 20:06:06.628 (UTC+0800)] [32minfo/session[0m	TCP 7	| SC 9	| Session "ns=1;g=dfb60d61-b4cf-3bb1-b1ab-da2d7e9769f6"	| ActivateSession: Session activated with ClientUserId ""
+[2026-09-20 20:06:06.629 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Open, SessionState: Activated, ConnectStatus: Good
+[2026-09-20 20:06:06.629] [info] Watchdog thread started
+[2026-09-20 20:06:06.679 (UTC+0800)] [32minfo/session[0m	TCP 7	| SC 9	| Session "ns=1;g=dfb60d61-b4cf-3bb1-b1ab-da2d7e9769f6"	| Closing the Session
+[2026-09-20 20:06:06.679 (UTC+0800)] [32minfo/channel[0m	TCP 6	| SC 9	| SecureChannel closed
+[2026-09-20 20:06:06.679 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Fresh, SessionState: Closed, ConnectStatus: BadConnectionClosed
+[2026-09-20 20:06:06.679 (UTC+0800)] [32minfo/network[0m	TCP 6	| Socket closed
+[2026-09-20 20:06:06.679 (UTC+0800)] [32minfo/channel[0m	TCP 7	| SC 9	| SecureChannel closed
+[2026-09-20 20:06:06.679 (UTC+0800)] [32minfo/network[0m	TCP 7	| Socket closed
+[2026-09-20 20:06:06.778 (UTC+0800)] [32minfo/eventloop[0m	Stopping the EventLoop
+[2026-09-20 20:06:06.778 (UTC+0800)] [32minfo/network[0m	UDP	| Shutting down the ConnectionManager
+[2026-09-20 20:06:06.778 (UTC+0800)] [32minfo/network[0m	TCP	| Shutting down the ConnectionManager
+[2026-09-20 20:06:06.778 (UTC+0800)] [32minfo/eventloop[0m	The EventLoop has stopped
+[2026-09-20 20:06:06.778 (UTC+0800)] [32minfo/eventloop[0m	Starting the EventLoop
+[2026-09-20 20:06:06.779 (UTC+0800)] [32minfo/network[0m	TCP 6	| Opening a connection to "127.0.0.1" on port 4844
+[2026-09-20 20:06:06.779 (UTC+0800)] [32minfo/network[0m	TCP 7	| Connection opened from "127.0.0.1" via the server socket 4
+[2026-09-20 20:06:06.779 (UTC+0800)] [32minfo/channel[0m	TCP 7	| SC 10	| SecureChannel created
+[2026-09-20 20:06:06.780 (UTC+0800)] [32minfo/channel[0m	TCP 7	| SC 10	| SecureChannel opened with SecurityPolicy http://opcfoundation.org/UA/SecurityPolicy#None and a revised lifetime of 600.00s
+[2026-09-20 20:06:06.780 (UTC+0800)] [32minfo/channel[0m	TCP 6	| SC 10	| SecureChannel opened with SecurityPolicy http://opcfoundation.org/UA/SecurityPolicy#None and a revised lifetime of 600.00s
+[2026-09-20 20:06:06.780 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Open, SessionState: Closed, ConnectStatus: Good
+[2026-09-20 20:06:06.780 (UTC+0800)] [32minfo/client[0m	Selected endpoint with EndpointUrl opc.tcp://127.0.0.1:4844, SecurityMode None and SecurityPolicy http://opcfoundation.org/UA/SecurityPolicy#None
+[2026-09-20 20:06:06.787 (UTC+0800)] [32minfo/session[0m	TCP 7	| SC 10	| Session "ns=1;g=f080ab63-bc7b-955f-c33c-836811213283"	| Session created
+[2026-09-20 20:06:06.788 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Open, SessionState: Created, ConnectStatus: Good
+[2026-09-20 20:06:06.788 (UTC+0800)] [32minfo/session[0m	TCP 7	| SC 10	| Session "ns=1;g=f080ab63-bc7b-955f-c33c-836811213283"	| ActivateSession: Session activated with ClientUserId ""
+[2026-09-20 20:06:06.788 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Open, SessionState: Activated, ConnectStatus: Good
+[2026-09-20 20:06:06.788] [info] Watchdog thread started
+[2026-09-20 20:06:06.838 (UTC+0800)] [32minfo/session[0m	TCP 7	| SC 10	| Session "ns=1;g=f080ab63-bc7b-955f-c33c-836811213283"	| Closing the Session
+[2026-09-20 20:06:06.839 (UTC+0800)] [32minfo/channel[0m	TCP 6	| SC 10	| SecureChannel closed
+[2026-09-20 20:06:06.839 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Fresh, SessionState: Closed, ConnectStatus: BadConnectionClosed
+[2026-09-20 20:06:06.839 (UTC+0800)] [32minfo/network[0m	TCP 6	| Socket closed
+[2026-09-20 20:06:06.839 (UTC+0800)] [32minfo/channel[0m	TCP 7	| SC 10	| SecureChannel closed
+[2026-09-20 20:06:06.839 (UTC+0800)] [32minfo/network[0m	TCP 7	| Socket closed
+[2026-09-20 20:06:06.938 (UTC+0800)] [32minfo/eventloop[0m	Stopping the EventLoop
+[2026-09-20 20:06:06.938 (UTC+0800)] [32minfo/network[0m	UDP	| Shutting down the ConnectionManager
+[2026-09-20 20:06:06.938 (UTC+0800)] [32minfo/network[0m	TCP	| Shutting down the ConnectionManager
+[2026-09-20 20:06:06.938 (UTC+0800)] [32minfo/eventloop[0m	The EventLoop has stopped
+[2026-09-20 20:06:06.938 (UTC+0800)] [32minfo/eventloop[0m	Starting the EventLoop
+[2026-09-20 20:06:06.939 (UTC+0800)] [32minfo/network[0m	TCP 6	| Opening a connection to "127.0.0.1" on port 4844
+[2026-09-20 20:06:06.939 (UTC+0800)] [32minfo/network[0m	TCP 7	| Connection opened from "127.0.0.1" via the server socket 4
+[2026-09-20 20:06:06.939 (UTC+0800)] [32minfo/channel[0m	TCP 7	| SC 11	| SecureChannel created
+[2026-09-20 20:06:06.940 (UTC+0800)] [32minfo/channel[0m	TCP 7	| SC 11	| SecureChannel opened with SecurityPolicy http://opcfoundation.org/UA/SecurityPolicy#None and a revised lifetime of 600.00s
+[2026-09-20 20:06:06.940 (UTC+0800)] [32minfo/channel[0m	TCP 6	| SC 11	| SecureChannel opened with SecurityPolicy http://opcfoundation.org/UA/SecurityPolicy#None and a revised lifetime of 600.00s
+[2026-09-20 20:06:06.940 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Open, SessionState: Closed, ConnectStatus: Good
+[2026-09-20 20:06:06.941 (UTC+0800)] [32minfo/client[0m	Selected endpoint with EndpointUrl opc.tcp://127.0.0.1:4844, SecurityMode None and SecurityPolicy http://opcfoundation.org/UA/SecurityPolicy#None
+[2026-09-20 20:06:06.948 (UTC+0800)] [32minfo/session[0m	TCP 7	| SC 11	| Session "ns=1;g=111c35fa-1eb7-9295-8e18-d1ad6c563593"	| Session created
+[2026-09-20 20:06:06.948 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Open, SessionState: Created, ConnectStatus: Good
+[2026-09-20 20:06:06.948 (UTC+0800)] [32minfo/session[0m	TCP 7	| SC 11	| Session "ns=1;g=111c35fa-1eb7-9295-8e18-d1ad6c563593"	| ActivateSession: Session activated with ClientUserId ""
+[2026-09-20 20:06:06.948 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Open, SessionState: Activated, ConnectStatus: Good
+[2026-09-20 20:06:06.949] [info] Watchdog thread started
+[2026-09-20 20:06:06.998 (UTC+0800)] [32minfo/session[0m	TCP 7	| SC 11	| Session "ns=1;g=111c35fa-1eb7-9295-8e18-d1ad6c563593"	| Closing the Session
+[2026-09-20 20:06:06.999 (UTC+0800)] [32minfo/channel[0m	TCP 6	| SC 11	| SecureChannel closed
+[2026-09-20 20:06:06.999 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Fresh, SessionState: Closed, ConnectStatus: BadConnectionClosed
+[2026-09-20 20:06:06.999 (UTC+0800)] [32minfo/network[0m	TCP 6	| Socket closed
+[2026-09-20 20:06:06.999 (UTC+0800)] [32minfo/channel[0m	TCP 7	| SC 11	| SecureChannel closed
+[2026-09-20 20:06:06.999 (UTC+0800)] [32minfo/network[0m	TCP 7	| Socket closed
+[2026-09-20 20:06:07.098 (UTC+0800)] [32minfo/eventloop[0m	Stopping the EventLoop
+[2026-09-20 20:06:07.098 (UTC+0800)] [32minfo/network[0m	UDP	| Shutting down the ConnectionManager
+[2026-09-20 20:06:07.098 (UTC+0800)] [32minfo/network[0m	TCP	| Shutting down the ConnectionManager
+[2026-09-20 20:06:07.098 (UTC+0800)] [32minfo/eventloop[0m	The EventLoop has stopped
+[2026-09-20 20:06:07.098 (UTC+0800)] [32minfo/eventloop[0m	Starting the EventLoop
+[2026-09-20 20:06:07.099 (UTC+0800)] [32minfo/network[0m	TCP 6	| Opening a connection to "127.0.0.1" on port 4844
+[2026-09-20 20:06:07.099 (UTC+0800)] [32minfo/network[0m	TCP 7	| Connection opened from "127.0.0.1" via the server socket 4
+[2026-09-20 20:06:07.099 (UTC+0800)] [32minfo/channel[0m	TCP 7	| SC 12	| SecureChannel created
+[2026-09-20 20:06:07.100 (UTC+0800)] [32minfo/channel[0m	TCP 7	| SC 12	| SecureChannel opened with SecurityPolicy http://opcfoundation.org/UA/SecurityPolicy#None and a revised lifetime of 600.00s
+[2026-09-20 20:06:07.100 (UTC+0800)] [32minfo/channel[0m	TCP 6	| SC 12	| SecureChannel opened with SecurityPolicy http://opcfoundation.org/UA/SecurityPolicy#None and a revised lifetime of 600.00s
+[2026-09-20 20:06:07.100 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Open, SessionState: Closed, ConnectStatus: Good
+[2026-09-20 20:06:07.100 (UTC+0800)] [32minfo/client[0m	Selected endpoint with EndpointUrl opc.tcp://127.0.0.1:4844, SecurityMode None and SecurityPolicy http://opcfoundation.org/UA/SecurityPolicy#None
+[2026-09-20 20:06:07.107 (UTC+0800)] [32minfo/session[0m	TCP 7	| SC 12	| Session "ns=1;g=a5a37433-bde8-3839-dddd-1d6105c07c07"	| Session created
+[2026-09-20 20:06:07.108 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Open, SessionState: Created, ConnectStatus: Good
+[2026-09-20 20:06:07.108 (UTC+0800)] [32minfo/session[0m	TCP 7	| SC 12	| Session "ns=1;g=a5a37433-bde8-3839-dddd-1d6105c07c07"	| ActivateSession: Session activated with ClientUserId ""
+[2026-09-20 20:06:07.108 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Open, SessionState: Activated, ConnectStatus: Good
+[2026-09-20 20:06:07.108] [info] Watchdog thread started
+[2026-09-20 20:06:07.158 (UTC+0800)] [32minfo/session[0m	TCP 7	| SC 12	| Session "ns=1;g=a5a37433-bde8-3839-dddd-1d6105c07c07"	| Closing the Session
+[2026-09-20 20:06:07.158 (UTC+0800)] [32minfo/channel[0m	TCP 6	| SC 12	| SecureChannel closed
+[2026-09-20 20:06:07.158 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Fresh, SessionState: Closed, ConnectStatus: BadConnectionClosed
+[2026-09-20 20:06:07.158 (UTC+0800)] [32minfo/network[0m	TCP 6	| Socket closed
+[2026-09-20 20:06:07.159 (UTC+0800)] [32minfo/channel[0m	TCP 7	| SC 12	| SecureChannel closed
+[2026-09-20 20:06:07.159 (UTC+0800)] [32minfo/network[0m	TCP 7	| Socket closed
+[2026-09-20 20:06:07.258 (UTC+0800)] [32minfo/eventloop[0m	Stopping the EventLoop
+[2026-09-20 20:06:07.258 (UTC+0800)] [32minfo/network[0m	UDP	| Shutting down the ConnectionManager
+[2026-09-20 20:06:07.258 (UTC+0800)] [32minfo/network[0m	TCP	| Shutting down the ConnectionManager
+[2026-09-20 20:06:07.258 (UTC+0800)] [32minfo/eventloop[0m	The EventLoop has stopped
+[2026-09-20 20:06:07.258 (UTC+0800)] [32minfo/eventloop[0m	Starting the EventLoop
+[2026-09-20 20:06:07.259 (UTC+0800)] [32minfo/network[0m	TCP 6	| Opening a connection to "127.0.0.1" on port 4844
+[2026-09-20 20:06:07.259 (UTC+0800)] [32minfo/network[0m	TCP 7	| Connection opened from "127.0.0.1" via the server socket 4
+[2026-09-20 20:06:07.259 (UTC+0800)] [32minfo/channel[0m	TCP 7	| SC 13	| SecureChannel created
+[2026-09-20 20:06:07.259 (UTC+0800)] [32minfo/channel[0m	TCP 7	| SC 13	| SecureChannel opened with SecurityPolicy http://opcfoundation.org/UA/SecurityPolicy#None and a revised lifetime of 600.00s
+[2026-09-20 20:06:07.259 (UTC+0800)] [32minfo/channel[0m	TCP 6	| SC 13	| SecureChannel opened with SecurityPolicy http://opcfoundation.org/UA/SecurityPolicy#None and a revised lifetime of 600.00s
+[2026-09-20 20:06:07.259 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Open, SessionState: Closed, ConnectStatus: Good
+[2026-09-20 20:06:07.260 (UTC+0800)] [32minfo/client[0m	Selected endpoint with EndpointUrl opc.tcp://127.0.0.1:4844, SecurityMode None and SecurityPolicy http://opcfoundation.org/UA/SecurityPolicy#None
+[2026-09-20 20:06:07.267 (UTC+0800)] [32minfo/session[0m	TCP 7	| SC 13	| Session "ns=1;g=52087f16-9af5-41cb-12b1-2b926e16c10c"	| Session created
+[2026-09-20 20:06:07.267 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Open, SessionState: Created, ConnectStatus: Good
+[2026-09-20 20:06:07.267 (UTC+0800)] [32minfo/session[0m	TCP 7	| SC 13	| Session "ns=1;g=52087f16-9af5-41cb-12b1-2b926e16c10c"	| ActivateSession: Session activated with ClientUserId ""
+[2026-09-20 20:06:07.267 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Open, SessionState: Activated, ConnectStatus: Good
+[2026-09-20 20:06:07.268] [info] Watchdog thread started
+[2026-09-20 20:06:07.317 (UTC+0800)] [32minfo/session[0m	TCP 7	| SC 13	| Session "ns=1;g=52087f16-9af5-41cb-12b1-2b926e16c10c"	| Closing the Session
+[2026-09-20 20:06:07.318 (UTC+0800)] [32minfo/channel[0m	TCP 6	| SC 13	| SecureChannel closed
+[2026-09-20 20:06:07.318 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Fresh, SessionState: Closed, ConnectStatus: BadConnectionClosed
+[2026-09-20 20:06:07.318 (UTC+0800)] [32minfo/network[0m	TCP 6	| Socket closed
+[2026-09-20 20:06:07.318 (UTC+0800)] [32minfo/channel[0m	TCP 7	| SC 13	| SecureChannel closed
+[2026-09-20 20:06:07.318 (UTC+0800)] [32minfo/network[0m	TCP 7	| Socket closed
+[2026-09-20 20:06:07.417 (UTC+0800)] [32minfo/eventloop[0m	Stopping the EventLoop
+[2026-09-20 20:06:07.417 (UTC+0800)] [32minfo/network[0m	UDP	| Shutting down the ConnectionManager
+[2026-09-20 20:06:07.417 (UTC+0800)] [32minfo/network[0m	TCP	| Shutting down the ConnectionManager
+[2026-09-20 20:06:07.417 (UTC+0800)] [32minfo/eventloop[0m	The EventLoop has stopped
+[2026-09-20 20:06:07.417 (UTC+0800)] [32minfo/eventloop[0m	Starting the EventLoop
+[2026-09-20 20:06:07.418 (UTC+0800)] [32minfo/network[0m	TCP 6	| Opening a connection to "127.0.0.1" on port 4844
+[2026-09-20 20:06:07.418 (UTC+0800)] [32minfo/network[0m	TCP 7	| Connection opened from "127.0.0.1" via the server socket 4
+[2026-09-20 20:06:07.418 (UTC+0800)] [32minfo/channel[0m	TCP 7	| SC 14	| SecureChannel created
+[2026-09-20 20:06:07.418 (UTC+0800)] [32minfo/channel[0m	TCP 7	| SC 14	| SecureChannel opened with SecurityPolicy http://opcfoundation.org/UA/SecurityPolicy#None and a revised lifetime of 600.00s
+[2026-09-20 20:06:07.418 (UTC+0800)] [32minfo/channel[0m	TCP 6	| SC 14	| SecureChannel opened with SecurityPolicy http://opcfoundation.org/UA/SecurityPolicy#None and a revised lifetime of 600.00s
+[2026-09-20 20:06:07.418 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Open, SessionState: Closed, ConnectStatus: Good
+[2026-09-20 20:06:07.419 (UTC+0800)] [32minfo/client[0m	Selected endpoint with EndpointUrl opc.tcp://127.0.0.1:4844, SecurityMode None and SecurityPolicy http://opcfoundation.org/UA/SecurityPolicy#None
+[2026-09-20 20:06:07.426 (UTC+0800)] [32minfo/session[0m	TCP 7	| SC 14	| Session "ns=1;g=f42b5b12-5e01-7f89-30b3-0ba08058f56f"	| Session created
+[2026-09-20 20:06:07.427 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Open, SessionState: Created, ConnectStatus: Good
+[2026-09-20 20:06:07.427 (UTC+0800)] [32minfo/session[0m	TCP 7	| SC 14	| Session "ns=1;g=f42b5b12-5e01-7f89-30b3-0ba08058f56f"	| ActivateSession: Session activated with ClientUserId ""
+[2026-09-20 20:06:07.427 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Open, SessionState: Activated, ConnectStatus: Good
+[2026-09-20 20:06:07.427] [info] Watchdog thread started
+[2026-09-20 20:06:07.477 (UTC+0800)] [32minfo/session[0m	TCP 7	| SC 14	| Session "ns=1;g=f42b5b12-5e01-7f89-30b3-0ba08058f56f"	| Closing the Session
+[2026-09-20 20:06:07.477 (UTC+0800)] [32minfo/channel[0m	TCP 6	| SC 14	| SecureChannel closed
+[2026-09-20 20:06:07.477 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Fresh, SessionState: Closed, ConnectStatus: BadConnectionClosed
+[2026-09-20 20:06:07.478 (UTC+0800)] [32minfo/network[0m	TCP 6	| Socket closed
+[2026-09-20 20:06:07.478 (UTC+0800)] [32minfo/channel[0m	TCP 7	| SC 14	| SecureChannel closed
+[2026-09-20 20:06:07.478 (UTC+0800)] [32minfo/network[0m	TCP 7	| Socket closed
+[2026-09-20 20:06:07.577 (UTC+0800)] [32minfo/eventloop[0m	Stopping the EventLoop
+[2026-09-20 20:06:07.577 (UTC+0800)] [32minfo/network[0m	UDP	| Shutting down the ConnectionManager
+[2026-09-20 20:06:07.577 (UTC+0800)] [32minfo/network[0m	TCP	| Shutting down the ConnectionManager
+[2026-09-20 20:06:07.577 (UTC+0800)] [32minfo/eventloop[0m	The EventLoop has stopped
+[2026-09-20 20:06:07.577 (UTC+0800)] [32minfo/eventloop[0m	Starting the EventLoop
+[2026-09-20 20:06:07.577 (UTC+0800)] [32minfo/network[0m	TCP 6	| Opening a connection to "127.0.0.1" on port 4844
+[2026-09-20 20:06:07.578 (UTC+0800)] [32minfo/network[0m	TCP 7	| Connection opened from "127.0.0.1" via the server socket 4
+[2026-09-20 20:06:07.578 (UTC+0800)] [32minfo/channel[0m	TCP 7	| SC 15	| SecureChannel created
+[2026-09-20 20:06:07.578 (UTC+0800)] [32minfo/channel[0m	TCP 7	| SC 15	| SecureChannel opened with SecurityPolicy http://opcfoundation.org/UA/SecurityPolicy#None and a revised lifetime of 600.00s
+[2026-09-20 20:06:07.578 (UTC+0800)] [32minfo/channel[0m	TCP 6	| SC 15	| SecureChannel opened with SecurityPolicy http://opcfoundation.org/UA/SecurityPolicy#None and a revised lifetime of 600.00s
+[2026-09-20 20:06:07.578 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Open, SessionState: Closed, ConnectStatus: Good
+[2026-09-20 20:06:07.579 (UTC+0800)] [32minfo/client[0m	Selected endpoint with EndpointUrl opc.tcp://127.0.0.1:4844, SecurityMode None and SecurityPolicy http://opcfoundation.org/UA/SecurityPolicy#None
+[2026-09-20 20:06:07.586 (UTC+0800)] [32minfo/session[0m	TCP 7	| SC 15	| Session "ns=1;g=28223c86-9ad3-2992-16d1-1de15ee5ee3e"	| Session created
+[2026-09-20 20:06:07.586 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Open, SessionState: Created, ConnectStatus: Good
+[2026-09-20 20:06:07.586 (UTC+0800)] [32minfo/session[0m	TCP 7	| SC 15	| Session "ns=1;g=28223c86-9ad3-2992-16d1-1de15ee5ee3e"	| ActivateSession: Session activated with ClientUserId ""
+[2026-09-20 20:06:07.586 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Open, SessionState: Activated, ConnectStatus: Good
+[2026-09-20 20:06:07.587] [info] Watchdog thread started
+[2026-09-20 20:06:07.636 (UTC+0800)] [32minfo/session[0m	TCP 7	| SC 15	| Session "ns=1;g=28223c86-9ad3-2992-16d1-1de15ee5ee3e"	| Closing the Session
+[2026-09-20 20:06:07.637 (UTC+0800)] [32minfo/channel[0m	TCP 6	| SC 15	| SecureChannel closed
+[2026-09-20 20:06:07.637 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Fresh, SessionState: Closed, ConnectStatus: BadConnectionClosed
+[2026-09-20 20:06:07.637 (UTC+0800)] [32minfo/network[0m	TCP 6	| Socket closed
+[2026-09-20 20:06:07.637 (UTC+0800)] [32minfo/channel[0m	TCP 7	| SC 15	| SecureChannel closed
+[2026-09-20 20:06:07.637 (UTC+0800)] [32minfo/network[0m	TCP 7	| Socket closed
+[2026-09-20 20:06:07.736 (UTC+0800)] [32minfo/eventloop[0m	Stopping the EventLoop
+[2026-09-20 20:06:07.736 (UTC+0800)] [32minfo/network[0m	UDP	| Shutting down the ConnectionManager
+[2026-09-20 20:06:07.736 (UTC+0800)] [32minfo/network[0m	TCP	| Shutting down the ConnectionManager
+[2026-09-20 20:06:07.737 (UTC+0800)] [32minfo/eventloop[0m	The EventLoop has stopped
+[2026-09-20 20:06:07.737 (UTC+0800)] [32minfo/eventloop[0m	Starting the EventLoop
+[2026-09-20 20:06:07.737 (UTC+0800)] [32minfo/network[0m	TCP 6	| Opening a connection to "127.0.0.1" on port 4844
+[2026-09-20 20:06:07.737 (UTC+0800)] [32minfo/network[0m	TCP 7	| Connection opened from "127.0.0.1" via the server socket 4
+[2026-09-20 20:06:07.737 (UTC+0800)] [32minfo/channel[0m	TCP 7	| SC 16	| SecureChannel created
+[2026-09-20 20:06:07.738 (UTC+0800)] [32minfo/channel[0m	TCP 7	| SC 16	| SecureChannel opened with SecurityPolicy http://opcfoundation.org/UA/SecurityPolicy#None and a revised lifetime of 600.00s
+[2026-09-20 20:06:07.738 (UTC+0800)] [32minfo/channel[0m	TCP 6	| SC 16	| SecureChannel opened with SecurityPolicy http://opcfoundation.org/UA/SecurityPolicy#None and a revised lifetime of 600.00s
+[2026-09-20 20:06:07.738 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Open, SessionState: Closed, ConnectStatus: Good
+[2026-09-20 20:06:07.738 (UTC+0800)] [32minfo/client[0m	Selected endpoint with EndpointUrl opc.tcp://127.0.0.1:4844, SecurityMode None and SecurityPolicy http://opcfoundation.org/UA/SecurityPolicy#None
+[2026-09-20 20:06:07.745 (UTC+0800)] [32minfo/session[0m	TCP 7	| SC 16	| Session "ns=1;g=2b64bd22-6460-cd4f-3793-49a4a21ad1dd"	| Session created
+[2026-09-20 20:06:07.745 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Open, SessionState: Created, ConnectStatus: Good
+[2026-09-20 20:06:07.746 (UTC+0800)] [32minfo/session[0m	TCP 7	| SC 16	| Session "ns=1;g=2b64bd22-6460-cd4f-3793-49a4a21ad1dd"	| ActivateSession: Session activated with ClientUserId ""
+[2026-09-20 20:06:07.746 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Open, SessionState: Activated, ConnectStatus: Good
+[2026-09-20 20:06:07.746] [info] Watchdog thread started
+[2026-09-20 20:06:07.796 (UTC+0800)] [32minfo/session[0m	TCP 7	| SC 16	| Session "ns=1;g=2b64bd22-6460-cd4f-3793-49a4a21ad1dd"	| Closing the Session
+[2026-09-20 20:06:07.796 (UTC+0800)] [32minfo/channel[0m	TCP 6	| SC 16	| SecureChannel closed
+[2026-09-20 20:06:07.796 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Fresh, SessionState: Closed, ConnectStatus: BadConnectionClosed
+[2026-09-20 20:06:07.796 (UTC+0800)] [32minfo/network[0m	TCP 6	| Socket closed
+[2026-09-20 20:06:07.797 (UTC+0800)] [32minfo/channel[0m	TCP 7	| SC 16	| SecureChannel closed
+[2026-09-20 20:06:07.797 (UTC+0800)] [32minfo/network[0m	TCP 7	| Socket closed
+[2026-09-20 20:06:07.896 (UTC+0800)] [32minfo/eventloop[0m	Stopping the EventLoop
+[2026-09-20 20:06:07.896 (UTC+0800)] [32minfo/network[0m	UDP	| Shutting down the ConnectionManager
+[2026-09-20 20:06:07.896 (UTC+0800)] [32minfo/network[0m	TCP	| Shutting down the ConnectionManager
+[2026-09-20 20:06:07.896 (UTC+0800)] [32minfo/eventloop[0m	The EventLoop has stopped
+[2026-09-20 20:06:07.896 (UTC+0800)] [32minfo/eventloop[0m	Starting the EventLoop
+[2026-09-20 20:06:07.896 (UTC+0800)] [32minfo/network[0m	TCP 6	| Opening a connection to "127.0.0.1" on port 4844
+[2026-09-20 20:06:07.897 (UTC+0800)] [32minfo/network[0m	TCP 7	| Connection opened from "127.0.0.1" via the server socket 4
+[2026-09-20 20:06:07.897 (UTC+0800)] [32minfo/channel[0m	TCP 7	| SC 17	| SecureChannel created
+[2026-09-20 20:06:07.897 (UTC+0800)] [32minfo/channel[0m	TCP 7	| SC 17	| SecureChannel opened with SecurityPolicy http://opcfoundation.org/UA/SecurityPolicy#None and a revised lifetime of 600.00s
+[2026-09-20 20:06:07.897 (UTC+0800)] [32minfo/channel[0m	TCP 6	| SC 17	| SecureChannel opened with SecurityPolicy http://opcfoundation.org/UA/SecurityPolicy#None and a revised lifetime of 600.00s
+[2026-09-20 20:06:07.897 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Open, SessionState: Closed, ConnectStatus: Good
+[2026-09-20 20:06:07.898 (UTC+0800)] [32minfo/client[0m	Selected endpoint with EndpointUrl opc.tcp://127.0.0.1:4844, SecurityMode None and SecurityPolicy http://opcfoundation.org/UA/SecurityPolicy#None
+[2026-09-20 20:06:07.906 (UTC+0800)] [32minfo/session[0m	TCP 7	| SC 17	| Session "ns=1;g=53273560-44a8-a5b8-4db4-fbbf7fc72c72"	| Session created
+[2026-09-20 20:06:07.906 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Open, SessionState: Created, ConnectStatus: Good
+[2026-09-20 20:06:07.906 (UTC+0800)] [32minfo/session[0m	TCP 7	| SC 17	| Session "ns=1;g=53273560-44a8-a5b8-4db4-fbbf7fc72c72"	| ActivateSession: Session activated with ClientUserId ""
+[2026-09-20 20:06:07.906 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Open, SessionState: Activated, ConnectStatus: Good
+[2026-09-20 20:06:07.907] [info] Watchdog thread started
+[2026-09-20 20:06:07.956 (UTC+0800)] [32minfo/session[0m	TCP 7	| SC 17	| Session "ns=1;g=53273560-44a8-a5b8-4db4-fbbf7fc72c72"	| Closing the Session
+[2026-09-20 20:06:07.957 (UTC+0800)] [32minfo/channel[0m	TCP 6	| SC 17	| SecureChannel closed
+[2026-09-20 20:06:07.957 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Fresh, SessionState: Closed, ConnectStatus: BadConnectionClosed
+[2026-09-20 20:06:07.957 (UTC+0800)] [32minfo/network[0m	TCP 6	| Socket closed
+[2026-09-20 20:06:07.957 (UTC+0800)] [32minfo/channel[0m	TCP 7	| SC 17	| SecureChannel closed
+[2026-09-20 20:06:07.957 (UTC+0800)] [32minfo/network[0m	TCP 7	| Socket closed
+[2026-09-20 20:06:08.056 (UTC+0800)] [32minfo/eventloop[0m	Stopping the EventLoop
+[2026-09-20 20:06:08.056 (UTC+0800)] [32minfo/network[0m	UDP	| Shutting down the ConnectionManager
+[2026-09-20 20:06:08.056 (UTC+0800)] [32minfo/network[0m	TCP	| Shutting down the ConnectionManager
+[2026-09-20 20:06:08.056 (UTC+0800)] [32minfo/eventloop[0m	The EventLoop has stopped
+[2026-09-20 20:06:08.057 (UTC+0800)] [32minfo/eventloop[0m	Starting the EventLoop
+[2026-09-20 20:06:08.057 (UTC+0800)] [32minfo/network[0m	TCP 6	| Opening a connection to "127.0.0.1" on port 4844
+[2026-09-20 20:06:08.057 (UTC+0800)] [32minfo/network[0m	TCP 7	| Connection opened from "127.0.0.1" via the server socket 4
+[2026-09-20 20:06:08.057 (UTC+0800)] [32minfo/channel[0m	TCP 7	| SC 18	| SecureChannel created
+[2026-09-20 20:06:08.058 (UTC+0800)] [32minfo/channel[0m	TCP 7	| SC 18	| SecureChannel opened with SecurityPolicy http://opcfoundation.org/UA/SecurityPolicy#None and a revised lifetime of 600.00s
+[2026-09-20 20:06:08.058 (UTC+0800)] [32minfo/channel[0m	TCP 6	| SC 18	| SecureChannel opened with SecurityPolicy http://opcfoundation.org/UA/SecurityPolicy#None and a revised lifetime of 600.00s
+[2026-09-20 20:06:08.058 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Open, SessionState: Closed, ConnectStatus: Good
+[2026-09-20 20:06:08.058 (UTC+0800)] [32minfo/client[0m	Selected endpoint with EndpointUrl opc.tcp://127.0.0.1:4844, SecurityMode None and SecurityPolicy http://opcfoundation.org/UA/SecurityPolicy#None
+[2026-09-20 20:06:08.069 (UTC+0800)] [32minfo/session[0m	TCP 7	| SC 18	| Session "ns=1;g=4b6e7e8d-ea23-b679-0760-06f08b28c27c"	| Session created
+[2026-09-20 20:06:08.070 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Open, SessionState: Created, ConnectStatus: Good
+[2026-09-20 20:06:08.070 (UTC+0800)] [32minfo/session[0m	TCP 7	| SC 18	| Session "ns=1;g=4b6e7e8d-ea23-b679-0760-06f08b28c27c"	| ActivateSession: Session activated with ClientUserId ""
+[2026-09-20 20:06:08.070 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Open, SessionState: Activated, ConnectStatus: Good
+[2026-09-20 20:06:08.070] [info] Watchdog thread started
+[2026-09-20 20:06:08.120 (UTC+0800)] [32minfo/session[0m	TCP 7	| SC 18	| Session "ns=1;g=4b6e7e8d-ea23-b679-0760-06f08b28c27c"	| Closing the Session
+[2026-09-20 20:06:08.120 (UTC+0800)] [32minfo/channel[0m	TCP 6	| SC 18	| SecureChannel closed
+[2026-09-20 20:06:08.121 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Fresh, SessionState: Closed, ConnectStatus: BadConnectionClosed
+[2026-09-20 20:06:08.121 (UTC+0800)] [32minfo/network[0m	TCP 6	| Socket closed
+[2026-09-20 20:06:08.121 (UTC+0800)] [32minfo/channel[0m	TCP 7	| SC 18	| SecureChannel closed
+[2026-09-20 20:06:08.121 (UTC+0800)] [32minfo/network[0m	TCP 7	| Socket closed
+[2026-09-20 20:06:08.220 (UTC+0800)] [32minfo/eventloop[0m	Stopping the EventLoop
+[2026-09-20 20:06:08.220 (UTC+0800)] [32minfo/network[0m	UDP	| Shutting down the ConnectionManager
+[2026-09-20 20:06:08.220 (UTC+0800)] [32minfo/network[0m	TCP	| Shutting down the ConnectionManager
+[2026-09-20 20:06:08.220 (UTC+0800)] [32minfo/eventloop[0m	The EventLoop has stopped
+[2026-09-20 20:06:08.220 (UTC+0800)] [32minfo/eventloop[0m	Starting the EventLoop
+[2026-09-20 20:06:08.221 (UTC+0800)] [32minfo/network[0m	TCP 6	| Opening a connection to "127.0.0.1" on port 4844
+[2026-09-20 20:06:08.221 (UTC+0800)] [32minfo/network[0m	TCP 7	| Connection opened from "127.0.0.1" via the server socket 4
+[2026-09-20 20:06:08.221 (UTC+0800)] [32minfo/channel[0m	TCP 7	| SC 19	| SecureChannel created
+[2026-09-20 20:06:08.221 (UTC+0800)] [32minfo/channel[0m	TCP 7	| SC 19	| SecureChannel opened with SecurityPolicy http://opcfoundation.org/UA/SecurityPolicy#None and a revised lifetime of 600.00s
+[2026-09-20 20:06:08.221 (UTC+0800)] [32minfo/channel[0m	TCP 6	| SC 19	| SecureChannel opened with SecurityPolicy http://opcfoundation.org/UA/SecurityPolicy#None and a revised lifetime of 600.00s
+[2026-09-20 20:06:08.222 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Open, SessionState: Closed, ConnectStatus: Good
+[2026-09-20 20:06:08.222 (UTC+0800)] [32minfo/client[0m	Selected endpoint with EndpointUrl opc.tcp://127.0.0.1:4844, SecurityMode None and SecurityPolicy http://opcfoundation.org/UA/SecurityPolicy#None
+[2026-09-20 20:06:08.232 (UTC+0800)] [32minfo/session[0m	TCP 7	| SC 19	| Session "ns=1;g=10e53859-9643-70f0-f38f-987912414454"	| Session created
+[2026-09-20 20:06:08.232 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Open, SessionState: Created, ConnectStatus: Good
+[2026-09-20 20:06:08.232 (UTC+0800)] [32minfo/session[0m	TCP 7	| SC 19	| Session "ns=1;g=10e53859-9643-70f0-f38f-987912414454"	| ActivateSession: Session activated with ClientUserId ""
+[2026-09-20 20:06:08.232 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Open, SessionState: Activated, ConnectStatus: Good
+[2026-09-20 20:06:08.233] [info] Watchdog thread started
+[2026-09-20 20:06:08.282 (UTC+0800)] [32minfo/session[0m	TCP 7	| SC 19	| Session "ns=1;g=10e53859-9643-70f0-f38f-987912414454"	| Closing the Session
+[2026-09-20 20:06:08.283 (UTC+0800)] [32minfo/channel[0m	TCP 6	| SC 19	| SecureChannel closed
+[2026-09-20 20:06:08.283 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Fresh, SessionState: Closed, ConnectStatus: BadConnectionClosed
+[2026-09-20 20:06:08.283 (UTC+0800)] [32minfo/channel[0m	TCP 7	| SC 19	| SecureChannel closed
+[2026-09-20 20:06:08.283 (UTC+0800)] [32minfo/network[0m	TCP 6	| Socket closed
+[2026-09-20 20:06:08.283 (UTC+0800)] [32minfo/network[0m	TCP 7	| Socket closed
+[2026-09-20 20:06:08.382 (UTC+0800)] [32minfo/eventloop[0m	Stopping the EventLoop
+[2026-09-20 20:06:08.382 (UTC+0800)] [32minfo/network[0m	UDP	| Shutting down the ConnectionManager
+[2026-09-20 20:06:08.382 (UTC+0800)] [32minfo/network[0m	TCP	| Shutting down the ConnectionManager
+[2026-09-20 20:06:08.382 (UTC+0800)] [32minfo/eventloop[0m	The EventLoop has stopped
+[2026-09-20 20:06:08.383 (UTC+0800)] [32minfo/eventloop[0m	Starting the EventLoop
+[2026-09-20 20:06:08.383 (UTC+0800)] [32minfo/network[0m	TCP 6	| Opening a connection to "127.0.0.1" on port 4844
+[2026-09-20 20:06:08.383 (UTC+0800)] [32minfo/network[0m	TCP 7	| Connection opened from "127.0.0.1" via the server socket 4
+[2026-09-20 20:06:08.383 (UTC+0800)] [32minfo/channel[0m	TCP 7	| SC 20	| SecureChannel created
+[2026-09-20 20:06:08.384 (UTC+0800)] [32minfo/channel[0m	TCP 7	| SC 20	| SecureChannel opened with SecurityPolicy http://opcfoundation.org/UA/SecurityPolicy#None and a revised lifetime of 600.00s
+[2026-09-20 20:06:08.384 (UTC+0800)] [32minfo/channel[0m	TCP 6	| SC 20	| SecureChannel opened with SecurityPolicy http://opcfoundation.org/UA/SecurityPolicy#None and a revised lifetime of 600.00s
+[2026-09-20 20:06:08.384 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Open, SessionState: Closed, ConnectStatus: Good
+[2026-09-20 20:06:08.385 (UTC+0800)] [32minfo/client[0m	Selected endpoint with EndpointUrl opc.tcp://127.0.0.1:4844, SecurityMode None and SecurityPolicy http://opcfoundation.org/UA/SecurityPolicy#None
+[2026-09-20 20:06:08.393 (UTC+0800)] [32minfo/session[0m	TCP 7	| SC 20	| Session "ns=1;g=e491911f-5d40-2bce-3ac3-bc2b6636a33a"	| Session created
+[2026-09-20 20:06:08.394 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Open, SessionState: Created, ConnectStatus: Good
+[2026-09-20 20:06:08.394 (UTC+0800)] [32minfo/session[0m	TCP 7	| SC 20	| Session "ns=1;g=e491911f-5d40-2bce-3ac3-bc2b6636a33a"	| ActivateSession: Session activated with ClientUserId ""
+[2026-09-20 20:06:08.394 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Open, SessionState: Activated, ConnectStatus: Good
+[2026-09-20 20:06:08.395] [info] Watchdog thread started
+[2026-09-20 20:06:08.444 (UTC+0800)] [32minfo/session[0m	TCP 7	| SC 20	| Session "ns=1;g=e491911f-5d40-2bce-3ac3-bc2b6636a33a"	| Closing the Session
+[2026-09-20 20:06:08.445 (UTC+0800)] [32minfo/channel[0m	TCP 6	| SC 20	| SecureChannel closed
+[2026-09-20 20:06:08.445 (UTC+0800)] [32minfo/client[0m	Client Status: ChannelState: Fresh, SessionState: Closed, ConnectStatus: BadConnectionClosed
+[2026-09-20 20:06:08.445 (UTC+0800)] [32minfo/network[0m	TCP 6	| Socket closed
+[2026-09-20 20:06:08.445 (UTC+0800)] [32minfo/channel[0m	TCP 7	| SC 20	| SecureChannel closed
+[2026-09-20 20:06:08.445 (UTC+0800)] [32minfo/network[0m	TCP 7	| Socket closed
+[2026-09-20 20:06:08.544 (UTC+0800)] [32minfo/eventloop[0m	Stopping the EventLoop
+[2026-09-20 20:06:08.544 (UTC+0800)] [32minfo/network[0m	UDP	| Shutting down the ConnectionManager
+[2026-09-20 20:06:08.544 (UTC+0800)] [32minfo/network[0m	TCP	| Shutting down the ConnectionManager
+[2026-09-20 20:06:08.544 (UTC+0800)] [32minfo/eventloop[0m	The EventLoop has stopped
+[2026-09-20 20:06:08.945 (UTC+0800)] [32minfo/network[0m	TCP 4	| Socket closed
+[2026-09-20 20:06:09.044 (UTC+0800)] [32minfo/eventloop[0m	Stopping the EventLoop
+[2026-09-20 20:06:09.044 (UTC+0800)] [32minfo/network[0m	ETH	| Shutting down the ConnectionManager
+[2026-09-20 20:06:09.044 (UTC+0800)] [32minfo/network[0m	UDP	| Shutting down the ConnectionManager
+[2026-09-20 20:06:09.044 (UTC+0800)] [32minfo/network[0m	TCP	| Shutting down the ConnectionManager
+[2026-09-20 20:06:09.044 (UTC+0800)] [32minfo/eventloop[0m	The EventLoop has stopped
+[2026-09-20 20:06:09.044 (UTC+0800)] [32minfo/server[0m	PubSub cleanup was called.
+[       OK ] ClientTest.TD_CreateShutdownLifecycleNoLeak (3738 ms)
+[----------] 4 tests from ClientTest (6059 ms total)
+
+[----------] 1 test from ClientConfigTest
+[ RUN      ] ClientConfigTest.Check_Boundaries
+[       OK ] ClientConfigTest.Check_Boundaries (0 ms)
+[----------] 1 test from ClientConfigTest (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 23 tests from 3 test suites ran. (11695 ms total)
+[  PASSED  ] 22 tests.
+[  SKIPPED ] 1 test, listed below:
+[  SKIPPED ] Client.T1_ConnectSuccess

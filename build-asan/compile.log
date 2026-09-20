@@ -1,0 +1,180 @@
+/usr/bin/cmake -S/root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main -B/root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-asan --check-build-system CMakeFiles/Makefile.cmake 0
+Re-run cmake file: Makefile older than: ../tests/CMakeLists.txt
+-- Using Conan toolchain: /root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/conan_debug_build/conan_toolchain.cmake
+-- Conan toolchain: Including user_toolchain: /root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/toolchain.cmake
+-- Conan toolchain: Defining architecture flag: -m64
+-- Conan toolchain: Defining libcxx as C++ flags: -stdlib=libc++
+-- Conan toolchain: C++ Standard 17 with extensions ON
+=========================================
+-- AddressSanitizer + UBSan: ENABLED
+-- CMAKE_BINARY_DIR = /root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-asan
+-- CMAKE_BUILD_TYPE is: Debug
+-- ASAN logs directory: /root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-asan/asan_logs
+-- To use ASAN at runtime, set:
+--   export ASAN_OPTIONS='log_path=/root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-asan/asan_logs/asan_report:log_exe_name=1:log_pid=1:detect_leaks=1:leak_check_at_exit=1'
+=========================================
+-- Conan: Component target declared 'fmt::fmt'
+-- Conan: Component target declared 'spdlog::spdlog'
+-- Conan: Component target declared 'OpenSSL::Crypto'
+-- Conan: Component target declared 'OpenSSL::SSL'
+-- Conan: Target declared 'openssl::openssl'
+-- Conan: Target declared 'ZLIB::ZLIB'
+-- Conan: Including build module from '/root/.conan2/p/b/opens9b35e25a2bffc/p/lib/cmake/conan-official-openssl-variables.cmake'
+-- Conan: Target declared 'Backward::Backward'
+-- Conan: Component target declared 'elfutils::libelf'
+-- Conan: Component target declared 'elfutils::libdw'
+-- Conan: Component target declared 'elfutils::libasm'
+-- Conan: Target declared 'elfutils::elfutils'
+-- Conan: Target declared 'LibLZMA::LibLZMA'
+-- Conan: Including build module from '/root/.conan2/p/b/xz_ut13ca22a145cfe/p/lib/cmake/conan-official-xz_utils-variables.cmake'
+-- Conan: Component target declared 'zstd::libzstd_static'
+-- Conan: Target declared 'BZip2::BZip2'
+-- Conan: Including build module from '/root/.conan2/p/b/bzip24a0c62cac1ba4/p/lib/cmake/conan-official-bzip2-variables.cmake'
+-- Conan: Component target declared 'Boost::diagnostic_definitions'
+-- Conan: Component target declared 'Boost::disable_autolinking'
+-- Conan: Component target declared 'Boost::dynamic_linking'
+-- Conan: Component target declared 'Boost::headers'
+-- Conan: Component target declared 'Boost::boost'
+-- Conan: Component target declared 'boost::_libboost'
+-- Conan: Component target declared 'Boost::atomic'
+-- Conan: Component target declared 'Boost::charconv'
+-- Conan: Component target declared 'Boost::container'
+-- Conan: Component target declared 'Boost::context'
+-- Conan: Component target declared 'Boost::date_time'
+-- Conan: Component target declared 'Boost::exception'
+-- Conan: Component target declared 'Boost::math'
+-- Conan: Component target declared 'Boost::program_options'
+-- Conan: Component target declared 'Boost::regex'
+-- Conan: Component target declared 'Boost::serialization'
+-- Conan: Component target declared 'Boost::stacktrace'
+-- Conan: Component target declared 'Boost::system'
+-- Conan: Component target declared 'Boost::timer'
+-- Conan: Component target declared 'Boost::chrono'
+-- Conan: Component target declared 'Boost::coroutine'
+-- Conan: Component target declared 'Boost::filesystem'
+-- Conan: Component target declared 'Boost::json'
+-- Conan: Component target declared 'Boost::math_c99'
+-- Conan: Component target declared 'Boost::math_c99f'
+-- Conan: Component target declared 'Boost::math_c99l'
+-- Conan: Component target declared 'Boost::math_tr1'
+-- Conan: Component target declared 'Boost::math_tr1f'
+-- Conan: Component target declared 'Boost::math_tr1l'
+-- Conan: Component target declared 'Boost::random'
+-- Conan: Component target declared 'Boost::stacktrace_addr2line'
+-- Conan: Component target declared 'Boost::stacktrace_backtrace'
+-- Conan: Component target declared 'Boost::stacktrace_basic'
+-- Conan: Component target declared 'Boost::stacktrace_from_exception'
+-- Conan: Component target declared 'Boost::stacktrace_noop'
+-- Conan: Component target declared 'Boost::test'
+-- Conan: Component target declared 'Boost::url'
+-- Conan: Component target declared 'Boost::wserialization'
+-- Conan: Component target declared 'Boost::fiber'
+-- Conan: Component target declared 'Boost::graph'
+-- Conan: Component target declared 'Boost::iostreams'
+-- Conan: Component target declared 'Boost::nowide'
+-- Conan: Component target declared 'Boost::prg_exec_monitor'
+-- Conan: Component target declared 'Boost::test_exec_monitor'
+-- Conan: Component target declared 'Boost::thread'
+-- Conan: Component target declared 'Boost::wave'
+-- Conan: Component target declared 'Boost::contract'
+-- Conan: Component target declared 'Boost::fiber_numa'
+-- Conan: Component target declared 'Boost::locale'
+-- Conan: Component target declared 'Boost::log'
+-- Conan: Component target declared 'Boost::type_erasure'
+-- Conan: Component target declared 'Boost::unit_test_framework'
+-- Conan: Component target declared 'Boost::log_setup'
+-- Conan: Target declared 'boost::boost'
+-- Conan: Target declared 'libbacktrace::libbacktrace'
+-- Conan: Target declared 'nlohmann_json::nlohmann_json'
+-- Conan: Component target declared 'CURL::libcurl'
+-- Conan: Component target declared 'GTest::gtest'
+-- Conan: Component target declared 'GTest::gtest_main'
+-- Conan: Component target declared 'GTest::gmock'
+-- Conan: Component target declared 'GTest::gmock_main'
+-- Conan: Target declared 'gtest::gtest'
+-- open62541_lib INTERFACE_INCLUDE_DIRECTORIES: /root/open62541-v1.4.14-noSanitizer/build/src_generated;/root/open62541-v1.4.14-noSanitizer/include;/root/open62541-v1.4.14-noSanitizer/plugins/include
+OPCUAPacking CMake DIR: /root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/src/OPCUAPacking
+-- Dependency target 'OPCUAPacking' found
+tests CMake DIR: /root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/tests
+-- Configuring done
+-- Generating done
+-- Build files have been written to: /root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-asan
+/usr/bin/cmake -E cmake_progress_start /root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-asan/CMakeFiles /root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-asan//CMakeFiles/progress.marks
+make  -f CMakeFiles/Makefile2 all
+make[1]: Entering directory '/root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-asan'
+make  -f OPCUAPacking-build/CMakeFiles/OPCUAPacking.dir/build.make OPCUAPacking-build/CMakeFiles/OPCUAPacking.dir/depend
+make[2]: Entering directory '/root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-asan'
+cd /root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-asan && /usr/bin/cmake -E cmake_depends "Unix Makefiles" /root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main /root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/src/OPCUAPacking /root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-asan /root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-asan/OPCUAPacking-build /root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-asan/OPCUAPacking-build/CMakeFiles/OPCUAPacking.dir/DependInfo.cmake --color=
+Dependencies file "OPCUAPacking-build/CMakeFiles/OPCUAPacking.dir/ua.cpp.o.d" is newer than depends file "/root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-asan/OPCUAPacking-build/CMakeFiles/OPCUAPacking.dir/compiler_depend.internal".
+Consolidate compiler generated dependencies of target OPCUAPacking
+make[2]: Leaving directory '/root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-asan'
+make  -f OPCUAPacking-build/CMakeFiles/OPCUAPacking.dir/build.make OPCUAPacking-build/CMakeFiles/OPCUAPacking.dir/build
+make[2]: Entering directory '/root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-asan'
+make[2]: Nothing to be done for 'OPCUAPacking-build/CMakeFiles/OPCUAPacking.dir/build'.
+make[2]: Leaving directory '/root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-asan'
+[  8%] Built target OPCUAPacking
+make  -f CMakeFiles/file_platform.dir/build.make CMakeFiles/file_platform.dir/depend
+make[2]: Entering directory '/root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-asan'
+cd /root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-asan && /usr/bin/cmake -E cmake_depends "Unix Makefiles" /root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main /root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main /root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-asan /root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-asan /root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-asan/CMakeFiles/file_platform.dir/DependInfo.cmake --color=
+Dependencies file "CMakeFiles/file_platform.dir/src/main_uaPacking.cpp.o.d" is newer than depends file "/root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-asan/CMakeFiles/file_platform.dir/compiler_depend.internal".
+Consolidate compiler generated dependencies of target file_platform
+make[2]: Leaving directory '/root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-asan'
+make  -f CMakeFiles/file_platform.dir/build.make CMakeFiles/file_platform.dir/build
+make[2]: Entering directory '/root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-asan'
+[ 13%] Linking CXX executable ../bin/file_platform
+/usr/bin/cmake -E cmake_link_script CMakeFiles/file_platform.dir/link.txt --verbose=1
+/usr/bin/clang++-17 -stdlib=libc++   -m64 -stdlib=libc++ -fno-lto -g -m64 -fno-lto -stdlib=libc++ -lc++abi -L -Wl,-rpath, -fsanitize=address,undefined -fno-sanitize=function CMakeFiles/file_platform.dir/src/main_uaPacking.cpp.o -o ../bin/file_platform   -L/root/.conan2/p/b/spdlo3b2989ab5aced/p/lib  -L/root/.conan2/p/b/fmt4c212b33d5165/p/lib  -L/root/.conan2/p/b/backwed58a3d05b5f6/p/lib  -L/root/.conan2/p/b/elfut7cdb14c1bcc5d/p/lib  -L/root/.conan2/p/b/zlib3e394792a5d20/p/lib  -L/root/.conan2/p/b/bzip24a0c62cac1ba4/p/lib  -L/root/.conan2/p/b/xz_ut13ca22a145cfe/p/lib  -L/root/.conan2/p/b/zstdb4ff1adfe0b97/p/lib  -L/root/.conan2/p/b/boostcbf92cdd338c2/p/lib  -L/root/.conan2/p/b/libcu58c66aca23395/p/lib  -L/root/.conan2/p/b/opens9b35e25a2bffc/p/lib  -L/root/.conan2/p/b/gtestfd5ccee71f8a1/p/lib  -Wl,-rpath,/root/.conan2/p/b/spdlo3b2989ab5aced/p/lib:/root/.conan2/p/b/fmt4c212b33d5165/p/lib:/root/.conan2/p/b/backwed58a3d05b5f6/p/lib:/root/.conan2/p/b/elfut7cdb14c1bcc5d/p/lib:/root/.conan2/p/b/zlib3e394792a5d20/p/lib:/root/.conan2/p/b/bzip24a0c62cac1ba4/p/lib:/root/.conan2/p/b/xz_ut13ca22a145cfe/p/lib:/root/.conan2/p/b/zstdb4ff1adfe0b97/p/lib:/root/.conan2/p/b/boostcbf92cdd338c2/p/lib:/root/.conan2/p/b/libcu58c66aca23395/p/lib:/root/.conan2/p/b/opens9b35e25a2bffc/p/lib:/root/.conan2/p/b/gtestfd5ccee71f8a1/p/lib:/root/open62541-v1.4.14-noSanitizer/build/bin OPCUAPacking-build/libOPCUAPacking.a /root/.conan2/p/b/spdlo3b2989ab5aced/p/lib/libspdlogd.a /root/.conan2/p/b/fmt4c212b33d5165/p/lib/libfmtd.a /root/.conan2/p/b/backwed58a3d05b5f6/p/lib/libbackward.a /root/.conan2/p/b/elfut7cdb14c1bcc5d/p/lib/libasm.a /root/.conan2/p/b/elfut7cdb14c1bcc5d/p/lib/libdw.a /root/.conan2/p/b/elfut7cdb14c1bcc5d/p/lib/libelf.a /root/.conan2/p/b/bzip24a0c62cac1ba4/p/lib/libbz2.a /root/.conan2/p/b/xz_ut13ca22a145cfe/p/lib/liblzma.a /root/.conan2/p/b/zstdb4ff1adfe0b97/p/lib/libzstd.a /root/open62541-v1.4.14-noSanitizer/build/bin/libopen62541.so /root/.conan2/p/b/libcu58c66aca23395/p/lib/libcurl.a /root/.conan2/p/b/opens9b35e25a2bffc/p/lib/libssl.a /root/.conan2/p/b/opens9b35e25a2bffc/p/lib/libcrypto.a -ldl -lrt /root/.conan2/p/b/zlib3e394792a5d20/p/lib/libz.a /root/.conan2/p/b/gtestfd5ccee71f8a1/p/lib/libgtest_maind.a /root/.conan2/p/b/gtestfd5ccee71f8a1/p/lib/libgtestd.a -lpthread -lm 
+make[2]: Leaving directory '/root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-asan'
+[ 17%] Built target file_platform
+make  -f tests-build/CMakeFiles/tests.dir/build.make tests-build/CMakeFiles/tests.dir/depend
+make[2]: Entering directory '/root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-asan'
+cd /root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-asan && /usr/bin/cmake -E cmake_depends "Unix Makefiles" /root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main /root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/tests /root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-asan /root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-asan/tests-build /root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-asan/tests-build/CMakeFiles/tests.dir/DependInfo.cmake --color=
+Dependencies file "tests-build/CMakeFiles/tests.dir/compile/RuleOfFiveAsserts.cpp.o.d" is newer than depends file "/root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-asan/tests-build/CMakeFiles/tests.dir/compiler_depend.internal".
+Dependencies file "tests-build/CMakeFiles/tests.dir/test1.cpp.o.d" is newer than depends file "/root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-asan/tests-build/CMakeFiles/tests.dir/compiler_depend.internal".
+Dependencies file "tests-build/CMakeFiles/tests.dir/test10.cpp.o.d" is newer than depends file "/root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-asan/tests-build/CMakeFiles/tests.dir/compiler_depend.internal".
+Dependencies file "tests-build/CMakeFiles/tests.dir/test11.cpp.o.d" is newer than depends file "/root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-asan/tests-build/CMakeFiles/tests.dir/compiler_depend.internal".
+Dependencies file "tests-build/CMakeFiles/tests.dir/test12.cpp.o.d" is newer than depends file "/root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-asan/tests-build/CMakeFiles/tests.dir/compiler_depend.internal".
+Dependencies file "tests-build/CMakeFiles/tests.dir/test13.cpp.o.d" is newer than depends file "/root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-asan/tests-build/CMakeFiles/tests.dir/compiler_depend.internal".
+Dependencies file "tests-build/CMakeFiles/tests.dir/test14.cpp.o.d" is newer than depends file "/root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-asan/tests-build/CMakeFiles/tests.dir/compiler_depend.internal".
+Dependencies file "tests-build/CMakeFiles/tests.dir/test2.cpp.o.d" is newer than depends file "/root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-asan/tests-build/CMakeFiles/tests.dir/compiler_depend.internal".
+Dependencies file "tests-build/CMakeFiles/tests.dir/test3.cpp.o.d" is newer than depends file "/root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-asan/tests-build/CMakeFiles/tests.dir/compiler_depend.internal".
+Dependencies file "tests-build/CMakeFiles/tests.dir/test4.cpp.o.d" is newer than depends file "/root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-asan/tests-build/CMakeFiles/tests.dir/compiler_depend.internal".
+Dependencies file "tests-build/CMakeFiles/tests.dir/test5.cpp.o.d" is newer than depends file "/root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-asan/tests-build/CMakeFiles/tests.dir/compiler_depend.internal".
+Dependencies file "tests-build/CMakeFiles/tests.dir/test6.cpp.o.d" is newer than depends file "/root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-asan/tests-build/CMakeFiles/tests.dir/compiler_depend.internal".
+Dependencies file "tests-build/CMakeFiles/tests.dir/test7.cpp.o.d" is newer than depends file "/root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-asan/tests-build/CMakeFiles/tests.dir/compiler_depend.internal".
+Dependencies file "tests-build/CMakeFiles/tests.dir/test8.cpp.o.d" is newer than depends file "/root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-asan/tests-build/CMakeFiles/tests.dir/compiler_depend.internal".
+Dependencies file "tests-build/CMakeFiles/tests.dir/test9.cpp.o.d" is newer than depends file "/root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-asan/tests-build/CMakeFiles/tests.dir/compiler_depend.internal".
+Dependencies file "tests-build/CMakeFiles/tests.dir/util/ClientTestFixture.cpp.o.d" is newer than depends file "/root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-asan/tests-build/CMakeFiles/tests.dir/compiler_depend.internal".
+Consolidate compiler generated dependencies of target tests
+make[2]: Leaving directory '/root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-asan'
+make  -f tests-build/CMakeFiles/tests.dir/build.make tests-build/CMakeFiles/tests.dir/build
+make[2]: Entering directory '/root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-asan'
+[ 21%] Building CXX object tests-build/CMakeFiles/tests.dir/test15.cpp.o
+cd /root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-asan/tests-build && /usr/bin/clang++-17 -DBACKWARD_HAS_BACKTRACE=0 -DBACKWARD_HAS_BACKTRACE_SYMBOL=0 -DBACKWARD_HAS_BFD=0 -DBACKWARD_HAS_DW=1 -DBACKWARD_HAS_DWARF=0 -DBACKWARD_HAS_LIBUNWIND=0 -DBACKWARD_HAS_PDB_SYMBOL=0 -DBACKWARD_HAS_UNWIND=1 -DCURL_STATICLIB=1 -DLZMA_API_STATIC -DSPDLOG_COMPILED_LIB -DSPDLOG_FMT_EXTERNAL -I/root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/include -isystem /root/.conan2/p/b/spdlo3b2989ab5aced/p/include -isystem /root/.conan2/p/b/fmt4c212b33d5165/p/include -isystem /root/.conan2/p/b/backwed58a3d05b5f6/p/include -isystem /root/.conan2/p/b/elfut7cdb14c1bcc5d/p/include/elfutils -isystem /root/.conan2/p/b/elfut7cdb14c1bcc5d/p/include -isystem /root/.conan2/p/b/zlib3e394792a5d20/p/include -isystem /root/.conan2/p/b/boostcbf92cdd338c2/p/include -isystem /root/open62541-v1.4.14-noSanitizer/build/src_generated -isystem /root/open62541-v1.4.14-noSanitizer/include -isystem /root/open62541-v1.4.14-noSanitizer/plugins/include -isystem /root/.conan2/p/b/libcu58c66aca23395/p/include -isystem /root/.conan2/p/b/opens9b35e25a2bffc/p/include -isystem /root/.conan2/p/b/gtestfd5ccee71f8a1/p/include -stdlib=libc++   -m64 -stdlib=libc++ -fno-lto -g -fsanitize=address,undefined -fno-sanitize=function -fno-omit-frame-pointer -g -fno-optimize-sibling-calls -fstandalone-debug -Wthread-safety -Wno-unused-command-line-argument -glldb -fno-limit-debug-info -O0 -std=gnu++17 -MD -MT tests-build/CMakeFiles/tests.dir/test15.cpp.o -MF CMakeFiles/tests.dir/test15.cpp.o.d -o CMakeFiles/tests.dir/test15.cpp.o -c /root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/tests/test15.cpp
+[ 26%] Linking CXX executable tests
+cd /root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-asan/tests-build && /usr/bin/cmake -E cmake_link_script CMakeFiles/tests.dir/link.txt --verbose=1
+/usr/bin/clang++-17 -stdlib=libc++   -m64 -stdlib=libc++ -fno-lto -g -m64 -fno-lto -stdlib=libc++ -lc++abi -L -Wl,-rpath, -fsanitize=address,undefined -fno-sanitize=function CMakeFiles/tests.dir/test1.cpp.o CMakeFiles/tests.dir/test2.cpp.o CMakeFiles/tests.dir/test3.cpp.o CMakeFiles/tests.dir/test4.cpp.o CMakeFiles/tests.dir/test5.cpp.o CMakeFiles/tests.dir/test6.cpp.o CMakeFiles/tests.dir/test7.cpp.o CMakeFiles/tests.dir/test8.cpp.o CMakeFiles/tests.dir/test9.cpp.o CMakeFiles/tests.dir/test10.cpp.o CMakeFiles/tests.dir/test11.cpp.o CMakeFiles/tests.dir/test12.cpp.o CMakeFiles/tests.dir/test13.cpp.o CMakeFiles/tests.dir/test14.cpp.o CMakeFiles/tests.dir/test15.cpp.o CMakeFiles/tests.dir/util/ClientTestFixture.cpp.o CMakeFiles/tests.dir/compile/RuleOfFiveAsserts.cpp.o -o tests   -L/root/.conan2/p/b/spdlo3b2989ab5aced/p/lib  -L/root/.conan2/p/b/fmt4c212b33d5165/p/lib  -L/root/.conan2/p/b/backwed58a3d05b5f6/p/lib  -L/root/.conan2/p/b/elfut7cdb14c1bcc5d/p/lib  -L/root/.conan2/p/b/zlib3e394792a5d20/p/lib  -L/root/.conan2/p/b/bzip24a0c62cac1ba4/p/lib  -L/root/.conan2/p/b/xz_ut13ca22a145cfe/p/lib  -L/root/.conan2/p/b/zstdb4ff1adfe0b97/p/lib  -L/root/.conan2/p/b/boostcbf92cdd338c2/p/lib  -L/root/.conan2/p/b/libcu58c66aca23395/p/lib  -L/root/.conan2/p/b/opens9b35e25a2bffc/p/lib  -L/root/.conan2/p/b/gtestfd5ccee71f8a1/p/lib  -Wl,-rpath,/root/.conan2/p/b/spdlo3b2989ab5aced/p/lib:/root/.conan2/p/b/fmt4c212b33d5165/p/lib:/root/.conan2/p/b/backwed58a3d05b5f6/p/lib:/root/.conan2/p/b/elfut7cdb14c1bcc5d/p/lib:/root/.conan2/p/b/zlib3e394792a5d20/p/lib:/root/.conan2/p/b/bzip24a0c62cac1ba4/p/lib:/root/.conan2/p/b/xz_ut13ca22a145cfe/p/lib:/root/.conan2/p/b/zstdb4ff1adfe0b97/p/lib:/root/.conan2/p/b/boostcbf92cdd338c2/p/lib:/root/.conan2/p/b/libcu58c66aca23395/p/lib:/root/.conan2/p/b/opens9b35e25a2bffc/p/lib:/root/.conan2/p/b/gtestfd5ccee71f8a1/p/lib:/root/open62541-v1.4.14-noSanitizer/build/bin ../OPCUAPacking-build/libOPCUAPacking.a /root/.conan2/p/b/spdlo3b2989ab5aced/p/lib/libspdlogd.a /root/.conan2/p/b/fmt4c212b33d5165/p/lib/libfmtd.a /root/.conan2/p/b/backwed58a3d05b5f6/p/lib/libbackward.a /root/.conan2/p/b/elfut7cdb14c1bcc5d/p/lib/libasm.a /root/.conan2/p/b/elfut7cdb14c1bcc5d/p/lib/libdw.a /root/.conan2/p/b/elfut7cdb14c1bcc5d/p/lib/libelf.a /root/.conan2/p/b/bzip24a0c62cac1ba4/p/lib/libbz2.a /root/.conan2/p/b/xz_ut13ca22a145cfe/p/lib/liblzma.a /root/.conan2/p/b/zstdb4ff1adfe0b97/p/lib/libzstd.a /root/open62541-v1.4.14-noSanitizer/build/bin/libopen62541.so /root/.conan2/p/b/libcu58c66aca23395/p/lib/libcurl.a /root/.conan2/p/b/opens9b35e25a2bffc/p/lib/libssl.a /root/.conan2/p/b/opens9b35e25a2bffc/p/lib/libcrypto.a -ldl -lrt /root/.conan2/p/b/zlib3e394792a5d20/p/lib/libz.a /root/.conan2/p/b/gtestfd5ccee71f8a1/p/lib/libgtest_maind.a /root/.conan2/p/b/gtestfd5ccee71f8a1/p/lib/libgtestd.a -lpthread -lm 
+make[2]: Leaving directory '/root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-asan'
+[ 95%] Built target tests
+make  -f tests-build/CMakeFiles/only_ua_h.dir/build.make tests-build/CMakeFiles/only_ua_h.dir/depend
+make[2]: Entering directory '/root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-asan'
+cd /root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-asan && /usr/bin/cmake -E cmake_depends "Unix Makefiles" /root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main /root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/tests /root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-asan /root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-asan/tests-build /root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-asan/tests-build/CMakeFiles/only_ua_h.dir/DependInfo.cmake --color=
+Dependencies file "tests-build/CMakeFiles/only_ua_h.dir/compile/EncapsulationProbe.cpp.o.d" is newer than depends file "/root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-asan/tests-build/CMakeFiles/only_ua_h.dir/compiler_depend.internal".
+Consolidate compiler generated dependencies of target only_ua_h
+make[2]: Leaving directory '/root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-asan'
+make  -f tests-build/CMakeFiles/only_ua_h.dir/build.make tests-build/CMakeFiles/only_ua_h.dir/build
+make[2]: Entering directory '/root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-asan'
+make[2]: Nothing to be done for 'tests-build/CMakeFiles/only_ua_h.dir/build'.
+make[2]: Leaving directory '/root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-asan'
+[100%] Built target only_ua_h
+make  -f tests-build/CMakeFiles/check_encapsulation.dir/build.make tests-build/CMakeFiles/check_encapsulation.dir/depend
+make[2]: Entering directory '/root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-asan'
+cd /root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-asan && /usr/bin/cmake -E cmake_depends "Unix Makefiles" /root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main /root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/tests /root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-asan /root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-asan/tests-build /root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-asan/tests-build/CMakeFiles/check_encapsulation.dir/DependInfo.cmake --color=
+make[2]: Leaving directory '/root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-asan'
+make  -f tests-build/CMakeFiles/check_encapsulation.dir/build.make tests-build/CMakeFiles/check_encapsulation.dir/build
+make[2]: Entering directory '/root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-asan'
+make[2]: Nothing to be done for 'tests-build/CMakeFiles/check_encapsulation.dir/build'.
+make[2]: Leaving directory '/root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-asan'
+[100%] Built target check_encapsulation
+make[1]: Leaving directory '/root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-asan'
+/usr/bin/cmake -E cmake_progress_start /root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-asan/CMakeFiles 0

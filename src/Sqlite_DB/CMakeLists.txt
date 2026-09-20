@@ -26,8 +26,8 @@ set_target_properties(${appleName} PROPERTIES AUTOMOC ON)
 
 #将源头文件的路径传递给建立的动态库/静态库文件里
 target_include_directories(${appleName} PUBLIC
-$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../../include>
-$<INSTALL_INTERFACE:include>
+${CMAKE_SOURCE_DIR}/include
+
 )
 
 #寻找对应的库和模块,该部分在父文件里已经执行

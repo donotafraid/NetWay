@@ -1,0 +1,14 @@
+/root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-tsan/CMakeFiles/file_platform.dir
+/root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-tsan/CMakeFiles/test.dir
+/root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-tsan/CMakeFiles/edit_cache.dir
+/root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-tsan/CMakeFiles/rebuild_cache.dir
+/root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-tsan/OPCUAPacking-build/CMakeFiles/OPCUAPacking.dir
+/root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-tsan/OPCUAPacking-build/CMakeFiles/test.dir
+/root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-tsan/OPCUAPacking-build/CMakeFiles/edit_cache.dir
+/root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-tsan/OPCUAPacking-build/CMakeFiles/rebuild_cache.dir
+/root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-tsan/tests-build/CMakeFiles/tests.dir
+/root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-tsan/tests-build/CMakeFiles/only_ua_h.dir
+/root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-tsan/tests-build/CMakeFiles/check_encapsulation.dir
+/root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-tsan/tests-build/CMakeFiles/test.dir
+/root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-tsan/tests-build/CMakeFiles/edit_cache.dir
+/root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/build-tsan/tests-build/CMakeFiles/rebuild_cache.dir
