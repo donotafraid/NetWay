@@ -2,7 +2,7 @@
 spdlog/1.15.0
 gtest/[>=1.12.1]
 nlohmann_json/3.12.0
-grpc/1.72.0
+#grpc/1.72.0
 libuv/1.49.2
 onetbb/2022.2.0
 xsimd/13.2.0
@@ -15,7 +15,6 @@ libevent/2.1.12
 libcurl/8.10.0
 
 openblas/0.3.27
-
 
 [generators]
 CMakeDeps
