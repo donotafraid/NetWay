@@ -44,6 +44,9 @@ jobs:
   asan:
     needs: build-open62541
     runs-on: ubuntu-22.04
+    env:
+      CC: clang-17
+      CXX: clang++-17
     steps:
       - uses: actions/checkout@v4
 
@@ -126,6 +129,9 @@ jobs:
   lsan:
     needs: build-open62541
     runs-on: ubuntu-22.04
+    env:
+      CC: clang-17
+      CXX: clang++-17
     steps:
       - uses: actions/checkout@v4
 
@@ -208,6 +214,9 @@ jobs:
   tsan:
     needs: build-open62541
     runs-on: ubuntu-22.04
+    env:
+      CC: clang-17
+      CXX: clang++-17
     steps:
       - uses: actions/checkout@v4
 
@@ -290,6 +299,9 @@ jobs:
   flaky:
     needs: build-open62541
     runs-on: ubuntu-22.04
+    env:
+      CC: clang-17
+      CXX: clang++-17
     steps:
       - uses: actions/checkout@v4
 
