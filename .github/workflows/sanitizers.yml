@@ -20,10 +20,12 @@ jobs:
 
       - name: 安装 Clang 17 与 libc++
         run: |
-          sudo apt-get update
-          sudo apt-get install -y clang-17 libc++-17-dev libc++abi-17-dev
+          wget https://apt.llvm.org/llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh 17
+          sudo apt-get install -y libc++-17-dev libc++abi-17-dev
+
           clang-17 --version
-          clang++-17 --version
 
       - name: 恢复 open62541 缓存
         id: cache-o6
@@ -47,8 +49,11 @@ jobs:
 
       - name: 安装 Clang 17 与 libc++
         run: |
-          sudo apt-get update
-          sudo apt-get install -y clang-17 libc++-17-dev libc++abi-17-dev
+          wget https://apt.llvm.org/llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh 17
+          sudo apt-get install -y libc++-17-dev libc++abi-17-dev
+          clang-17 --version
 
       - name: 恢复 open62541 缓存
         id: cache-o6
@@ -126,8 +131,11 @@ jobs:
 
       - name: 安装 Clang 17 与 libc++
         run: |
-          sudo apt-get update
-          sudo apt-get install -y clang-17 libc++-17-dev libc++abi-17-dev
+          wget https://apt.llvm.org/llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh 17
+          sudo apt-get install -y libc++-17-dev libc++abi-17-dev
+          clang-17 --version
 
       - name: 恢复 open62541 缓存
         id: cache-o6
@@ -205,8 +213,11 @@ jobs:
 
       - name: 安装 Clang 17 与 libc++
         run: |
-          sudo apt-get update
-          sudo apt-get install -y clang-17 libc++-17-dev libc++abi-17-dev
+          wget https://apt.llvm.org/llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh 17
+          sudo apt-get install -y libc++-17-dev libc++abi-17-dev
+          clang-17 --version
 
       - name: 恢复 open62541 缓存
         id: cache-o6
@@ -284,8 +295,12 @@ jobs:
 
       - name: 安装 Clang 17 与 libc++
         run: |
-          sudo apt-get update
-          sudo apt-get install -y clang-17 libc++-17-dev libc++abi-17-dev
+          wget https://apt.llvm.org/llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh 17
+          sudo apt-get install -y libc++-17-dev libc++abi-17-dev
+          clang-17 --version
+
 
       - name: 恢复 open62541 缓存
         id: cache-o6
