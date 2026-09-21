@@ -12,15 +12,25 @@ jobs:
   # ============================================================
   build-open62541:
     runs-on: ubuntu-22.04
+    env:
+      CC: clang-17
+      CXX: clang++-17
     steps:
       - uses: actions/checkout@v4
+
+      - name: 安装 Clang 17 与 libc++
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-17 libc++-17-dev libc++abi-17-dev
+          clang-17 --version
+          clang++-17 --version
 
       - name: 恢复 open62541 缓存
         id: cache-o6
         uses: actions/cache@v4
         with:
           path: third_party/open62541-v1.4.14
-          key: open62541-v1.4.14-ubuntu22-v2-${{ hashFiles('scripts/build_open62541.sh') }}
+          key: open62541-v1.4.14-ubuntu22-clang17-v3-${{ hashFiles('scripts/build_open62541.sh') }}
 
       - name: 构建 open62541（缓存未命中时）
         if: steps.cache-o6.outputs.cache-hit != 'true'
@@ -35,15 +45,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: 安装 Clang 17 与 libc++
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-17 libc++-17-dev libc++abi-17-dev
+
       - name: 恢复 open62541 缓存
         id: cache-o6
         uses: actions/cache/restore@v4
         with:
           path: third_party/open62541-v1.4.14
-          key: open62541-v1.4.14-ubuntu22-v2-${{ hashFiles('scripts/build_open62541.sh') }}
+          key: open62541-v1.4.14-ubuntu22-clang17-v3-${{ hashFiles('scripts/build_open62541.sh') }}
 
       - name: 构建 open62541（缓存未命中时回退）
         if: steps.cache-o6.outputs.cache-hit != 'true'
+        env:
+          CC: clang-17
+          CXX: clang++-17
         run: bash scripts/build_open62541.sh third_party/open62541-v1.4.14
 
       - name: 检查 open62541 产物
@@ -59,18 +77,28 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.conan2
-          key: conan2-${{ runner.os }}-${{ hashFiles('conanfile.*') }}
+          key: conan2-${{ runner.os }}-clang17-${{ hashFiles('conanfile.*') }}
 
-      - name: 安装 Conan 依赖
+      - name: 安装 Conan 依赖（Clang 17 + libc++）
         run: |
           pip install "conan>=2,<3"
-          conan profile detect --force
+          mkdir -p ~/.conan2/profiles
+          cat > ~/.conan2/profiles/default <<'EOF'
+          [settings]
+          os=Linux
+          arch=x86_64
+          build_type=Debug
+          compiler=clang
+          compiler.version=17
+          compiler.cppstd=gnu17
+          compiler.libcxx=libc++
+          EOF
           conan install . -of conan_debug_build -s build_type=Debug --build=missing
 
       - name: 配置 ASan
         run: |
           cmake -B build-asan -DENABLE_ASAN=ON -DCMAKE_BUILD_TYPE=Debug \
-                -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ \
+                -DCMAKE_C_COMPILER=clang-17 -DCMAKE_CXX_COMPILER=clang++-17 \
                 -DCMAKE_TOOLCHAIN_FILE=conan_debug_build/conan_toolchain.cmake \
                 -DOPEN62541_ROOT=${{ github.workspace }}/third_party/open62541-v1.4.14
 
@@ -96,15 +124,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: 安装 Clang 17 与 libc++
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-17 libc++-17-dev libc++abi-17-dev
+
       - name: 恢复 open62541 缓存
         id: cache-o6
         uses: actions/cache/restore@v4
         with:
           path: third_party/open62541-v1.4.14
-          key: open62541-v1.4.14-ubuntu22-v2-${{ hashFiles('scripts/build_open62541.sh') }}
+          key: open62541-v1.4.14-ubuntu22-clang17-v3-${{ hashFiles('scripts/build_open62541.sh') }}
 
       - name: 构建 open62541（缓存未命中时回退）
         if: steps.cache-o6.outputs.cache-hit != 'true'
+        env:
+          CC: clang-17
+          CXX: clang++-17
         run: bash scripts/build_open62541.sh third_party/open62541-v1.4.14
 
       - name: 检查 open62541 产物
@@ -120,18 +156,28 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.conan2
-          key: conan2-${{ runner.os }}-${{ hashFiles('conanfile.*') }}
+          key: conan2-${{ runner.os }}-clang17-${{ hashFiles('conanfile.*') }}
 
-      - name: 安装 Conan 依赖
+      - name: 安装 Conan 依赖（Clang 17 + libc++）
         run: |
           pip install "conan>=2,<3"
-          conan profile detect --force
+          mkdir -p ~/.conan2/profiles
+          cat > ~/.conan2/profiles/default <<'EOF'
+          [settings]
+          os=Linux
+          arch=x86_64
+          build_type=Debug
+          compiler=clang
+          compiler.version=17
+          compiler.cppstd=gnu17
+          compiler.libcxx=libc++
+          EOF
           conan install . -of conan_debug_build -s build_type=Debug --build=missing
 
       - name: 配置 LSan
         run: |
           cmake -B build-lsan -DENABLE_LSAN=ON -DCMAKE_BUILD_TYPE=Debug \
-                -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ \
+                -DCMAKE_C_COMPILER=clang-17 -DCMAKE_CXX_COMPILER=clang++-17 \
                 -DCMAKE_TOOLCHAIN_FILE=conan_debug_build/conan_toolchain.cmake \
                 -DOPEN62541_ROOT=${{ github.workspace }}/third_party/open62541-v1.4.14
 
@@ -157,15 +203,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: 安装 Clang 17 与 libc++
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-17 libc++-17-dev libc++abi-17-dev
+
       - name: 恢复 open62541 缓存
         id: cache-o6
         uses: actions/cache/restore@v4
         with:
           path: third_party/open62541-v1.4.14
-          key: open62541-v1.4.14-ubuntu22-v2-${{ hashFiles('scripts/build_open62541.sh') }}
+          key: open62541-v1.4.14-ubuntu22-clang17-v3-${{ hashFiles('scripts/build_open62541.sh') }}
 
       - name: 构建 open62541（缓存未命中时回退）
         if: steps.cache-o6.outputs.cache-hit != 'true'
+        env:
+          CC: clang-17
+          CXX: clang++-17
         run: bash scripts/build_open62541.sh third_party/open62541-v1.4.14
 
       - name: 检查 open62541 产物
@@ -181,18 +235,28 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.conan2
-          key: conan2-${{ runner.os }}-${{ hashFiles('conanfile.*') }}
+          key: conan2-${{ runner.os }}-clang17-${{ hashFiles('conanfile.*') }}
 
-      - name: 安装 Conan 依赖
+      - name: 安装 Conan 依赖（Clang 17 + libc++）
         run: |
           pip install "conan>=2,<3"
-          conan profile detect --force
+          mkdir -p ~/.conan2/profiles
+          cat > ~/.conan2/profiles/default <<'EOF'
+          [settings]
+          os=Linux
+          arch=x86_64
+          build_type=Debug
+          compiler=clang
+          compiler.version=17
+          compiler.cppstd=gnu17
+          compiler.libcxx=libc++
+          EOF
           conan install . -of conan_debug_build -s build_type=Debug --build=missing
 
       - name: 配置 TSan
         run: |
           cmake -B build-tsan -DENABLE_TSAN=ON -DCMAKE_BUILD_TYPE=Debug \
-                -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ \
+                -DCMAKE_C_COMPILER=clang-17 -DCMAKE_CXX_COMPILER=clang++-17 \
                 -DCMAKE_TOOLCHAIN_FILE=conan_debug_build/conan_toolchain.cmake \
                 -DOPEN62541_ROOT=${{ github.workspace }}/third_party/open62541-v1.4.14
 
@@ -218,15 +282,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: 安装 Clang 17 与 libc++
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-17 libc++-17-dev libc++abi-17-dev
+
       - name: 恢复 open62541 缓存
         id: cache-o6
         uses: actions/cache/restore@v4
         with:
           path: third_party/open62541-v1.4.14
-          key: open62541-v1.4.14-ubuntu22-v2-${{ hashFiles('scripts/build_open62541.sh') }}
+          key: open62541-v1.4.14-ubuntu22-clang17-v3-${{ hashFiles('scripts/build_open62541.sh') }}
 
       - name: 构建 open62541（缓存未命中时回退）
         if: steps.cache-o6.outputs.cache-hit != 'true'
+        env:
+          CC: clang-17
+          CXX: clang++-17
         run: bash scripts/build_open62541.sh third_party/open62541-v1.4.14
 
       - name: 检查 open62541 产物
@@ -242,18 +314,28 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.conan2
-          key: conan2-${{ runner.os }}-${{ hashFiles('conanfile.*') }}
+          key: conan2-${{ runner.os }}-clang17-${{ hashFiles('conanfile.*') }}
 
-      - name: 安装 Conan 依赖
+      - name: 安装 Conan 依赖（Clang 17 + libc++）
         run: |
           pip install "conan>=2,<3"
-          conan profile detect --force
+          mkdir -p ~/.conan2/profiles
+          cat > ~/.conan2/profiles/default <<'EOF'
+          [settings]
+          os=Linux
+          arch=x86_64
+          build_type=Debug
+          compiler=clang
+          compiler.version=17
+          compiler.cppstd=gnu17
+          compiler.libcxx=libc++
+          EOF
           conan install . -of conan_debug_build -s build_type=Debug --build=missing
 
       - name: 构建 Debug
         run: |
           cmake -B build -DCMAKE_BUILD_TYPE=Debug \
-                -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ \
+                -DCMAKE_C_COMPILER=clang-17 -DCMAKE_CXX_COMPILER=clang++-17 \
                 -DCMAKE_TOOLCHAIN_FILE=conan_debug_build/conan_toolchain.cmake \
                 -DOPEN62541_ROOT=${{ github.workspace }}/third_party/open62541-v1.4.14
           cmake --build build -j
