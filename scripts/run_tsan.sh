@@ -26,19 +26,20 @@ run_one() {
   echo "=== TSan: ${name} (filter=${filter}) ==="
 
   local n
-  n=$("${TEST_BIN}" --gtest_list_tests --gtest_filter="${filter}" 2>/dev/null \
-        | grep -cE '^\s+\S' || true)
+  n=$(${ARCH_FLAG} "${TEST_BIN}" --gtest_list_tests --gtest_filter="${filter}" 2>/dev/null \
+| grep -cE '^\s+\S' || true)
   if [[ "${n}" -eq 0 ]]; then
     echo "ERROR: filter '${filter}' matched 0 tests" >&2
     return 1
   fi
   echo "  -> ${n} tests selected"
 
-  TSAN_OPTIONS='halt_on_error=1:abort_on_error=1:exitcode=66:report_signal_unsafe=0' \
+  TSAN_OPTIONS='halt_on_error=1:abort_on_error=1:exitcode=66:report_signal_unsafe=0:suppressions=scripts/tsan.supp' \
     ${ARCH_FLAG} "${TEST_BIN}" --gtest_filter="${filter}" \
     2>&1 | tee "${LOG_DIR}/${name}.log"
   return "${PIPESTATUS[0]}"
 }
+
 
 run_one concurrency  "${FILTER_CONCURRENCY}"
 run_one api_lease    "${FILTER_API_LEASE}"

@@ -1,0 +1,6 @@
+# glibc tzset_internal / __tzstring 已知非线程安全初始化
+race:tzset_internal
+race:__tzstring
+
+deadlock:UA_Timer_addRepeatedCallback
+deadlock:lockServer

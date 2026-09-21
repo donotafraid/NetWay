@@ -252,6 +252,22 @@ private:
 
 }; // namespace
 
+namespace {
+  //自定义Log格式，避免T5的并发导致的错误发生
+  static void customLog(void * /*context*/,
+                        UA_LogLevel /*level*/,
+                        UA_LogCategory /*category*/,
+                        const char *msg,
+                        va_list args) {
+      // 只用 UTC，不碰 localtime/mktime/tzset
+      vfprintf(stderr, msg, args);
+      fputc('\n', stderr);
+  }
+  
+  // 2) 包成 UA_Logger。必须是静态存储期，因为 config 只存指针
+  static UA_Logger g_customLogger = { customLog, nullptr };
+};
+
 /**
  * @brief Impl 生命周期与回调契约
  *
@@ -1263,6 +1279,7 @@ OPC_UA_Client::Impl::applyConfiguration(bool useDefault) {
   if (!config) {
     return Result<Unit, RichError>::error(RichError{RichError::ErrorCode::SDK_ERROR,"get Config fail"});
   }
+  config->logging = &g_customLogger;
 
   // 2. 应用默认配置（如果需要）
   if (useDefault) {
