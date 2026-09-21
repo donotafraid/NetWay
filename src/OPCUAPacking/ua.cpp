@@ -1752,7 +1752,6 @@ Result<Unit, RichError> OPC_UA_Client::shutdownInternal() {
     doomed = std::move(pImpl);
   }
 
-  auto effectConfig = doomed->getEffectiveConfig();
   doomed->shutdown();
   doomed.reset();
   return Result<Unit, RichError>::success(Unit{});

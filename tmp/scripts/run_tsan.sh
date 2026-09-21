@@ -16,7 +16,7 @@ if command -v setarch >/dev/null 2>&1; then
 fi
 
 # 先跑并发用例；--gtest_filter 与你的命令一致
-FILTER_CONCURRENCY='Client.T3_*:Client.TA2_*:Client.TC_*:Client.T5_*:Client.T16_*:Client.T17_*:Client.T18_*:Client.T25_*'
+FILTER_CONCURRENCY='Client.T3_*:Client.TA2_*:Client.TC_*:ClientTest.T5_*:Client.T16_*:Client.T17_*:Client.T18_*:Client.T25_*'
 FILTER_API_LEASE='Client.T27_*'
 FILTER_DESTRUCTOR='Client.T8C1*'
 

@@ -10,7 +10,7 @@ LOG_DIR="${BUILD_DIR}/asan_logs"
 mkdir -p "${LOG_DIR}"
 
 # ASan + UBSan 覆盖：所有错误出口 + 生命周期 + 预算
-FILTER='Client.T1_*:Client.T2_*:Client.T3_*:Client.T4_*:Client.T8*:Client.TD_*:Client.T16_*:Client.T17_*:Client.T18_*:Client.T19_*:Client.T20_*:Client.T21_*:Client.T22_*:Client.T23_*:Client.T26_*:Client.T28_*:Client.T29_*:Client.T30_*:Client.T9_*:ClientTest.T2_*:ClientTest.T3_*:ClientTest.T5_*:ClientTest.TD_*:ClientConfigTest.*'
+FILTER='Client.T1_*:Client.T2_*:Client.T3_*:Client.T4_*:Client.T8*:Client.TD_*:Client.T16_*:Client.T17_*:Client.T18_*:Client.T19_*:Client.T20_*:Client.T21_*:Client.T22_*:Client.T23_*:Client.T26_*:Client.T28_*:Client.T29_*:Client.T30_*:Client.T9_*:ClientTest.T2_*:ClientTest.T3_*:ClientTest.T4_*:ClientTest.T5_*:ClientTest.T9_*:ClientTest.TD_*:Client.TA2_*:Client.TC_*:Client.T25_*:Client.T27_*:ClientConfigTest.*'
 
 ASAN_OPTIONS="detect_leaks=1:halt_on_error=1:report_objects=1:log_path=${LOG_DIR}/asan_report" \
 UBSAN_OPTIONS="halt_on_error=1:print_stacktrace=1:print_summary=1" \

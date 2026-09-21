@@ -29,8 +29,7 @@ add_executable(${appleName} ${SOURCES})
 
 #将源头文件的路径传递给建立的动态库/静态库文件里
 target_include_directories(${appleName} PRIVATE
-    # ${CMAKE_SOURCE_DIR}/include
-    ${CMAKE_SOURCE_DIR}/../include
+    ${CMAKE_SOURCE_DIR}/include
 )
 
 set_target_properties(tests PROPERTIES
@@ -75,8 +74,7 @@ add_library(only_ua_h OBJECT
 
 # ★ 关键：故意不添加 ${open62541_INCLUDE_DIRS} / third_party_deps
 target_include_directories(only_ua_h PRIVATE
-    # ${CMAKE_SOURCE_DIR}/include
-    ${CMAKE_SOURCE_DIR}/../include
+    ${CMAKE_SOURCE_DIR}/include
 )
 
 target_compile_features(only_ua_h PRIVATE cxx_std_17)

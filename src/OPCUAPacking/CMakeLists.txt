@@ -18,8 +18,7 @@ add_library(${appleName} STATIC ${SOURCES})
 
 #将源头文件的路径传递给建立的动态库/静态库文件里
 target_include_directories(${appleName} PRIVATE 
-# ${CMAKE_SOURCE_DIR}/include
-    ${CMAKE_SOURCE_DIR}/../include
+${CMAKE_SOURCE_DIR}/include
 )
 
 #对本地动态库/静态库文件链接进应用程序里
