@@ -1,7 +1,0 @@
-/usr/bin/ld: /usr/bin/ld: DWARF error: invalid or unhandled FORM value: 0x23
-../OPCUAPacking-build/libOPCUAPacking.a(ua.cpp.o): in function `OPC_UA_Client::disconnect()':
-ua.cpp:(.text+0xf40e): undefined reference to `OPC_UA_Client::toRichErrorCode(DisconnectErrorState)'
-clang++-17: error: linker command failed with exit code 1 (use -v to see invocation)
-gmake[2]: *** [tests-build/CMakeFiles/tests.dir/build.make:322: tests-build/tests] Error 1
-gmake[1]: *** [CMakeFiles/Makefile2:174: tests-build/CMakeFiles/tests.dir/all] Error 2
-gmake: *** [Makefile:101: all] Error 2

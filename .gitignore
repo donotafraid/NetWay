@@ -7,8 +7,9 @@ conan_release_build/
 build_log.txt
 small_test.txt
 bin/
+./scripts
 
 
 # 忽略临时文件夹
 # 忽略所有 .tmp 文件
-# *.tmp
+# *.tmpbuild-lsan/
