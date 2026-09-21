@@ -1,8 +1,8 @@
 #include "OPCUAPacking/ua.h"
 #include <thread>
 #include "PLC/ConversionDispatcher.h"
-#include "spdlog/spdlog.h"
 #include "OPCUAPacking/RealSdk.h"
+#include "spdlog/spdlog.h"
 
 //=================OPC_UA_Client=======================
 namespace { // 匿名命名空间，实现内部链接
@@ -1930,12 +1930,24 @@ Result<ConnectionState, RichError> OPC_UA_Client::checkConnected() {
   }
 
   // 关键改动：走 isConnected()，它会 callRunIterate + getState 刷新缓存
-  if (ImplPtr->isConnected()) {
-    return Result<ConnectionState, RichError>::success(
-        ConnectionState::CONNECTED);
+  auto r = ImplPtr->isConnected();
+  if (r.has_value()) {
+    auto status = r.value_or({false});
+    if(status)
+    {
+      return Result<ConnectionState, RichError>::success(
+          ConnectionState::CONNECTED);
+    }
+    else
+    {
+      return Result<ConnectionState, RichError>::success(
+          ConnectionState::OBJECT_ONLY);
+    }
+  } else {
+    auto errorInfo {*r.get_error()};
+    return Result<ConnectionState, RichError>::error(
+        RichError{toRichErrorCode(errorInfo),"checkConnected: fail"});
   }
-  return Result<ConnectionState, RichError>::success(
-      ConnectionState::OBJECT_ONLY);
 }
 
 Result<Unit, RichError> OPC_UA_Client::recreateGiveUpClient() {

@@ -7,51 +7,79 @@ on:
   workflow_dispatch:
 
 jobs:
-  # 单独一个 job 构建 open62541，缓存给后续 job 复用
+  # ============================================================
+  # 单独一个 job 构建 open62541，负责保存缓存
+  # ============================================================
   build-open62541:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
-      - name: 缓存 open62541
+
+      - name: 恢复 open62541 缓存
         id: cache-o6
         uses: actions/cache@v4
         with:
           path: third_party/open62541-v1.4.14
-          key: open62541-v1.4.14-ubuntu22-${{ hashFiles('scripts/build_open62541.sh') }}
+          key: open62541-v1.4.14-ubuntu22-v2-${{ hashFiles('scripts/build_open62541.sh') }}
+
       - name: 构建 open62541（缓存未命中时）
         if: steps.cache-o6.outputs.cache-hit != 'true'
         run: bash scripts/build_open62541.sh third_party/open62541-v1.4.14
 
-
+  # ============================================================
+  # ASan + UBSan
+  # ============================================================
   asan:
     needs: build-open62541
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/cache@v4
+
+      - name: 恢复 open62541 缓存
+        id: cache-o6
+        uses: actions/cache/restore@v4
         with:
           path: third_party/open62541-v1.4.14
-          key: open62541-v1.4.14-ubuntu22-${{ hashFiles('scripts/build_open62541.sh') }}
-      - uses: actions/cache@v4
+          key: open62541-v1.4.14-ubuntu22-v2-${{ hashFiles('scripts/build_open62541.sh') }}
+
+      - name: 构建 open62541（缓存未命中时回退）
+        if: steps.cache-o6.outputs.cache-hit != 'true'
+        run: bash scripts/build_open62541.sh third_party/open62541-v1.4.14
+
+      - name: 检查 open62541 产物
+        run: |
+          set -e
+          ROOT=${{ github.workspace }}/third_party/open62541-v1.4.14
+          test -f "${ROOT}/include/open62541/client_highlevel.h" || { echo "缺 client_highlevel.h"; exit 1; }
+          test -f "${ROOT}/build/src_generated/open62541/config.h" || { echo "缺 src_generated"; exit 1; }
+          test -f "${ROOT}/build/bin/libopen62541.so" || { echo "缺 libopen62541.so"; exit 1; }
+          echo "open62541 就绪"
+
+      - name: 恢复 Conan 缓存
+        uses: actions/cache@v4
         with:
-          path: ~/.conan
-          key: conan-${{ runner.os }}-${{ hashFiles('conanfile.*') }}
+          path: ~/.conan2
+          key: conan2-${{ runner.os }}-${{ hashFiles('conanfile.*') }}
+
       - name: 安装 Conan 依赖
         run: |
           pip install "conan>=2,<3"
           conan profile detect --force
-          conan install . -of conan_debug_build \
-              -s build_type=Debug --build=missing
+          conan install . -of conan_debug_build -s build_type=Debug --build=missing
+
       - name: 配置 ASan
         run: |
           cmake -B build-asan -DENABLE_ASAN=ON -DCMAKE_BUILD_TYPE=Debug \
                 -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ \
                 -DCMAKE_TOOLCHAIN_FILE=conan_debug_build/conan_toolchain.cmake \
                 -DOPEN62541_ROOT=${{ github.workspace }}/third_party/open62541-v1.4.14
+
       - name: 构建 ASan
         run: cmake --build build-asan -j
+
       - name: 运行 ASan + UBSan
         run: ./scripts/run_asan.sh
+
       - name: 上传 ASan 日志
         if: always()
         uses: actions/upload-artifact@v4
@@ -59,36 +87,60 @@ jobs:
           name: asan-logs
           path: build-asan/asan_logs/
 
-
+  # ============================================================
+  # LSan
+  # ============================================================
   lsan:
     needs: build-open62541
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/cache@v4
+
+      - name: 恢复 open62541 缓存
+        id: cache-o6
+        uses: actions/cache/restore@v4
         with:
           path: third_party/open62541-v1.4.14
-          key: open62541-v1.4.14-ubuntu22-${{ hashFiles('scripts/build_open62541.sh') }}
-      - uses: actions/cache@v4
+          key: open62541-v1.4.14-ubuntu22-v2-${{ hashFiles('scripts/build_open62541.sh') }}
+
+      - name: 构建 open62541（缓存未命中时回退）
+        if: steps.cache-o6.outputs.cache-hit != 'true'
+        run: bash scripts/build_open62541.sh third_party/open62541-v1.4.14
+
+      - name: 检查 open62541 产物
+        run: |
+          set -e
+          ROOT=${{ github.workspace }}/third_party/open62541-v1.4.14
+          test -f "${ROOT}/include/open62541/client_highlevel.h" || { echo "缺 client_highlevel.h"; exit 1; }
+          test -f "${ROOT}/build/src_generated/open62541/config.h" || { echo "缺 src_generated"; exit 1; }
+          test -f "${ROOT}/build/bin/libopen62541.so" || { echo "缺 libopen62541.so"; exit 1; }
+          echo "open62541 就绪"
+
+      - name: 恢复 Conan 缓存
+        uses: actions/cache@v4
         with:
-          path: ~/.conan
-          key: conan-${{ runner.os }}-${{ hashFiles('conanfile.*') }}
+          path: ~/.conan2
+          key: conan2-${{ runner.os }}-${{ hashFiles('conanfile.*') }}
+
       - name: 安装 Conan 依赖
         run: |
           pip install "conan>=2,<3"
           conan profile detect --force
-          conan install . -of conan_debug_build \
-              -s build_type=Debug --build=missing
+          conan install . -of conan_debug_build -s build_type=Debug --build=missing
+
       - name: 配置 LSan
         run: |
           cmake -B build-lsan -DENABLE_LSAN=ON -DCMAKE_BUILD_TYPE=Debug \
                 -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ \
                 -DCMAKE_TOOLCHAIN_FILE=conan_debug_build/conan_toolchain.cmake \
                 -DOPEN62541_ROOT=${{ github.workspace }}/third_party/open62541-v1.4.14
+
       - name: 构建 LSan
         run: cmake --build build-lsan -j
+
       - name: 运行 LSan
         run: ./scripts/run_lsan.sh
+
       - name: 上传 LSan 日志
         if: always()
         uses: actions/upload-artifact@v4
@@ -96,37 +148,60 @@ jobs:
           name: lsan-logs
           path: build-lsan/lsan_logs/
 
-
+  # ============================================================
+  # TSan
+  # ============================================================
   tsan:
     needs: build-open62541
     runs-on: ubuntu-22.04
-    # TSan 对 ASLR 敏感，setarch -R 已在脚本里；如仍误报，把 runner 换成自托管
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/cache@v4
+
+      - name: 恢复 open62541 缓存
+        id: cache-o6
+        uses: actions/cache/restore@v4
         with:
           path: third_party/open62541-v1.4.14
-          key: open62541-v1.4.14-ubuntu22-${{ hashFiles('scripts/build_open62541.sh') }}
-      - uses: actions/cache@v4
+          key: open62541-v1.4.14-ubuntu22-v2-${{ hashFiles('scripts/build_open62541.sh') }}
+
+      - name: 构建 open62541（缓存未命中时回退）
+        if: steps.cache-o6.outputs.cache-hit != 'true'
+        run: bash scripts/build_open62541.sh third_party/open62541-v1.4.14
+
+      - name: 检查 open62541 产物
+        run: |
+          set -e
+          ROOT=${{ github.workspace }}/third_party/open62541-v1.4.14
+          test -f "${ROOT}/include/open62541/client_highlevel.h" || { echo "缺 client_highlevel.h"; exit 1; }
+          test -f "${ROOT}/build/src_generated/open62541/config.h" || { echo "缺 src_generated"; exit 1; }
+          test -f "${ROOT}/build/bin/libopen62541.so" || { echo "缺 libopen62541.so"; exit 1; }
+          echo "open62541 就绪"
+
+      - name: 恢复 Conan 缓存
+        uses: actions/cache@v4
         with:
-          path: ~/.conan
-          key: conan-${{ runner.os }}-${{ hashFiles('conanfile.*') }}
+          path: ~/.conan2
+          key: conan2-${{ runner.os }}-${{ hashFiles('conanfile.*') }}
+
       - name: 安装 Conan 依赖
         run: |
           pip install "conan>=2,<3"
           conan profile detect --force
-          conan install . -of conan_debug_build \
-              -s build_type=Debug --build=missing
+          conan install . -of conan_debug_build -s build_type=Debug --build=missing
+
       - name: 配置 TSan
         run: |
           cmake -B build-tsan -DENABLE_TSAN=ON -DCMAKE_BUILD_TYPE=Debug \
                 -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ \
                 -DCMAKE_TOOLCHAIN_FILE=conan_debug_build/conan_toolchain.cmake \
                 -DOPEN62541_ROOT=${{ github.workspace }}/third_party/open62541-v1.4.14
+
       - name: 构建 TSan
         run: cmake --build build-tsan -j
+
       - name: 运行 TSan
         run: ./scripts/run_tsan.sh
+
       - name: 上传 TSan 日志
         if: always()
         uses: actions/upload-artifact@v4
@@ -134,26 +209,47 @@ jobs:
           name: tsan-logs
           path: build-tsan/tsan_logs/
 
-
-  # 可选：非 sanitizer 的功能回归 + 重复 50 次
+  # ============================================================
+  # 功能回归 + 抖 flaky
+  # ============================================================
   flaky:
     needs: build-open62541
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/cache@v4
+
+      - name: 恢复 open62541 缓存
+        id: cache-o6
+        uses: actions/cache/restore@v4
         with:
           path: third_party/open62541-v1.4.14
-          key: open62541-v1.4.14-ubuntu22-${{ hashFiles('scripts/build_open62541.sh') }}
-      - uses: actions/cache@v4
+          key: open62541-v1.4.14-ubuntu22-v2-${{ hashFiles('scripts/build_open62541.sh') }}
+
+      - name: 构建 open62541（缓存未命中时回退）
+        if: steps.cache-o6.outputs.cache-hit != 'true'
+        run: bash scripts/build_open62541.sh third_party/open62541-v1.4.14
+
+      - name: 检查 open62541 产物
+        run: |
+          set -e
+          ROOT=${{ github.workspace }}/third_party/open62541-v1.4.14
+          test -f "${ROOT}/include/open62541/client_highlevel.h" || { echo "缺 client_highlevel.h"; exit 1; }
+          test -f "${ROOT}/build/src_generated/open62541/config.h" || { echo "缺 src_generated"; exit 1; }
+          test -f "${ROOT}/build/bin/libopen62541.so" || { echo "缺 libopen62541.so"; exit 1; }
+          echo "open62541 就绪"
+
+      - name: 恢复 Conan 缓存
+        uses: actions/cache@v4
         with:
-          path: ~/.conan
-          key: conan-${{ runner.os }}-${{ hashFiles('conanfile.*') }}
+          path: ~/.conan2
+          key: conan2-${{ runner.os }}-${{ hashFiles('conanfile.*') }}
+
       - name: 安装 Conan 依赖
         run: |
           pip install "conan>=2,<3"
           conan profile detect --force
           conan install . -of conan_debug_build -s build_type=Debug --build=missing
+
       - name: 构建 Debug
         run: |
           cmake -B build -DCMAKE_BUILD_TYPE=Debug \
@@ -161,9 +257,10 @@ jobs:
                 -DCMAKE_TOOLCHAIN_FILE=conan_debug_build/conan_toolchain.cmake \
                 -DOPEN62541_ROOT=${{ github.workspace }}/third_party/open62541-v1.4.14
           cmake --build build -j
+
       - name: 重复 + 乱序（抖 flaky）
         run: |
           cd build
           ./tests-build/tests \
-              --gtest_repeat=50 --gtest_shuffle --gtest_break_on_failure=0
+              --gtest_repeat=50 --gtest_shuffle --gtest_break_on_failure=0 \
               --gtest_fail_if_no_test_selected

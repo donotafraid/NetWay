@@ -1,15 +1,12 @@
 # 忽略 logs 目录下所有内容
 logs/
 .cache/
-build/
 conan_debug_build/
 conan_release_build/
 build_log.txt
-small_test.txt
 bin/
-./scripts
+build-asan/
+build-lsan/
+build-tsan/
 
 
-# 忽略临时文件夹
-# 忽略所有 .tmp 文件
-# *.tmpbuild-lsan/

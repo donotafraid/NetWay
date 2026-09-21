@@ -19,10 +19,21 @@ fi
 FILTER_CONCURRENCY='Client.T3_*:Client.TA2_*:Client.TC_*:ClientTest.T5_*:Client.T16_*:Client.T17_*:Client.T18_*:Client.T25_*'
 FILTER_API_LEASE='Client.T27_*'
 FILTER_DESTRUCTOR='Client.T8C1*'
+FILTER_CHECK_CONNECTED='Client.T31_*:Client.T32_*:Client.T33_*'
 
 run_one() {
   local name="$1" filter="$2"
   echo "=== TSan: ${name} (filter=${filter}) ==="
+
+  local n
+  n=$("${TEST_BIN}" --gtest_list_tests --gtest_filter="${filter}" 2>/dev/null \
+        | grep -cE '^\s+\S' || true)
+  if [[ "${n}" -eq 0 ]]; then
+    echo "ERROR: filter '${filter}' matched 0 tests" >&2
+    return 1
+  fi
+  echo "  -> ${n} tests selected"
+
   TSAN_OPTIONS='halt_on_error=1:abort_on_error=1:exitcode=66:report_signal_unsafe=0' \
     ${ARCH_FLAG} "${TEST_BIN}" --gtest_filter="${filter}" \
     2>&1 | tee "${LOG_DIR}/${name}.log"
@@ -32,5 +43,6 @@ run_one() {
 run_one concurrency  "${FILTER_CONCURRENCY}"
 run_one api_lease    "${FILTER_API_LEASE}"
 run_one destructor   "${FILTER_DESTRUCTOR}"
+run_one checkConnected  "${FILTER_CHECK_CONNECTED}"
 
 echo "TSan 全部通过。日志在 ${LOG_DIR}/"
