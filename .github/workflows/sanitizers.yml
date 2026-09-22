@@ -84,7 +84,8 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: 输出被测 SHA
-        run: echo "本次 ASan 测试 SHA: ${{ github.sha }}"
+        run: |
+          echo "本次运行 SHA: ${{ github.sha }}"
 
       - name: 安装 Clang 17、libc++、ccache
         run: |
@@ -171,7 +172,8 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: 输出被测 SHA
-        run: echo "本次 LSan 测试 SHA: ${{ github.sha }}"
+        run: |
+          echo "本次运行 SHA: ${{ github.sha }}"
 
       - name: 安装 Clang 17、libc++、ccache
         run: |
@@ -258,7 +260,8 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: 输出被测 SHA
-        run: echo "本次 TSan 测试 SHA: ${{ github.sha }}"
+        run: |
+          echo "本次运行 SHA: ${{ github.sha }}"
 
       - name: 安装 Clang 17、libc++、ccache
         run: |
@@ -345,7 +348,8 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: 输出被测 SHA
-        run: echo "本次 flaky 测试 SHA: ${{ github.sha }}"
+        run: |
+          echo "本次运行 SHA: ${{ github.sha }}"
 
       - name: 安装 Clang 17、libc++、ccache
         run: |
