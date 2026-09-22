@@ -78,7 +78,7 @@ TEST(Client, T8C1_ShutdownRejectedWhileRecreating) {
 
   ASSERT_TRUE(waitFor([&] { return inRecreate.try_wait(); }, 2s))
       << "recreator 未在 2s 内进入 connectAsync 钩子，前置条件不成立";
-  EXPECT_FALSE(ClientTestHooks::getRecreatingStatus(*client))
+  EXPECT_TRUE(ClientTestHooks::getRecreatingStatus(*client))
       << "进入 connectAsync 后 m_recreating 仍为 false";
 
   // 3) 核心契约：recreate 期间 shutdown() 必须返回错误
