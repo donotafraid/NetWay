@@ -60,7 +60,7 @@ CompileFlags:
   CompilationDatabase: compile_commands.json
 
 Index:
-  Background: true
+  Background: Build
 ```
 
 ### 3. CMakeLists.txt 配置
@@ -177,7 +177,7 @@ Diagnostics:
       - cppcoreguidelines-avoid-magic-numbers
 
 Index:
-  Background: true
+  Background: Build
 
 InlayHints:
   Enabled: Yes

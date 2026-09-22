@@ -2,10 +2,9 @@
   "clangd.path": "/usr/bin/clangd",
   "clangd.arguments": [
     "--background-index",
-    "--compile-commands-dir=${workspaceFolder}/build",
+    "--compile-commands-dir=${workspaceFolder}",
     "--query-driver=/usr/bin/clang++",
     "--clang-tidy",
-    "--clang-tidy-checks=*",
     "--all-scopes-completion",
     "--header-insertion=never",
     "--completion-style=detailed",

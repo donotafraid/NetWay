@@ -89,7 +89,7 @@ TEST(Client, T8C1_ShutdownRejectedWhileRecreating) {
 
   // 4) 关键前提：shutdown 被拒绝后，不应该置 m_terminated
   //    否则 recreate 会被迫失败
-  EXPECT_FALSE(ClientTestHooks::getRecreatingStatus(*client))
+  EXPECT_TRUE(ClientTestHooks::getRecreatingStatus(*client))
       << "shutdown 被拒绝后 m_recreating 被误复位，违反拒绝语义";
 
   // 5) 放行 recreate，验证它仍能成功

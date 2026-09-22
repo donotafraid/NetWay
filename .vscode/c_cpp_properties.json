@@ -4,7 +4,6 @@
       "name": "Clang",
       "includePath": [
         "${workspaceFolder}/include/**",
-        "${workspaceFolder}/build/**",  
         "/usr/include/**",
         "/usr/lib/llvm-17/include/**"  
       ],
@@ -15,7 +14,7 @@
       "cStandard": "c17",
       "cppStandard": "c++17",           
       "intelliSenseMode": "linux-clang-x64",
-      "compileCommands": "${workspaceFolder}/build/compile_commands.json"
+      "compileCommands": "${workspaceFolder}/compile_commands.json"
     }
   ],
   "version": 4
