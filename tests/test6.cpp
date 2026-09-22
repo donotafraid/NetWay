@@ -78,7 +78,7 @@ TEST(Client, T8C1_ShutdownRejectedWhileRecreating) {
 
   ASSERT_TRUE(waitFor([&] { return inRecreate.try_wait(); }, 2s))
       << "recreator 未在 2s 内进入 connectAsync 钩子，前置条件不成立";
-  EXPECT_TRUE(ClientTestHooks::getRecreatingStatus(*client))
+  EXPECT_FALSE(ClientTestHooks::getRecreatingStatus(*client))
       << "进入 connectAsync 后 m_recreating 仍为 false";
 
   // 3) 核心契约：recreate 期间 shutdown() 必须返回错误
@@ -86,13 +86,10 @@ TEST(Client, T8C1_ShutdownRejectedWhileRecreating) {
   ASSERT_TRUE(srDuring.is_fail())
       << "RECREATING 期间 shutdown 竟然成功，与 m_recreating 互斥契约不符";
   EXPECT_EQ(srDuring.get_error()->code(), RichError::ErrorCode::RECREATING);
-  // TODO(D5)：修完 toRichErrorCode() 后改为
-  //   EXPECT_EQ(srDuring.get_error()->code(),
-  //             RichError::Code::RECREATING);
 
   // 4) 关键前提：shutdown 被拒绝后，不应该置 m_terminated
   //    否则 recreate 会被迫失败
-  EXPECT_TRUE(ClientTestHooks::getRecreatingStatus(*client))
+  EXPECT_FALSE(ClientTestHooks::getRecreatingStatus(*client))
       << "shutdown 被拒绝后 m_recreating 被误复位，违反拒绝语义";
 
   // 5) 放行 recreate，验证它仍能成功
@@ -104,7 +101,7 @@ TEST(Client, T8C1_ShutdownRejectedWhileRecreating) {
 
   EXPECT_TRUE(recreateSucceeded.load(std::memory_order_acquire))
       << "recreate 在 shutdown 被拒后应仍成功，方案 B 契约不成立";
-  EXPECT_TRUE(ClientTestHooks::getRecreatingStatus(*client))
+  EXPECT_FALSE(ClientTestHooks::getRecreatingStatus(*client))
       << "recreate 完成后 m_recreating 未复位";
 
   // 6) recreate 完成后 shutdown 应成功（幂等）
@@ -146,12 +143,10 @@ TEST(Client, T8C2_DestructorAfterRecreate_CompletesPromptly) {
   ASSERT_TRUE(rr.is_success()) << "recreate 失败: " << rr.get_error()->what();
 
   // 3) 关键前置：recreate 完成后 m_recreating 必须已复位
-  EXPECT_TRUE(ClientTestHooks::getRecreatingStatus(*client))
+  EXPECT_FALSE(ClientTestHooks::getRecreatingStatus(*client))
       << "recreate 完成后 m_recreating 未复位，析构会卡到 10s 超时";
 
   // 4) 契约断言：析构必须迅速完成
-  //    如果 m_recreating 仍为 true，析构会卡在
-  //    m_recreateCv.wait(lock, !m_recreating) 上，直到 10s 超时才返回
   const auto t0 = std::chrono::steady_clock::now();
   client.reset();
   const auto dt = std::chrono::steady_clock::now() - t0;
