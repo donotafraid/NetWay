@@ -252,22 +252,6 @@ private:
 
 }; // namespace
 
-namespace {
-  //自定义Log格式，避免T5的并发导致的错误发生
-  static void customLog(void * /*context*/,
-                        UA_LogLevel /*level*/,
-                        UA_LogCategory /*category*/,
-                        const char *msg,
-                        va_list args) {
-      // 只用 UTC，不碰 localtime/mktime/tzset
-      vfprintf(stderr, msg, args);
-      fputc('\n', stderr);
-  }
-  
-  // 2) 包成 UA_Logger。必须是静态存储期，因为 config 只存指针
-  static UA_Logger g_customLogger = { customLog, nullptr };
-};
-
 /**
  * @brief Impl 生命周期与回调契约
  *
@@ -438,7 +422,6 @@ struct OPC_UA_Client::Impl
   Result<Unit, DisconnectErrorState> disconnect();
   // shutdown():
   //   - 幂等：可随时调用。
-  //   - 非阻塞：只置位 + notify，不主动 disconnect。
   //   - 实际断开由 ~Impl → doCleanup → m_impl.reset() → UA_Client_delete 完成。
   //   - 断开时机取决于最后一个 UA_ClientPtr 的释放时机，可能晚于 shutdown()
   //   返回。
@@ -1279,7 +1262,6 @@ OPC_UA_Client::Impl::applyConfiguration(bool useDefault) {
   if (!config) {
     return Result<Unit, RichError>::error(RichError{RichError::ErrorCode::SDK_ERROR,"get Config fail"});
   }
-  config->logging = &g_customLogger;
 
   // 2. 应用默认配置（如果需要）
   if (useDefault) {
@@ -1514,7 +1496,15 @@ void OPC_UA_Client::Impl::doWatchdogDecision(std::shared_ptr<Impl> ImplPtr) {
   if (getEffectiveStopSignal())
     return;
 
-  UA_ClientPtr &client = ImplPtr->m_impl;
+  UA_ClientPtr client;
+  {
+    std::lock_guard<std::mutex> lock(m_lock);
+    if (!ImplPtr->m_impl) {
+      return ;
+    }
+    client = ImplPtr->m_impl;
+  }
+
   // ---------- 健康检查 ----------
   bool healthyResult = false;
   {
@@ -1642,6 +1632,11 @@ Result<std::unique_ptr<OPC_UA_Client>, RichError>
 OPC_UA_Client::createWithSdk(std::shared_ptr<ISdk> sdk,
                              const std::string &url, ClientConfig cfg,bool useDefault,bool enableWatchDog) {
   try {
+    if (!sdk) {
+      return Result<std::unique_ptr<OPC_UA_Client>, RichError>::error(RichError{
+          RichError::ErrorCode::NOT_INITIALIZED, "createWithSdk: sdk is null"});
+    }
+
     // new 失败会抛出 std::bad_alloc，由外层的 catch 捕获
     auto client = std::unique_ptr<OPC_UA_Client>(
         new OPC_UA_Client(url, cfg,sdk));
@@ -1716,7 +1711,7 @@ OPC_UA_Client::OPC_UA_Client(const std::string endpointUrl, ClientConfig config,
   }
   std::shared_ptr<CallbackContext> callbackContext_ =
       std::make_shared<CallbackContext>();
-  OPC_UA_Client::Impl::UA_ClientPtr raw(sdk->clientNew(nullptr), UA_ClientDeleter{m_recreateSync->m_sdkForRecreate, callbackContext_});
+  OPC_UA_Client::Impl::UA_ClientPtr raw(m_recreateSync->m_sdkForRecreate->clientNew(nullptr), UA_ClientDeleter{m_recreateSync->m_sdkForRecreate, callbackContext_});
   if (raw) {
     pImpl = std::make_shared<Impl>(config, endpointUrl, std::move(raw),
                                    callbackContext_, m_recreateSync->m_sdkForRecreate);
@@ -1982,14 +1977,23 @@ Result<Unit, RichError> OPC_UA_Client::recreateGiveUpClient() {
     m_recreateSync->m_recreating.store(true, std::memory_order_release);
   }
 
+  RecreateGuard recreateGuard{m_recreateSync};
+
   {
-     std::unique_lock lk(m_recreateSync->m_recreateLock);
-     auto timeoutDuration = std::chrono::milliseconds(2000);
-     m_recreateSync->m_inFlightCv.wait_for(
-         lk, timeoutDuration,[&] { return m_recreateSync->m_inFlight == 0; });
+    std::unique_lock lk(m_recreateSync->m_recreateLock);
+    const auto timeoutDuration = std::chrono::milliseconds(2000);
+
+    const bool drained = m_recreateSync->m_inFlightCv.wait_for(
+        lk, timeoutDuration, [&] { return m_recreateSync->m_inFlight == 0; });
+
+    if (!drained) {
+      return Result<Unit, RichError>::error(
+          {RichError{RichError::ErrorCode::IN_FLIGHT_TIMEOUT,
+                     "recreateGiveUpClient: timeout waiting for in-flight APIs "
+                     "to drain"}});
+    }
   }
 
-  RecreateGuard recreateGuard{m_recreateSync};
   LifeState currentLifeState{LifeState::RUNNING};
   {
     std::lock_guard<std::mutex> lock(m_recreateSync->m_lock);

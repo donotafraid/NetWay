@@ -17,6 +17,7 @@
 
 class ISdk;
 class UA_ClientPtr;
+class RecreateSync;
 
 // 连接状态的枚举
 enum class ConnectionState {
@@ -425,6 +426,7 @@ public:
   
   // 仅为了测试T8-C使用
   bool getRecreatingStatus();
+
   //  独立的外置对象，确保整个对象析构时，部分未完成线程还能调用某些对象
   struct RecreateSync {
     // pImpl（外层指针）、Impl::m_impl、Impl 内部成员（如 m_config、m_impl）
@@ -443,9 +445,9 @@ public:
     std::string m_endpointUrl;
     ClientConfig m_config;                  // 保存初始配置用于重建
     std::shared_ptr<ISdk> m_sdkForRecreate; // 保存同一对象，方便Mock测试
-
   };
 private:
+
   std::string connectErrorStateToString(ConnectErrorState state);
   std::string disconnectErrorStateToString(DisconnectErrorState state);
   RichError::ErrorCode toRichErrorCode(ConnectErrorState s); 

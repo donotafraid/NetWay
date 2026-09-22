@@ -216,5 +216,5 @@ target_link_libraries(file_platform PRIVATE
 
 set_target_properties(
     file_platform PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY "${InternalrootDir}/tmp/bin"
+    RUNTIME_OUTPUT_DIRECTORY "${InternalrootDir}/bin"
 )

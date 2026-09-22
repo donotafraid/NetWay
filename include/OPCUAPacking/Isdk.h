@@ -5,8 +5,26 @@
 #include <open62541/config.h>
 #include <open62541/client_highlevel.h>
 #include <open62541/client_config_default.h>
+#include <iostream>
 
 class UA_Client;
+
+namespace {
+  //自定义Log格式，避免T5的并发导致的错误发生
+  static void customLog(void * /*context*/,
+                        UA_LogLevel /*level*/,
+                        UA_LogCategory /*category*/,
+                        const char *msg,
+                        va_list args) {
+      // 只用 UTC，不碰 localtime/mktime/tzset
+      vfprintf(stderr, msg, args);
+      fputc('\n', stderr);
+  }
+  
+  // 2) 包成 UA_Logger。必须是静态存储期，因为 config 只存指针
+  static UA_Logger g_customLogger = { customLog, nullptr,nullptr };
+};
+
 
 // sdk.h — 只声明 Impl 真正要拦截的调用
 class ISdk {

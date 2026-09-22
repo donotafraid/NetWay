@@ -55,9 +55,30 @@ public:
   // ============================================================
   UA_Client *clientNew(const UA_ClientConfig *cfg) override {
     std::lock_guard lk(clientMu_);
-    UA_Client *c = cfg ? UA_Client_newWithConfig(cfg) : UA_Client_new();
-    realClient_ = c;
-    return c;
+    UA_Client *client = nullptr;
+
+    if (cfg) {
+      client = UA_Client_newWithConfig(cfg);
+    } else {
+      UA_ClientConfig cfg_;
+      std::memset(&cfg_, 0, sizeof(cfg_)); // ★ 先清零，杜绝栈垃圾
+      UA_ClientConfig_setDefault(&cfg_);
+
+      if (!cfg_.logging) {
+        // setDefault 没给 logger（ABI 不匹配 / 日志被禁用 / 其他）
+        // 直接落到静态 logger，clear = nullptr，不需要释放
+        cfg_.logging = &g_customLogger;
+      } else {
+        // 就地复用默认 logger，保留 clear，避免泄漏
+        cfg_.logging->log = g_customLogger.log;
+        cfg_.logging->context = g_customLogger.context;
+      }
+
+      client = UA_Client_newWithConfig(&cfg_);
+    }
+
+    realClient_ = client; // ★ 必须在 return 之前
+    return client;
   }
 
   void clientDelete(UA_Client *c) override {
