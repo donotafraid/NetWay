@@ -4,6 +4,7 @@
 #include <string>
 #include "tests/MockSdk.h"
 #include "tests/util/wait_for.h"
+#include "OPCUAPacking/detail/ClientTestHooks.h"
 
 TEST(Client, T3_TransientDisconnectRecoversWithoutGiveUp_Mock) {
     auto sdk = std::make_shared<MockSdk>();
@@ -52,7 +53,7 @@ TEST(Client, T3_TransientDisconnectRecoversWithoutGiveUp_Mock) {
     };
 
     lastError.clear();
-    client->pumpWatchdogForTest();
+    ClientTestHooks::pumpWatchdogForTest(*client);
     bool recovering = waitFor([&]{ return lifeStateIs(LifeState::RECOVERING); },
                               std::chrono::seconds(3));
     EXPECT_TRUE(recovering) << "lastError: " << lastError;
@@ -61,7 +62,7 @@ TEST(Client, T3_TransientDisconnectRecoversWithoutGiveUp_Mock) {
     sdk->setMode(MockSdk::Mode::Connected);
 
     lastError.clear();
-    client->pumpWatchdogForTest();
+    ClientTestHooks::pumpWatchdogForTest(*client);
     bool recovered = waitFor([&]{ return lifeStateIs(LifeState::RUNNING); },
                              std::chrono::seconds(5));
     EXPECT_TRUE(recovered) << "lastError: " << lastError;

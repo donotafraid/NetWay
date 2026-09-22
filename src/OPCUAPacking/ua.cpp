@@ -149,7 +149,7 @@ private:
 
 class RecreateGuard {
 public:
-  RecreateGuard(std::shared_ptr<OPC_UA_Client::RecreateSync> recreateSync)
+  RecreateGuard(std::shared_ptr<RecreateSync> recreateSync)
       : m_recreateSync(recreateSync) {}
 
   ~RecreateGuard() {
@@ -183,7 +183,7 @@ public:
 
 private:
   bool isReset = false;
-  std::shared_ptr<OPC_UA_Client::RecreateSync> m_recreateSync;
+  std::shared_ptr<RecreateSync> m_recreateSync;
 };
 
 class ThreadGuard {
@@ -215,7 +215,7 @@ private:
 
 class ApiLease {
 public:
-  explicit ApiLease(std::shared_ptr<OPC_UA_Client::RecreateSync> recreateSync)
+  explicit ApiLease(std::shared_ptr<RecreateSync> recreateSync)
       : s_(recreateSync) {
     {
       std::lock_guard<std::mutex> lock(s_->m_recreateLock);
@@ -246,7 +246,7 @@ public:
   bool isActive() { return active; }
 
 private:
-  std::shared_ptr<OPC_UA_Client::RecreateSync> s_;
+  std::shared_ptr<RecreateSync> s_;
   bool active = false;
 };
 
@@ -260,6 +260,7 @@ private:
  **/
 struct OPC_UA_Client::Impl
     : public std::enable_shared_from_this<OPC_UA_Client::Impl> {
+
   using UA_ClientPtr = std::shared_ptr<UA_Client>;
   UA_ClientPtr m_impl;
   std::shared_ptr<ISdk> m_sdk;
@@ -624,7 +625,7 @@ OPC_UA_Client::Impl::batchRead(const std::vector<ReadValue> &batchReadNodes) {
                              // 1. 检查是否已连接
     if (!pImplQuote->m_impl) {
       return Result<std::vector<ReadResult>, RichError>::error(
-          RichError{RichError::ErrorCode::NOT_INITIALIZED,
+          RichError{RichError::ErrorCode::ALREADY_TERMINATED,
                     "batchRead: client is nullptr"});
     } else if (pImplQuote->getEffectiveStopSignal()) {
       return Result<std::vector<ReadResult>, RichError>::error(
@@ -825,7 +826,7 @@ OPC_UA_Client::Impl::batchWrite(
         pImplQuote->m_lock); // 锁内拷贝 shared_ptr 快照，确保对象生命周期
     if (!pImplQuote->m_impl) {
       return Result<std::vector<WriteResult>, RichError>::error(
-          RichError{RichError::ErrorCode::NOT_INITIALIZED,
+          RichError{RichError::ErrorCode::ALREADY_TERMINATED,
                     "batchWrite: client is nullptr"});
     } else if (pImplQuote->getEffectiveStopSignal()) {
       return Result<std::vector<WriteResult>, RichError>::error(
@@ -1593,7 +1594,8 @@ OPC_UA_Client::create(const std::string &endpointUrl, ClientConfig config,
     auto connectResult = client->connect();
     if (connectResult.is_fail()) {
       return Result<std::unique_ptr<OPC_UA_Client>, RichError>::error(
-          RichError{connectResult.get_error()->what()});
+          RichError{connectResult.get_error()->code(),
+                    connectResult.get_error()->what()});
     }
 
     // startWatchdog() 内部若 std::thread 创建失败会抛出 std::system_error
@@ -1653,7 +1655,8 @@ OPC_UA_Client::createWithSdk(std::shared_ptr<ISdk> sdk,
     auto connectResult = client->connect();
     if (connectResult.is_fail()) {
       return Result<std::unique_ptr<OPC_UA_Client>, RichError>::error(
-          RichError{connectResult.get_error()->what()});
+          RichError{connectResult.get_error()->code(),
+                    connectResult.get_error()->what()});
     }
 
     if(!enableWatchDog)
@@ -1861,7 +1864,7 @@ Result<Unit, RichError> OPC_UA_Client::connect() {
     if (pImpl) {
       ImplPtr = pImpl;
     } else {
-      return Result<Unit, RichError>::error({RichError{RichError::ErrorCode::NOT_INITIALIZED, "connect: client is nullptr"}});
+      return Result<Unit, RichError>::error({RichError{RichError::ErrorCode::ALREADY_TERMINATED, "connect: client is nullptr"}});
     }
   }
 
@@ -1893,7 +1896,7 @@ Result<Unit, RichError> OPC_UA_Client::disconnect() {
     if (pImpl) {
       ImplPtr = pImpl;
     } else {
-      return Result<Unit, RichError>::error({RichError{RichError::ErrorCode::NOT_INITIALIZED, "disconnect: client is nullptr"}});
+      return Result<Unit, RichError>::error({RichError{RichError::ErrorCode::ALREADY_TERMINATED, "disconnect: client is nullptr"}});
     }
   }
 
@@ -1926,7 +1929,7 @@ Result<ConnectionState, RichError> OPC_UA_Client::checkConnected() {
       ImplPtr = pImpl;
     } else {
       return Result<ConnectionState, RichError>::error(
-          {RichError{RichError::ErrorCode::NOT_INITIALIZED, "checkConnected: client is nullptr"}});
+          {RichError{RichError::ErrorCode::ALREADY_TERMINATED, "checkConnected: client is nullptr"}});
     }
   }
 
@@ -1941,7 +1944,6 @@ Result<ConnectionState, RichError> OPC_UA_Client::checkConnected() {
     }
   }
 
-  // 关键改动：走 isConnected()，它会 callRunIterate + getState 刷新缓存
   auto r = ImplPtr->isConnected();
   if (r.has_value()) {
     auto status = r.value_or({false});
@@ -1959,6 +1961,43 @@ Result<ConnectionState, RichError> OPC_UA_Client::checkConnected() {
     auto errorInfo {*r.get_error()};
     return Result<ConnectionState, RichError>::error(
         RichError{toRichErrorCode(errorInfo),"checkConnected: fail"});
+  }
+}
+
+Result<ConnectionState, RichError> OPC_UA_Client::isHealthy() {
+  std::shared_ptr<Impl> ImplPtr;
+  ApiLease lease{m_recreateSync};
+  {
+    std::lock_guard<std::mutex> lock(m_recreateSync->m_lock);
+    if (pImpl) {
+      ImplPtr = pImpl;
+    } else {
+      return Result<ConnectionState, RichError>::error(
+          {RichError{RichError::ErrorCode::ALREADY_TERMINATED,
+                     "checkConnected: client is nullptr"}});
+    }
+  }
+
+  if (!lease.isActive()) {
+    if (m_recreateSync->m_recreating.load()) {
+      return Result<ConnectionState, RichError>::error({RichError{
+          RichError::ErrorCode::RECREATING,
+          "checkConnected: client is being recreated, please retry later"}});
+    }
+    if (m_recreateSync->m_terminated.load()) {
+      return Result<ConnectionState, RichError>::error(
+          {RichError{RichError::ErrorCode::ALREADY_TERMINATED,
+                     "checkConnected: client has been terminated"}});
+    }
+  }
+
+  auto r = ImplPtr->isHealthy();
+  if (r) {
+    return Result<ConnectionState, RichError>::success(
+        ConnectionState::CONNECTED);
+  } else {
+    return Result<ConnectionState, RichError>::error(
+        RichError{RichError::ErrorCode::NOT_CONNECTED, "checkConnected: fail"});
   }
 }
 
@@ -2014,9 +2053,7 @@ Result<Unit, RichError> OPC_UA_Client::recreateGiveUpClient() {
     std::lock_guard<std::mutex> lock(m_recreateSync->m_lock);
     if (pImpl) {
       effectiveConfig = pImpl->getEffectiveConfig();
-    } else {
-      effectiveConfig = m_recreateSync->m_config; // 使用初始配置
-    }
+    } 
   }
 
   {
@@ -2119,7 +2156,7 @@ Result<LifeState, RichError> OPC_UA_Client::checkLifeState()  {
       ImplPtr = pImpl;
     } else {
       return Result<LifeState, RichError>::error(
-          {RichError{RichError::ErrorCode::NOT_INITIALIZED, "checkLifeState: client is nullptr"}});
+          {RichError{RichError::ErrorCode::ALREADY_TERMINATED, "checkLifeState: client is nullptr"}});
     }
   }
   if (!lease.isActive()) {
@@ -2170,7 +2207,7 @@ OPC_UA_Client::batchRead(const std::vector<ReadValue> &batchReadNodes) {
       ImplPtr = pImpl;
     } else {
       return Result<std::vector<OPC_UA_Client::ReadResult>, RichError>::error(
-          {RichError{RichError::ErrorCode::NOT_INITIALIZED, "batchRead: client is nullptr"}});
+          {RichError{RichError::ErrorCode::ALREADY_TERMINATED, "batchRead: client is nullptr"}});
     }
   }
   if (!lease.isActive()) {
@@ -2200,7 +2237,7 @@ OPC_UA_Client::batchWrite(const std::vector<WriteValue> &batchWriteNodes) {
       ImplPtr = pImpl;
     } else {
       return Result<std::vector<OPC_UA_Client::WriteResult>, RichError>::error(
-          {RichError{RichError::ErrorCode::NOT_INITIALIZED, "batchWrite: client is nullptr"}});
+          {RichError{RichError::ErrorCode::ALREADY_TERMINATED, "batchWrite: client is nullptr"}});
     }
   }
   if (!lease.isActive()) {

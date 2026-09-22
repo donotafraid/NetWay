@@ -12,7 +12,7 @@ mkdir -p "${LOG_DIR}"
 ARCH_FLAG="${ARCH_FLAG:-}"
 
 # ASan + UBSan 覆盖：所有错误出口 + 生命周期 + 预算
-FILTER='Client.T1_*:Client.T2_*:Client.T3_*:Client.T4_*:Client.T8*:Client.TD_*:Client.T16_*:Client.T17_*:Client.T18_*:Client.T19_*:Client.T20_*:Client.T21_*:Client.T22_*:Client.T23_*:Client.T26_*:Client.T28_*:Client.T29_*:Client.T30_*:Client.T9_*:ClientTest.T2_*:ClientTest.T3_*:ClientTest.T4_*:ClientTest.T5_*:ClientTest.T9_*:ClientTest.TD_*:Client.TA2_*:Client.TC_*:Client.T25_*:Client.T27_*:ClientConfigTest.*'
+FILTER='Client.T1_*:Client.T2_*:Client.T3_*:Client.T4_*:Client.T8*:Client.TD_*:Client.T16_*:Client.T17_*:Client.T18_*:Client.T19_*:Client.T20_*:Client.T21_*:Client.T22_*:Client.T23_*:Client.T26_*:Client.T28_*:Client.T29_*:Client.T30_*:Client.T9_*:ClientTest.T2_*:ClientTest.T3_*:ClientTest.T4_*:ClientTest.T5_*:ClientTest.T9_*:ClientTest.TD_*:Client.TA2_*:Client.TC_*:Client.T25_*:Client.T27_*:ClientConfigTest.*:Client.T34_*:Client.T35_*:Client.T36_*:Client.T37_*:Client.T38_*:Client.T39_*:Client.T40_*:Client.T41_*:Client.T42_*:Client.T43_*:Client.T44_*:Client.T45_*:Client.T46_*:Client.T47_*'
 FILTER_CHECK_CONNECTED='Client.T31_*:Client.T32_*:Client.T33_*'
 
 

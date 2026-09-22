@@ -62,7 +62,10 @@ public:
     } else {
       UA_ClientConfig cfg_;
       std::memset(&cfg_, 0, sizeof(cfg_)); // ★ 先清零，杜绝栈垃圾
-      UA_ClientConfig_setDefault(&cfg_);
+      UA_StatusCode rc = UA_ClientConfig_setDefault(&cfg_);
+      if (rc != UA_STATUSCODE_GOOD) {
+        return nullptr; // 让 create()/createWithSdk() 走失败分支
+      }
 
       if (!cfg_.logging) {
         // setDefault 没给 logger（ABI 不匹配 / 日志被禁用 / 其他）
@@ -93,7 +96,13 @@ public:
   // ============================================================
   //  ISdk: connect
   // ============================================================
-  UA_StatusCode connectAsync(UA_Client *, const char *) override {
+  UA_StatusCode connectAsync(UA_Client *, const char *url) override {
+    connectAsyncCalls_.fetch_add(1, std::memory_order_relaxed);
+    {
+      std::lock_guard lk(urlMu_);
+      lastConnectUrl_ = (url ? std::string(url) : std::string());
+    }
+
     std::function<void()> h;
     {
       std::lock_guard lk(hookMu_);
@@ -106,8 +115,17 @@ public:
       mode_ = Mode::Connected;
     return UA_STATUSCODE_GOOD; // ★ 始终 GOOD：SDK 接受请求
   }
-
   UA_StatusCode disconnectAsync(UA_Client *) override {
+    disconnectAsyncCalls_.fetch_add(1, std::memory_order_relaxed);
+
+    std::function<void()> h;
+    {
+      std::lock_guard lk(hookMu_);
+      h = disconnectHook_;
+    }
+    if (h)
+      h(); // 阻塞点必须在改状态之前
+
     if (allowImplicitConversion.load(std::memory_order_acquire))
       mode_ = Mode::Disconnected;
     return UA_STATUSCODE_GOOD;
@@ -116,6 +134,22 @@ public:
     if (allowImplicitConversion.load(std::memory_order_acquire))
       mode_ = Mode::Disconnected;
     return UA_STATUSCODE_GOOD;
+  }
+
+  std::string lastConnectUrl() const {
+    std::lock_guard lk(urlMu_);
+    return lastConnectUrl_;
+  }
+  unsigned connectAsyncCallCount() const {
+    return connectAsyncCalls_.load(std::memory_order_relaxed);
+  }
+
+  void setDisconnectAsyncHook(std::function<void()> h) {
+    std::lock_guard lk(hookMu_);
+    disconnectHook_ = std::move(h);
+  }
+  unsigned disconnectAsyncCallCount() const {
+    return disconnectAsyncCalls_.load(std::memory_order_relaxed);
   }
 
   // ============================================================
@@ -285,6 +319,47 @@ public:
   }
 
   // ============================================================
+  //  ISdk: string read 
+  // ============================================================
+  void setReadItemString(size_t i, const std::string &value) {
+    std::lock_guard lk(shapeMu_);
+    if (itemString_.size() <= i)
+      itemString_.resize(i + 1);
+    if (itemStringSet_.size() <= i)
+      itemStringSet_.resize(i + 1, 0);
+    itemString_[i] = value;
+    itemStringSet_[i] = 1;
+  }
+
+  void clearLastConnectUrl() {
+    std::lock_guard lk(urlMu_);
+    lastConnectUrl_.clear();
+  }
+  // ============================================================
+  //  ISdk: callback
+  // ============================================================
+  void fireStateCallback(uint32_t status, uint32_t channel, uint32_t session) {
+    std::lock_guard lk(clientMu_);
+    if (!realClient_)
+      return;
+    UA_ClientConfig *cfg = UA_Client_getConfig(realClient_);
+    if (cfg && cfg->stateCallback)
+      cfg->stateCallback(realClient_,
+                         static_cast<UA_SecureChannelState>(channel),
+                         static_cast<UA_SessionState>(session),
+                         static_cast<UA_StatusCode>(status));
+  }
+
+  void fireInactivityCallback() {
+    std::lock_guard lk(clientMu_);
+    if (!realClient_)
+      return;
+    UA_ClientConfig *cfg = UA_Client_getConfig(realClient_);
+    if (cfg && cfg->inactivityCallback)
+      cfg->inactivityCallback(realClient_);
+  }
+
+  // ============================================================
   //  测试接缝 (1)：确定性虚拟时钟
   // ============================================================
   int64_t nowMs() override {
@@ -300,6 +375,8 @@ public:
   int64_t autoAdvanceMs() const {
     return autoAdvanceMs_.load(std::memory_order_relaxed);
   }
+
+
 
   // ============================================================
   //  测试接缝 (2)：getState 脚本队列
@@ -385,6 +462,16 @@ public:
     std::lock_guard lk2(svcMu_);
     readScript_.clear();
     writeScript_.clear();
+
+    itemString_.clear();
+    itemStringSet_.clear();
+
+    connectAsyncCalls_.store(0, std::memory_order_relaxed);
+    disconnectAsyncCalls_.store(0, std::memory_order_relaxed);
+    {
+      std::lock_guard lk(urlMu_);
+      lastConnectUrl_.clear();
+    }
   }
 
   // private function:
@@ -420,12 +507,23 @@ private:
       r.results[i].status = itemStatus;
 
       // 按项 value：仅当 status==GOOD 且 itemInt16_ 有值时填 INT16
-      if (itemStatus == UA_STATUSCODE_GOOD && i < itemInt16_.size()) {
-        const int16_t v = itemInt16_[i];
-        const UA_StatusCode rc = UA_Variant_setScalarCopy(
-            &r.results[i].value, &v, &UA_TYPES[UA_TYPES_INT16]);
-        if (rc == UA_STATUSCODE_GOOD) {
-          r.results[i].hasValue = true;
+      {
+        if (itemStatus == UA_STATUSCODE_GOOD) {
+          if (i < itemStringSet_.size() && itemStringSet_[i]) {
+            UA_String s = UA_STRING_ALLOC(itemString_[i].c_str());
+            const UA_StatusCode rc = UA_Variant_setScalarCopy(
+                &r.results[i].value, &s, &UA_TYPES[UA_TYPES_STRING]);
+            UA_String_clear(&s);
+            if (rc == UA_STATUSCODE_GOOD)
+              r.results[i].hasValue = true;
+          } else if (i < itemInt16_.size()) {
+            const int16_t v = itemInt16_[i];
+            const UA_StatusCode rc = UA_Variant_setScalarCopy(
+                &r.results[i].value, &v, &UA_TYPES[UA_TYPES_INT16]);
+            if (rc == UA_STATUSCODE_GOOD) {
+              r.results[i].hasValue = true;
+            }
+          }
         }
       }
     }
@@ -491,4 +589,14 @@ private:
   std::optional<std::tuple<uint32_t, size_t>> writeShape_;
   std::vector<uint32_t> itemStatus_;
   std::vector<int16_t> itemInt16_;
+
+  std::atomic<unsigned> connectAsyncCalls_{0};
+  mutable std::mutex urlMu_;
+  std::string lastConnectUrl_;
+
+  std::atomic<unsigned> disconnectAsyncCalls_{0};
+  std::function<void()> disconnectHook_;
+
+  std::vector<std::string> itemString_;
+  std::vector<uint8_t> itemStringSet_;
 };

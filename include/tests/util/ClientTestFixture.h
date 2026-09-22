@@ -5,10 +5,13 @@
 #include <cstdint>
 #include <memory>
 #include <thread>
+#include <stdint.h>
 
 struct UA_Server;   // 前向声明，不 include open62541/server.h
 class OPC_UA_Client;
 struct ClientConfig;
+
+typedef uint32_t UA_StatusCode;
 
 class ClientTest : public ::testing::Test {
 protected:
@@ -35,5 +38,5 @@ protected:
 protected:
   void stopServer() ; // 停服务器
   void restartServer(); // 重启服务器
-  bool serverIsAccepting();
+  UA_StatusCode serverIsAccepting();
 };

@@ -12,7 +12,10 @@ public:
     } else {
       UA_ClientConfig cfg_;
       std::memset(&cfg_, 0, sizeof(cfg_)); // ★ 先清零，杜绝栈垃圾
-      UA_ClientConfig_setDefault(&cfg_);
+      UA_StatusCode rc = UA_ClientConfig_setDefault(&cfg_);
+      if (rc != UA_STATUSCODE_GOOD) {
+        return nullptr; // 让 create()/createWithSdk() 走失败分支
+      }
 
       if (!cfg_.logging) {
         // setDefault 没给 logger（ABI 不匹配 / 日志被禁用 / 其他）

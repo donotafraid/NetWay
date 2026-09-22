@@ -138,10 +138,13 @@ void ClientTest::stopServer() { UA_Server_run_shutdown(server_); } // 停服务�
 
 void ClientTest::restartServer() { UA_Server_run_startup(server_); }
 
-bool ClientTest::serverIsAccepting() {
+UA_StatusCode ClientTest::serverIsAccepting() {
     // 每次调用建一个临时连接，探测完立即关闭
     UA_Client *probe = UA_Client_new();
-    UA_ClientConfig_setDefault(UA_Client_getConfig(probe));
+    UA_StatusCode rc = UA_ClientConfig_setDefault(UA_Client_getConfig(probe));
+    if (rc != UA_STATUSCODE_GOOD) {
+      return UA_STATUSCODE_BAD; // 
+    }
 
     // 用很短超时即可，只看 TCP 能否建连
     std::string url = "opc.tcp://127.0.0.1:" + std::to_string(port_);

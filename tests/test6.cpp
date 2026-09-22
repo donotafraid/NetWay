@@ -8,6 +8,8 @@
 #include "tests/util/Cxx17Compat.h"   
 #include "tests/util/wait_for.h"
 
+#include "OPCUAPacking/detail/ClientTestHooks.h"
+
 // T8-B: 验证"非 GIVEN_UP 状态下 recreate 必须返回错误"
 TEST(Client, T8B_RecreateRequiresGivenUpState_Mock) {
   auto sdk = std::make_shared<MockSdk>();
@@ -76,7 +78,7 @@ TEST(Client, T8C1_ShutdownRejectedWhileRecreating) {
 
   ASSERT_TRUE(waitFor([&] { return inRecreate.try_wait(); }, 2s))
       << "recreator 未在 2s 内进入 connectAsync 钩子，前置条件不成立";
-  EXPECT_TRUE(client->getRecreatingStatus())
+  EXPECT_TRUE(ClientTestHooks::getRecreatingStatus(*client))
       << "进入 connectAsync 后 m_recreating 仍为 false";
 
   // 3) 核心契约：recreate 期间 shutdown() 必须返回错误
@@ -90,7 +92,7 @@ TEST(Client, T8C1_ShutdownRejectedWhileRecreating) {
 
   // 4) 关键前提：shutdown 被拒绝后，不应该置 m_terminated
   //    否则 recreate 会被迫失败
-  EXPECT_TRUE(client->getRecreatingStatus())
+  EXPECT_TRUE(ClientTestHooks::getRecreatingStatus(*client))
       << "shutdown 被拒绝后 m_recreating 被误复位，违反拒绝语义";
 
   // 5) 放行 recreate，验证它仍能成功
@@ -102,7 +104,7 @@ TEST(Client, T8C1_ShutdownRejectedWhileRecreating) {
 
   EXPECT_TRUE(recreateSucceeded.load(std::memory_order_acquire))
       << "recreate 在 shutdown 被拒后应仍成功，方案 B 契约不成立";
-  EXPECT_FALSE(client->getRecreatingStatus())
+  EXPECT_TRUE(ClientTestHooks::getRecreatingStatus(*client))
       << "recreate 完成后 m_recreating 未复位";
 
   // 6) recreate 完成后 shutdown 应成功（幂等）
@@ -144,7 +146,7 @@ TEST(Client, T8C2_DestructorAfterRecreate_CompletesPromptly) {
   ASSERT_TRUE(rr.is_success()) << "recreate 失败: " << rr.get_error()->what();
 
   // 3) 关键前置：recreate 完成后 m_recreating 必须已复位
-  EXPECT_FALSE(client->getRecreatingStatus())
+  EXPECT_TRUE(ClientTestHooks::getRecreatingStatus(*client))
       << "recreate 完成后 m_recreating 未复位，析构会卡到 10s 超时";
 
   // 4) 契约断言：析构必须迅速完成

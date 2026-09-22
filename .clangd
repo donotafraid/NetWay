@@ -11,16 +11,8 @@ CompileFlags:
     - -isystem
     - /usr/include
     - -std=gnu++17
-    - -isystem
-    - /root/.conan2/p/b/spdlo3b2989ab5aced/p/include
-    - -I
-    - /root/.conan2/p/b/backwed58a3d05b5f6/p/include
-    - -I
-    - /root/.conan2/p/b/libmo557e2fc7a2098/p/include
     - -I
     - /root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/include/
-    - -I
-    - /root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/
     - -I
     - /root/snap7/release/wrappers/c-cpp/
     - -I
@@ -48,4 +40,4 @@ CompileFlags:
   CompilationDatabase: compile_commands.json
 
 Index:
-  Background: true 
+  Background: Build 

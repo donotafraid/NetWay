@@ -121,7 +121,6 @@ template <typename T, int TYPE_ENUM> struct UATypeTraitsBase {
     UA_StatusCode status =
         UA_Variant_setScalarCopy(&destValue.value.value, &value, uaType());
     if (status != UA_STATUSCODE_GOOD) {
-      UA_WriteValue_clear(&destValue);
       return Result<Unit, RichError>::error(
           RichError("OPCUADataCovert : batchSet_UA_Scalar_StatusCode fail"));
     }
@@ -202,7 +201,6 @@ template <> struct UATypeTraits<std::string> {
     UA_StatusCode status =
         UA_Variant_setScalarCopy(&destValue.value.value, &uaString, uaType());
     if (status != UA_STATUSCODE_GOOD) {
-      UA_WriteValue_clear(&destValue);
       return Result<Unit, RichError>::error(
           RichError("OPCUADataCovert : batchSet_UA_Scalar_StatusCode fail"));
     }

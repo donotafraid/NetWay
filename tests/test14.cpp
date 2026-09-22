@@ -7,6 +7,7 @@
 #include <gtest/gtest.h>
 #include "tests/util/wait_for.h"
 
+#include "OPCUAPacking/detail/ClientTestHooks.h"
 TEST(Client, T27_ApiRejectedWhileRecreating) {
   using namespace std::chrono_literals;
 
@@ -50,7 +51,7 @@ TEST(Client, T27_ApiRejectedWhileRecreating) {
       << "recreate 未进入 connectAsync hook，前置条件不成立";
 
   // 4) 此刻 m_recreating 必为 true
-  EXPECT_TRUE(c->getRecreatingStatus())
+  EXPECT_TRUE(ClientTestHooks::getRecreatingStatus(*c))
       << "进入 connectAsync 后 m_recreating 仍为 false，ApiLease 契约不成立";
 
   // 5) 契约断言：public API 必须快速失败
@@ -74,6 +75,6 @@ TEST(Client, T27_ApiRejectedWhileRecreating) {
   recreator.join();
 
   EXPECT_TRUE(recreateOk.load()) << "recreate 本身应该成功";
-  EXPECT_FALSE(c->getRecreatingStatus())
+  EXPECT_FALSE(ClientTestHooks::getRecreatingStatus(*c))
       << "recreate 完成后 m_recreating 未复位";
 }
