@@ -8,7 +8,7 @@
 #include "tests/util/Cxx17Compat.h"   // §6.4: latch 由它提供
 #include <future>
 
-// ==================== TA2: 并发 connect 确定性单飞 ====================
+#include "OPCUAPacking/internal/ClientTestHooks.h"
 
 
 // ==================== TC: shutdown 并发 + 幂等 + 副作用 ====================
@@ -19,7 +19,7 @@ TEST(Client, TC_ConcurrentShutdownIdempotent) {
     ClientConfig cfg;
     cfg.applyProfile(ClientConfig::PROFILE_LOCAL);
 
-    auto createResult = OPC_UA_Client::createWithSdk(
+    auto createResult = ClientTestHooks::createWithSdk(
         sdk, "opc.tcp://192.0.2.1:4840", cfg);
     ASSERT_TRUE(createResult.has_value());
     auto client = std::move(*createResult.get());
@@ -72,6 +72,8 @@ inline size_t tid_hash() {
   } while (0)
 }  // namespace
 
+
+// ==================== TA2: 并发 connect 确定性单飞 ====================
 TEST(Client, TA2_ConcurrentConnect_ExactlyOneWins) {
   TA2_LOG("test begin");
 
@@ -84,7 +86,7 @@ TEST(Client, TA2_ConcurrentConnect_ExactlyOneWins) {
   ASSERT_FALSE(cfg.check().has_value()) << *cfg.check();
 
   TA2_LOG("-> createWithSdk");
-  auto r = OPC_UA_Client::createWithSdk(
+  auto r = ClientTestHooks::createWithSdk(
       sdk, "opc.tcp://192.0.2.1:4840", cfg);
   ASSERT_TRUE(r.has_value()) << r.get_error()->what();
   auto c = std::move(*r.get());

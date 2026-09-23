@@ -15,6 +15,7 @@
 #include <string>
 #include <vector>
 #include "tests/MockSdk.h"
+#include "OPCUAPacking/internal/ClientTestHooks.h"
 
 #if defined(__has_feature)
 #  if __has_feature(address_sanitizer)
@@ -33,7 +34,7 @@
 namespace {
 std::unique_ptr<OPC_UA_Client>
 makeClientNoWatchdog(const std::shared_ptr<MockSdk> &sdk, ClientConfig cfg) {
-  auto r = OPC_UA_Client::createWithSdk(
+  auto r = ClientTestHooks::createWithSdk(
       sdk, "opc.tcp://192.0.2.1:4840", cfg, /*usedefault=*/false,
       /*enableWatchDog=*/false);
   EXPECT_TRUE(r.has_value()) << (r.is_fail() ? r.get_error()->what() : "");
@@ -191,7 +192,7 @@ TEST(Client, T38_BatchRead_RetryableWithResults_NoLeakAcrossRetries) {
   // 若 ReadResponseGuard 只在最终出口清理，前几次的 results 会泄漏。
   sdk->setReadResponseShape(UA_STATUSCODE_BADCONNECTIONCLOSED, 1, true);
 
-  auto r0 = OPC_UA_Client::createWithSdk(
+  auto r0 = ClientTestHooks::createWithSdk(
       sdk, "opc.tcp://192.0.2.1:4840", cfg, /*usedefault=*/false,
       /*enableWatchDog=*/false);
   ASSERT_TRUE(r0.has_value()) << r0.get_error()->what();

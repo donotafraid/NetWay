@@ -21,6 +21,7 @@
 #include "tests/util/Cxx17Compat.h"
 #include "tests/util/wait_for.h"
 
+#include "OPCUAPacking/internal/ClientTestHooks.h"
 // ============================================================
 // T20: batchRead/batchWrite 所有错误出口
 // ============================================================
@@ -30,7 +31,7 @@ TEST(Client, T20_AllReadWriteErrorPaths_NoLeak) {
 
   ClientConfig cfg;
   cfg.applyProfile(ClientConfig::PROFILE_LOCAL);
-  auto r = OPC_UA_Client::createWithSdk(sdk, "opc.tcp://192.0.2.1:4840", cfg);
+  auto r = ClientTestHooks::createWithSdk(sdk, "opc.tcp://192.0.2.1:4840", cfg);
   ASSERT_TRUE(r.has_value()) << r.get_error()->what();
   auto c = std::move(*r.get());
 
@@ -88,7 +89,7 @@ TEST(Client, T21_BatchRead_RetriesTransientThenSucceeds) {
   cfg.applyProfile(ClientConfig::PROFILE_LOCAL);
   cfg.retryBackoffBaseMs = 10;
   cfg.retryMaxBackoffMs  = 20;
-  auto r = OPC_UA_Client::createWithSdk(sdk, "opc.tcp://192.0.2.1:4840", cfg);
+  auto r = ClientTestHooks::createWithSdk(sdk, "opc.tcp://192.0.2.1:4840", cfg);
   ASSERT_TRUE(r.has_value()) << r.get_error()->what();
   auto c = std::move(*r.get());
 
@@ -128,7 +129,7 @@ TEST(Client, T22_BatchRead_BudgetExceeded_VirtualClock) {
     sdk->enqueueReadServiceResult(UA_STATUSCODE_BADCONNECTIONCLOSED);
   }
 
-  auto r = OPC_UA_Client::createWithSdk(sdk, "opc.tcp://192.0.2.1:4840", cfg);
+  auto r = ClientTestHooks::createWithSdk(sdk, "opc.tcp://192.0.2.1:4840", cfg);
   ASSERT_TRUE(r.has_value()) << r.get_error()->what();
   auto c = std::move(*r.get());
 
@@ -175,7 +176,7 @@ TEST(Client, T23_CreateWithInvalidConfig_useDefaultFalse_Rejected) {
   ASSERT_TRUE(bad.check().has_value());
   auto sdk = std::make_shared<MockSdk>();
   sdk->setMode(MockSdk::Mode::Connected);
-  auto r = OPC_UA_Client::createWithSdk(
+  auto r = ClientTestHooks::createWithSdk(
       sdk, "opc.tcp://192.0.2.1:4840", bad);
   EXPECT_TRUE(r.is_fail());
 }

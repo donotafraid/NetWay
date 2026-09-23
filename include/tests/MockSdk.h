@@ -10,6 +10,8 @@
 #include <thread>
 #include <tuple>
 #include <optional>
+#include <string>
+#include <vector>
 
 extern "C" {
 #include <open62541/client.h>
@@ -357,6 +359,14 @@ public:
     UA_ClientConfig *cfg = UA_Client_getConfig(realClient_);
     if (cfg && cfg->inactivityCallback)
       cfg->inactivityCallback(realClient_);
+  }
+
+  // ============================================================
+  //  ISdk: rawClient
+  // ============================================================
+  UA_Client *rawClient() const {
+    std::lock_guard lk(clientMu_);
+    return realClient_;
   }
 
   // ============================================================

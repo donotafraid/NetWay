@@ -1,8 +1,10 @@
 #include "OPCUAPacking/ua.h"
 #include <thread>
 #include "PLC/ConversionDispatcher.h"
-#include "OPCUAPacking/RealSdk.h"
+#include "OPCUAPacking/internal/RealSdk.h"
 #include "spdlog/spdlog.h"
+#include "OPCUAPacking/internal/State.h"
+#include "OPCUAPacking/internal/RecreateSync.h"
 
 //=================OPC_UA_Client=======================
 namespace { // 匿名命名空间，实现内部链接
@@ -149,7 +151,7 @@ private:
 
 class RecreateGuard {
 public:
-  RecreateGuard(std::shared_ptr<RecreateSync> recreateSync)
+  RecreateGuard(std::shared_ptr<OPCUAPacking::internal::RecreateSync> recreateSync)
       : m_recreateSync(recreateSync) {}
 
   ~RecreateGuard() {
@@ -183,7 +185,7 @@ public:
 
 private:
   bool isReset = false;
-  std::shared_ptr<RecreateSync> m_recreateSync;
+  std::shared_ptr<OPCUAPacking::internal::RecreateSync> m_recreateSync;
 };
 
 class ThreadGuard {
@@ -215,7 +217,7 @@ private:
 
 class ApiLease {
 public:
-  explicit ApiLease(std::shared_ptr<RecreateSync> recreateSync)
+  explicit ApiLease(std::shared_ptr<OPCUAPacking::internal::RecreateSync> recreateSync)
       : s_(recreateSync) {
     {
       std::lock_guard<std::mutex> lock(s_->m_recreateLock);
@@ -246,11 +248,91 @@ public:
   bool isActive() { return active; }
 
 private:
-  std::shared_ptr<RecreateSync> s_;
+  std::shared_ptr<OPCUAPacking::internal::RecreateSync> s_;
   bool active = false;
 };
 
 }; // namespace
+
+namespace OPCUAPacking::internal {
+// 辅助函数：将 ConnectErrorState 转换为字符串描述
+std::string connectErrorStateToString(ConnectErrorState state) {
+  switch (state) {
+  case ConnectErrorState::SHUTDOWN:
+    return "client is shut down";
+  case ConnectErrorState::NULLPTR:
+    return "client implementation is null";
+  case ConnectErrorState::THREADBUSY:
+    return "another thread is connecting/disconnecting";
+  case ConnectErrorState::UNKNOWN:
+    return "unknown connection state";
+  case ConnectErrorState::CONNECT_FAILED:
+    return "connect failed";
+  case ConnectErrorState::TIMEOUT_NOTCONNECT:
+    return "connect timeout and connection not established";
+  default:
+    return "unhandled connection error";
+  }
+}
+
+std::string disconnectErrorStateToString(DisconnectErrorState state) {
+  switch (state) {
+  case DisconnectErrorState::SHUTDOWN:
+    return "client is shut down";
+  case DisconnectErrorState::NULLPTR:
+    return "client implementation is null";
+  case DisconnectErrorState::THREADBUSY:
+    return "another thread is connecting/disconnecting";
+  case DisconnectErrorState::TIMEOUT_NOTDISCONNECT:
+    return "disconnect timeout and connection not disconnected";
+  case DisconnectErrorState::DISCONNECT_FAIL:
+    return "async disconnect failed";
+  case DisconnectErrorState::UNKNOWN:
+    return "unknown disconnect state";
+  default:
+    return "unhandled disconnect error";
+  }
+}
+
+RichError::ErrorCode toRichErrorCode(ConnectErrorState s) {
+  switch (s) {
+  case ConnectErrorState::SHUTDOWN:
+    return RichError::ErrorCode::ALREADY_TERMINATED;
+  case ConnectErrorState::NULLPTR:
+    return RichError::ErrorCode::NOT_INITIALIZED;
+  case ConnectErrorState::THREADBUSY:
+    return RichError::ErrorCode::THREAD_BUSY;
+  case ConnectErrorState::CONNECT_FAILED:
+    return RichError::ErrorCode::SERVICE_FAILED;
+  case ConnectErrorState::TIMEOUT_NOTCONNECT:
+    return RichError::ErrorCode::CONNECT_TIMEOUT;
+  case ConnectErrorState::UNKNOWN:
+  default:
+    return RichError::ErrorCode::UNKNOWN;
+  }
+}
+
+RichError::ErrorCode toRichErrorCode(DisconnectErrorState s) {
+  switch (s) {
+  case DisconnectErrorState::SHUTDOWN:
+    return RichError::ErrorCode::ALREADY_TERMINATED;
+  case DisconnectErrorState::NULLPTR:
+    return RichError::ErrorCode::NOT_INITIALIZED;
+  case DisconnectErrorState::THREADBUSY:
+    return RichError::ErrorCode::THREAD_BUSY;
+  case DisconnectErrorState::TIMEOUT_NOTDISCONNECT:
+    // RichError 未定义 DISCONNECT_TIMEOUT，借用 CONNECT_TIMEOUT 语义
+    // （"超时未完成"）。若后续需要区分，可在枚举里补 DISCONNECT_TIMEOUT。
+    return RichError::ErrorCode::CONNECT_TIMEOUT;
+  case DisconnectErrorState::DISCONNECT_FAIL:
+    return RichError::ErrorCode::SERVICE_FAILED;
+  case DisconnectErrorState::UNKNOWN:
+  default:
+    return RichError::ErrorCode::UNKNOWN;
+  }
+}
+
+} // namespace OPCUAPacking::internal
 
 /**
  * @brief Impl 生命周期与回调契约
@@ -1701,7 +1783,7 @@ OPC_UA_Client::createWithSdk(std::shared_ptr<ISdk> sdk,
 
 OPC_UA_Client::OPC_UA_Client(const std::string endpointUrl, ClientConfig config,
                              std::shared_ptr<ISdk> sdk) {
-  m_recreateSync = std::make_shared<RecreateSync>();
+  m_recreateSync = std::make_shared<OPCUAPacking::internal::RecreateSync>();
   m_recreateSync->m_endpointUrl = endpointUrl;
   m_recreateSync->m_config = config;
   if(sdk)
@@ -1777,83 +1859,6 @@ bool OPC_UA_Client::getRecreatingStatus() {
     return m_recreateSync->m_recreating.load(std::memory_order_acquire);
 }
 
-// 辅助函数：将 ConnectErrorState 转换为字符串描述
-std::string OPC_UA_Client::connectErrorStateToString(ConnectErrorState state) {
-  switch (state) {
-  case ConnectErrorState::SHUTDOWN:
-    return "client is shut down";
-  case ConnectErrorState::NULLPTR:
-    return "client implementation is null";
-  case ConnectErrorState::THREADBUSY:
-    return "another thread is connecting/disconnecting";
-  case ConnectErrorState::UNKNOWN:
-    return "unknown connection state";
-  case ConnectErrorState::CONNECT_FAILED:
-    return "connect failed";
-  case ConnectErrorState::TIMEOUT_NOTCONNECT:
-    return "connect timeout and connection not established";
-  default:
-    return "unhandled connection error";
-  }
-}
-
-std::string
-OPC_UA_Client::disconnectErrorStateToString(DisconnectErrorState state) {
-  switch (state) {
-  case DisconnectErrorState::SHUTDOWN:
-    return "client is shut down";
-  case DisconnectErrorState::NULLPTR:
-    return "client implementation is null";
-  case DisconnectErrorState::THREADBUSY:
-    return "another thread is connecting/disconnecting";
-  case DisconnectErrorState::TIMEOUT_NOTDISCONNECT:
-    return "disconnect timeout and connection not disconnected";
-  case DisconnectErrorState::DISCONNECT_FAIL:
-    return "async disconnect failed";
-  case DisconnectErrorState::UNKNOWN:
-    return "unknown disconnect state";
-  default:
-    return "unhandled disconnect error";
-  }
-}
-
-RichError::ErrorCode OPC_UA_Client::toRichErrorCode(ConnectErrorState s) {
-  switch (s) {
-  case ConnectErrorState::SHUTDOWN:
-    return RichError::ErrorCode::ALREADY_TERMINATED;
-  case ConnectErrorState::NULLPTR:
-    return RichError::ErrorCode::NOT_INITIALIZED;
-  case ConnectErrorState::THREADBUSY:
-    return RichError::ErrorCode::THREAD_BUSY;
-  case ConnectErrorState::CONNECT_FAILED:
-    return RichError::ErrorCode::SERVICE_FAILED;
-  case ConnectErrorState::TIMEOUT_NOTCONNECT:
-    return RichError::ErrorCode::CONNECT_TIMEOUT;
-  case ConnectErrorState::UNKNOWN:
-  default:
-    return RichError::ErrorCode::UNKNOWN;
-  }
-}
-
-RichError::ErrorCode OPC_UA_Client::toRichErrorCode(DisconnectErrorState s) {
-  switch (s) {
-  case DisconnectErrorState::SHUTDOWN:
-    return RichError::ErrorCode::ALREADY_TERMINATED;
-  case DisconnectErrorState::NULLPTR:
-    return RichError::ErrorCode::NOT_INITIALIZED;
-  case DisconnectErrorState::THREADBUSY:
-    return RichError::ErrorCode::THREAD_BUSY;
-  case DisconnectErrorState::TIMEOUT_NOTDISCONNECT:
-    // RichError 未定义 DISCONNECT_TIMEOUT，借用 CONNECT_TIMEOUT 语义
-    // （"超时未完成"）。若后续需要区分，可在枚举里补 DISCONNECT_TIMEOUT。
-    return RichError::ErrorCode::CONNECT_TIMEOUT;
-  case DisconnectErrorState::DISCONNECT_FAIL:
-    return RichError::ErrorCode::SERVICE_FAILED;
-  case DisconnectErrorState::UNKNOWN:
-  default:
-    return RichError::ErrorCode::UNKNOWN;
-  }
-}
 
 
 Result<Unit, RichError> OPC_UA_Client::connect() {
@@ -1869,13 +1874,18 @@ Result<Unit, RichError> OPC_UA_Client::connect() {
   }
 
   if (!lease.isActive()) {
-    if(m_recreateSync->m_recreating.load())
     {
-    return Result<Unit, RichError>::error({RichError{RichError::ErrorCode::RECREATING,"connect: client is being recreated, please retry later"}});
-    }
-    if(m_recreateSync->m_terminated.load())
-    {
-    return Result<Unit, RichError>::error({RichError{RichError::ErrorCode::ALREADY_TERMINATED,"connect: client has been terminated"}});
+      std::lock_guard<std::mutex> lock(m_recreateSync->m_recreateLock);
+      if (m_recreateSync->m_recreating.load()) {
+        return Result<Unit, RichError>::error({RichError{
+            RichError::ErrorCode::RECREATING,
+            "connect: client is being recreated, please retry later"}});
+      }
+      if (m_recreateSync->m_terminated.load()) {
+        return Result<Unit, RichError>::error(
+            {RichError{RichError::ErrorCode::ALREADY_TERMINATED,
+                       "connect: client has been terminated"}});
+      }
     }
   }
   auto result = ImplPtr->connect();
@@ -1884,7 +1894,8 @@ Result<Unit, RichError> OPC_UA_Client::connect() {
   } else {
     ConnectErrorState errorState = *result.get_error();
     return Result<Unit, RichError>::error(RichError{
-        toRichErrorCode(errorState), connectErrorStateToString(errorState)});
+        OPCUAPacking::internal::toRichErrorCode(errorState),
+        OPCUAPacking::internal::connectErrorStateToString(errorState)});
   }
 }
 
@@ -1901,13 +1912,18 @@ Result<Unit, RichError> OPC_UA_Client::disconnect() {
   }
 
   if (!lease.isActive()) {
-    if (m_recreateSync->m_recreating.load()) {
-      return Result<Unit, RichError>::error({RichError{
-          RichError::ErrorCode::RECREATING, "disconnect: client is being recreated, please retry later"}});
-    }
-    if (m_recreateSync->m_terminated.load()) {
-      return Result<Unit, RichError>::error({RichError{
-          RichError::ErrorCode::ALREADY_TERMINATED, "disconnect: client has been terminated"}});
+    {
+      std::lock_guard<std::mutex> lock(m_recreateSync->m_recreateLock);
+      if (m_recreateSync->m_recreating.load()) {
+        return Result<Unit, RichError>::error({RichError{
+            RichError::ErrorCode::RECREATING,
+            "disconnect: client is being recreated, please retry later"}});
+      }
+      if (m_recreateSync->m_terminated.load()) {
+        return Result<Unit, RichError>::error(
+            {RichError{RichError::ErrorCode::ALREADY_TERMINATED,
+                       "disconnect: client has been terminated"}});
+      }
     }
   }
   auto result = ImplPtr->disconnect();
@@ -1916,7 +1932,8 @@ Result<Unit, RichError> OPC_UA_Client::disconnect() {
   } else {
     DisconnectErrorState errorState = *result.get_error();
     return Result<Unit, RichError>::error(RichError{
-        toRichErrorCode(errorState), disconnectErrorStateToString(errorState)});
+        OPCUAPacking::internal::toRichErrorCode(errorState),
+        OPCUAPacking::internal::disconnectErrorStateToString(errorState)});
   }
 }
 
@@ -1934,13 +1951,18 @@ Result<ConnectionState, RichError> OPC_UA_Client::checkConnected() {
   }
 
   if (!lease.isActive()) {
-    if (m_recreateSync->m_recreating.load()) {
-      return Result<ConnectionState, RichError>::error({RichError{
-          RichError::ErrorCode::RECREATING, "checkConnected: client is being recreated, please retry later"}});
-    }
-    if (m_recreateSync->m_terminated.load()) {
-      return  Result<ConnectionState, RichError>::error({RichError{
-          RichError::ErrorCode::ALREADY_TERMINATED, "checkConnected: client has been terminated"}});
+    {
+      std::lock_guard<std::mutex> lock(m_recreateSync->m_recreateLock);
+      if (m_recreateSync->m_recreating.load()) {
+        return Result<ConnectionState, RichError>::error({RichError{
+            RichError::ErrorCode::RECREATING,
+            "checkConnected: client is being recreated, please retry later"}});
+      }
+      if (m_recreateSync->m_terminated.load()) {
+        return Result<ConnectionState, RichError>::error(
+            {RichError{RichError::ErrorCode::ALREADY_TERMINATED,
+                       "checkConnected: client has been terminated"}});
+      }
     }
   }
 
@@ -1960,7 +1982,7 @@ Result<ConnectionState, RichError> OPC_UA_Client::checkConnected() {
   } else {
     auto errorInfo {*r.get_error()};
     return Result<ConnectionState, RichError>::error(
-        RichError{toRichErrorCode(errorInfo),"checkConnected: fail"});
+        RichError{OPCUAPacking::internal::toRichErrorCode(errorInfo),"checkConnected: fail"});
   }
 }
 
@@ -1979,15 +2001,18 @@ Result<ConnectionState, RichError> OPC_UA_Client::isHealthy() {
   }
 
   if (!lease.isActive()) {
-    if (m_recreateSync->m_recreating.load()) {
-      return Result<ConnectionState, RichError>::error({RichError{
-          RichError::ErrorCode::RECREATING,
-          "checkConnected: client is being recreated, please retry later"}});
-    }
-    if (m_recreateSync->m_terminated.load()) {
-      return Result<ConnectionState, RichError>::error(
-          {RichError{RichError::ErrorCode::ALREADY_TERMINATED,
-                     "checkConnected: client has been terminated"}});
+    {
+      std::lock_guard<std::mutex> lock(m_recreateSync->m_recreateLock);
+      if (m_recreateSync->m_recreating.load()) {
+        return Result<ConnectionState, RichError>::error({RichError{
+            RichError::ErrorCode::RECREATING,
+            "checkConnected: client is being recreated, please retry later"}});
+      }
+      if (m_recreateSync->m_terminated.load()) {
+        return Result<ConnectionState, RichError>::error(
+            {RichError{RichError::ErrorCode::ALREADY_TERMINATED,
+                       "checkConnected: client has been terminated"}});
+      }
     }
   }
 
@@ -2064,11 +2089,19 @@ Result<Unit, RichError> OPC_UA_Client::recreateGiveUpClient() {
     }
   }
 
+  std::shared_ptr<ISdk> sdkPtr;
+  {
+    std::lock_guard<std::mutex> lock(m_recreateSync->m_lock);
+    if (pImpl) {
+      sdkPtr = pImpl->m_sdk;
+    }
+  }
+
   try {
     std::shared_ptr<CallbackContext> callbackContext_ =
         std::make_shared<CallbackContext>();
     OPC_UA_Client::Impl::UA_ClientPtr raw(
-        pImpl->m_sdk->clientNew(nullptr),
+        sdkPtr->clientNew(nullptr),
         UA_ClientDeleter{m_recreateSync->m_sdkForRecreate, callbackContext_});
     if (!raw) {
       std::lock_guard<std::mutex> lock(m_recreateSync->m_lock);
@@ -2094,7 +2127,7 @@ Result<Unit, RichError> OPC_UA_Client::recreateGiveUpClient() {
     if (connResult.is_fail()) {
          ConnectErrorState err = *connResult.get_error();
       return Result<Unit, RichError>::error(
-          RichError{toRichErrorCode(err), connectErrorStateToString(err)});
+          RichError{OPCUAPacking::internal::toRichErrorCode(err), OPCUAPacking::internal::connectErrorStateToString(err)});
     }
 
     // 启动看门狗
@@ -2160,13 +2193,18 @@ Result<LifeState, RichError> OPC_UA_Client::checkLifeState()  {
     }
   }
   if (!lease.isActive()) {
-    if (m_recreateSync->m_recreating.load()) {
-      return Result<LifeState, RichError>::error({RichError{
-          RichError::ErrorCode::RECREATING, "checkLifeState: client is being recreated, please retry later"}});
-    }
-    if (m_recreateSync->m_terminated.load()) {
-      return Result<LifeState, RichError>::error({RichError{
-          RichError::ErrorCode::ALREADY_TERMINATED, "checkLifeState: client has been terminated"}});
+    {
+      std::lock_guard<std::mutex> lock(m_recreateSync->m_recreateLock);
+      if (m_recreateSync->m_recreating.load()) {
+        return Result<LifeState, RichError>::error({RichError{
+            RichError::ErrorCode::RECREATING,
+            "checkLifeState: client is being recreated, please retry later"}});
+      }
+      if (m_recreateSync->m_terminated.load()) {
+        return Result<LifeState, RichError>::error(
+            {RichError{RichError::ErrorCode::ALREADY_TERMINATED,
+                       "checkLifeState: client has been terminated"}});
+      }
     }
   }
   return Result<LifeState, RichError>::success(
@@ -2211,17 +2249,19 @@ OPC_UA_Client::batchRead(const std::vector<ReadValue> &batchReadNodes) {
     }
   }
   if (!lease.isActive()) {
-    if(m_recreateSync->m_recreating.load())
     {
-      return Result<std::vector<OPC_UA_Client::ReadResult>, RichError>::error(
-          {RichError{RichError::ErrorCode::RECREATING,
-                     "batchRead: client is being recreated, please retry later"}});
-    }
-    if(m_recreateSync->m_terminated.load())
-    {
-      return Result<std::vector<OPC_UA_Client::ReadResult>, RichError>::error(
-          {RichError{RichError::ErrorCode::ALREADY_TERMINATED,
-                     "batchRead: client has been terminated"}});
+      std::lock_guard<std::mutex> lock(m_recreateSync->m_recreateLock);
+      if (m_recreateSync->m_recreating.load()) {
+        return Result<std::vector<OPC_UA_Client::ReadResult>, RichError>::error(
+            {RichError{
+                RichError::ErrorCode::RECREATING,
+                "batchRead: client is being recreated, please retry later"}});
+      }
+      if (m_recreateSync->m_terminated.load()) {
+        return Result<std::vector<OPC_UA_Client::ReadResult>, RichError>::error(
+            {RichError{RichError::ErrorCode::ALREADY_TERMINATED,
+                       "batchRead: client has been terminated"}});
+      }
     }
   }
   return ImplPtr->batchRead(batchReadNodes);
@@ -2241,17 +2281,20 @@ OPC_UA_Client::batchWrite(const std::vector<WriteValue> &batchWriteNodes) {
     }
   }
   if (!lease.isActive()) {
-    if(m_recreateSync->m_recreating.load())
+    std::lock_guard<std::mutex> lock(m_recreateSync->m_recreateLock);
     {
-      return Result<std::vector<OPC_UA_Client::WriteResult>, RichError>::error(
-          {RichError{RichError::ErrorCode::RECREATING,
-                     "batchWrite: client is being recreated, please retry later"}});
-    }
-    if(m_recreateSync->m_terminated.load())
-    {
-      return Result<std::vector<OPC_UA_Client::WriteResult>, RichError>::error(
-          {RichError{RichError::ErrorCode::ALREADY_TERMINATED,
-                     "batchWrite: client has been terminated"}});
+      if (m_recreateSync->m_recreating.load()) {
+        return Result<std::vector<OPC_UA_Client::WriteResult>,
+                      RichError>::error({RichError{
+            RichError::ErrorCode::RECREATING,
+            "batchWrite: client is being recreated, please retry later"}});
+      }
+      if (m_recreateSync->m_terminated.load()) {
+        return Result<std::vector<OPC_UA_Client::WriteResult>,
+                      RichError>::error({RichError{
+            RichError::ErrorCode::ALREADY_TERMINATED,
+            "batchWrite: client has been terminated"}});
+      }
     }
   }
     return ImplPtr->batchWrite(batchWriteNodes);

@@ -6,13 +6,15 @@
 #include <vector>
 #include "tests/MockSdk.h"
 
+#include "OPCUAPacking/internal/ClientTestHooks.h"
+
 TEST(Client, T25_ConcurrentLifecycle_TSan) {
   auto sdk = std::make_shared<MockSdk>();
   sdk->setMode(MockSdk::Mode::Connected);
 
   ClientConfig cfg;
   cfg.applyProfile(ClientConfig::PROFILE_LOCAL);
-  auto r = OPC_UA_Client::createWithSdk(sdk, "opc.tcp://192.0.2.1:4840", cfg);
+  auto r = ClientTestHooks::createWithSdk(sdk, "opc.tcp://192.0.2.1:4840", cfg);
   ASSERT_TRUE(r.has_value()) << r.get_error()->what();
   auto c = std::move(*r.get());
 

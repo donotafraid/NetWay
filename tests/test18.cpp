@@ -19,7 +19,7 @@
 #include "tests/util/Cxx17Compat.h"
 #include "tests/util/wait_for.h"
 
-#include "OPCUAPacking/detail/ClientTestHooks.h"
+#include "OPCUAPacking/internal/ClientTestHooks.h"
 
 using namespace std::chrono_literals;
 
@@ -28,7 +28,7 @@ std::unique_ptr<OPC_UA_Client>
 makeClient(const std::shared_ptr<MockSdk> &sdk, bool enableWatchdog) {
   ClientConfig cfg;
   cfg.applyProfile(ClientConfig::PROFILE_LOCAL);
-  auto r = OPC_UA_Client::createWithSdk(
+  auto r = ClientTestHooks::createWithSdk(
       sdk, "opc.tcp://192.0.2.1:4840", cfg, /*usedefault=*/false,
       enableWatchdog);
   EXPECT_TRUE(r.has_value()) << (r.is_fail() ? r.get_error()->what() : "");
@@ -53,7 +53,7 @@ TEST(Client, T39_EndpointSnapshot_SurvivesCallerMutation) {
   std::string url = "opc.tcp://127.0.0.1:4840";
   const std::string original = url;
 
-  auto r = OPC_UA_Client::createWithSdk(sdk, url, cfg);
+  auto r = ClientTestHooks::createWithSdk(sdk, url, cfg);
   ASSERT_TRUE(r.has_value()) << r.get_error()->what();
   auto c = std::move(*r.get());
   ASSERT_NE(c, nullptr);

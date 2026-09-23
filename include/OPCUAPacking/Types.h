@@ -1,8 +1,12 @@
+// include/OPCUAPacking/Types.h
 #pragma once
 
-#include <iostream>
+#include <cstdint>
 #include <optional>
+#include <string>
+#include <limits>
 #include <vector>
+
 #include "Rust_error_deal/error_deal.h"
 
 struct ClientConfig {
@@ -272,4 +276,36 @@ struct ClientConfig {
 
     return Result<bool, RichError>::success(true);
   }
+};
+
+enum class ConnectionState:uint8_t { OBJECT_ONLY, CONNECTED };
+
+enum class LifeState : uint8_t {
+  /// 三元组全部就绪：
+  ///   sdkConnectStatus == GOOD
+  ///   sdkChannelState  == OPEN
+  ///   sdkSessionState  == ACTIVATED
+  /// 由 TurnToRunning() 置位（看门狗判定健康时）。
+  RUNNING,
+
+  /// 已检测到连接不健康，但仍处于"自愈窗口"内：
+  ///   now - m_lastBadStatusMs < giveUpThresholdMs
+  /// 看门狗会继续尝试 connect()；若 connect 返回非
+  /// SHUTDOWN/NULLPTR 的错误，则进入本状态。
+  ///
+  /// 注意：本状态期间 batchRead / batchWrite **均快速失败**
+  /// （不是"只读"，而是读写都拒绝），避免业务线程在不健康连接上
+  /// 长时间阻塞。恢复动作完全由看门狗承担。
+  /// 由 TurnToRecovring() 置位。
+  RECOVERING,
+
+  /// 自愈窗口耗尽，或连接进入不可恢复状态：
+  ///   - 主路径：now - m_lastBadStatusMs >= giveUpThresholdMs
+  ///   - 辅路径：connect() 返回 SHUTDOWN 或 NULLPTR
+  ///   - 旁路  ：业务主动调用 setGiveUpSignal()
+  ///
+  /// 进入本状态后，看门狗不再主动重连；需业务显式调用
+  /// recreateGiveUpClient() 重建客户端。
+  /// 由 TurnToGiveup() 或 setGiveUpSignal() 置位。
+  GIVEN_UP,
 };

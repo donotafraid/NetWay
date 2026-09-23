@@ -1,3 +1,4 @@
+// include/OPCUAPacking/ua.h
 #pragma once
 
 #include <cstdint>
@@ -10,9 +11,11 @@
 #include "Rust_error_deal/error_deal.h"
 #include "PLC/WriteRequestAddres.h"
 
-#include "OPCUAPacking/detail/State.h"
-#include "OPCUAPacking/detail/ClientConfig.h"
-#include "OPCUAPacking/detail/RecreateSync.h"
+#include "OPCUAPacking/Types.h"
+
+namespace OPCUAPacking { namespace internal { struct RecreateSync; } }
+
+class ISdk;
 
 class OPC_UA_Client final  {
 public:
@@ -40,10 +43,6 @@ public:
 
   static Result<std::unique_ptr<OPC_UA_Client>, RichError>
   create(const std::string &endpointUrl, ClientConfig config, bool useDefault);
-
-  static Result<std::unique_ptr<OPC_UA_Client>, RichError>
-  createWithSdk(std::shared_ptr<ISdk> sdk, const std::string &endpointUrl,
-                ClientConfig config, bool usedefault = false,bool enableWatchDog=true);
 
   OPC_UA_Client(const OPC_UA_Client &) = delete;
   OPC_UA_Client &operator=(const OPC_UA_Client &) = delete;
@@ -98,10 +97,11 @@ private:
   void pumpWatchdogForTest();
   // 仅为了测试T8-C使用
   bool getRecreatingStatus();
-  std::string connectErrorStateToString(ConnectErrorState state);
-  std::string disconnectErrorStateToString(DisconnectErrorState state);
-  RichError::ErrorCode toRichErrorCode(ConnectErrorState s); 
-  RichError::ErrorCode toRichErrorCode(DisconnectErrorState s);
+  // 仅为测试使用
+  static Result<std::unique_ptr<OPC_UA_Client>, RichError>
+  createWithSdk(std::shared_ptr<ISdk> sdk, const std::string &endpointUrl,
+                ClientConfig config, bool usedefault = false,
+                bool enableWatchDog = true);
   /*
     为了避免shutdown()后对象由空->非空,需要确保shutdown()调用时代表整个OPC_UA_Client对象的终结，建立了私有内部清理函数，表示内部清理使用
   */
@@ -118,5 +118,5 @@ private:
   // 使用 RAII 包装器
   struct UA_ClientDeleter ;
  
-  std::shared_ptr<RecreateSync> m_recreateSync; // 与 RecreateGuard 共享
+  std::shared_ptr<OPCUAPacking::internal::RecreateSync> m_recreateSync; // 与 RecreateGuard 共享
 };

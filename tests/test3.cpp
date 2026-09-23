@@ -4,7 +4,7 @@
 #include <string>
 #include "tests/MockSdk.h"
 #include "tests/util/wait_for.h"
-#include "OPCUAPacking/detail/ClientTestHooks.h"
+#include "OPCUAPacking/internal/ClientTestHooks.h"
 
 TEST(Client, T3_TransientDisconnectRecoversWithoutGiveUp_Mock) {
     auto sdk = std::make_shared<MockSdk>();
@@ -24,7 +24,7 @@ TEST(Client, T3_TransientDisconnectRecoversWithoutGiveUp_Mock) {
     ASSERT_FALSE(cfg.check().has_value())
         << "cfg invalid: " << cfg.check().value();
 
-    auto createResult = OPC_UA_Client::createWithSdk(
+    auto createResult = ClientTestHooks::createWithSdk(
         sdk, "opc.tcp://192.0.2.1:4840", cfg, false, false);
     ASSERT_TRUE(createResult.has_value());
     auto client = std::move(*createResult.get());

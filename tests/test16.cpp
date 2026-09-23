@@ -7,11 +7,12 @@
 #include <chrono>
 #include <memory>
 #include <string>
-#include <thread>
 
 #include "OPCUAPacking/ua.h"
 #include "tests/MockSdk.h"
 #include "tests/util/wait_for.h"
+
+#include "OPCUAPacking/internal/ClientTestHooks.h"
 
 
 // ---------------------------------------------------------------------------
@@ -23,7 +24,7 @@ TEST(Client, T31_CheckConnected_MustNotReportConnectedWhenUnhealthy) {
 
     ClientConfig cfg;
     cfg.applyProfile(ClientConfig::PROFILE_LOCAL);
-    auto r = OPC_UA_Client::createWithSdk(sdk, "opc.tcp://192.0.2.1:4840", cfg);
+    auto r = ClientTestHooks::createWithSdk(sdk, "opc.tcp://192.0.2.1:4840", cfg);
     ASSERT_TRUE(r.has_value());
     auto c = std::move(*r.get());
     ASSERT_TRUE(c != nullptr);
@@ -65,7 +66,7 @@ TEST(Client, T32_CheckConnected_AfterDisconnect_IsObjectOnly) {
 
     ClientConfig cfg;
     cfg.applyProfile(ClientConfig::PROFILE_LOCAL);
-    auto r = OPC_UA_Client::createWithSdk(sdk, "opc.tcp://192.0.2.1:4840", cfg);
+    auto r = ClientTestHooks::createWithSdk(sdk, "opc.tcp://192.0.2.1:4840", cfg);
     ASSERT_TRUE(r.has_value());
     auto c = std::move(*r.get());
     ASSERT_TRUE(c != nullptr);
@@ -97,7 +98,7 @@ TEST(Client, T33_CheckConnected_ChannelOpenSessionClosed_IsObjectOnly) {
 
     ClientConfig cfg;
     cfg.applyProfile(ClientConfig::PROFILE_LOCAL);
-    auto r = OPC_UA_Client::createWithSdk(sdk, "opc.tcp://192.0.2.1:4840", cfg);
+    auto r = ClientTestHooks::createWithSdk(sdk, "opc.tcp://192.0.2.1:4840", cfg);
     ASSERT_TRUE(r.has_value());
     auto c = std::move(*r.get());
     ASSERT_TRUE(c != nullptr);

@@ -2,7 +2,7 @@
 #include <gtest/gtest.h>
 #include "tests/MockSdk.h"
 #include <chrono>
-
+#include "OPCUAPacking/internal/ClientTestHooks.h"
 
 TEST(Client, T2_ConnectFailureDrivesRunIterate) {
     auto sdk = std::make_shared<MockSdk>();
@@ -22,7 +22,7 @@ TEST(Client, T2_ConnectFailureDrivesRunIterate) {
 
     auto wall0 = std::chrono::steady_clock::now();
     auto createResult =
-        OPC_UA_Client::createWithSdk(sdk, "opc.tcp://192.0.2.1:4840", cfg);
+        ClientTestHooks::createWithSdk(sdk, "opc.tcp://192.0.2.1:4840", cfg);
     auto wall1 = std::chrono::steady_clock::now();
 
     const int64_t  dt    = sdk->nowMs() - t0;

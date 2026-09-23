@@ -7,7 +7,7 @@
 #include <gtest/gtest.h>
 #include "tests/util/wait_for.h"
 
-#include "OPCUAPacking/detail/ClientTestHooks.h"
+#include "OPCUAPacking/internal/ClientTestHooks.h"
 TEST(Client, T27_ApiRejectedWhileRecreating) {
   using namespace std::chrono_literals;
 
@@ -17,7 +17,7 @@ TEST(Client, T27_ApiRejectedWhileRecreating) {
 
   ClientConfig cfg;
   cfg.applyProfile(ClientConfig::PROFILE_LOCAL);
-  auto r = OPC_UA_Client::createWithSdk(
+  auto r = ClientTestHooks::createWithSdk(
       sdk, "opc.tcp://192.0.2.1:4840", cfg);
   ASSERT_TRUE(r.has_value());
   auto c = std::move(*r.get());

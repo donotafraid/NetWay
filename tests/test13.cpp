@@ -4,6 +4,8 @@
 #include "tests/MockSdk.h"
 #include "tests/util/wait_for.h"
 
+#include "OPCUAPacking/internal/ClientTestHooks.h"
+
 TEST(Client, T26_RecreateFailureKeepsOldImpl) {
   using namespace std::chrono_literals;
 
@@ -23,7 +25,7 @@ TEST(Client, T26_RecreateFailureKeepsOldImpl) {
   cfg.maxTotalWaitMs     = 5000;  // >= 2*timeout*(maxRetries+1)
   ASSERT_FALSE(cfg.check().has_value()) << *cfg.check();
 
-  auto r = OPC_UA_Client::createWithSdk(
+  auto r = ClientTestHooks::createWithSdk(
       sdk, "opc.tcp://192.0.2.1:4840", cfg);
   ASSERT_TRUE(r.has_value()) << r.get_error()->what();
   auto c = std::move(*r.get());

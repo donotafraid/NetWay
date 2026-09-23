@@ -19,6 +19,7 @@
 #include "tests/util/Cxx17Compat.h"
 #include "tests/util/wait_for.h"
 
+#include "OPCUAPacking/internal/ClientTestHooks.h"
 using namespace std::chrono_literals;
 
 // ============================================================
@@ -32,7 +33,7 @@ TEST(Client, T16_ShutdownWaitsForInFlightRead_NoUAF) {
 
   ClientConfig cfg;
   cfg.applyProfile(ClientConfig::PROFILE_LOCAL);
-  auto r = OPC_UA_Client::createWithSdk(sdk, "opc.tcp://192.0.2.1:4840", cfg);
+  auto r = ClientTestHooks::createWithSdk(sdk, "opc.tcp://192.0.2.1:4840", cfg);
   ASSERT_TRUE(r.has_value()) << r.get_error()->what();
   auto c = std::move(*r.get());
 
@@ -70,7 +71,7 @@ TEST(Client, T17_ShutdownTimeout_ForceCleanup_NoUAF) {
   cfg.retryBackoffBaseMs = 50;
   cfg.retryMaxBackoffMs = 100; // < timeoutMs
 
-  auto r = OPC_UA_Client::createWithSdk(sdk, "opc.tcp://192.0.2.1:4840", cfg);
+  auto r = ClientTestHooks::createWithSdk(sdk, "opc.tcp://192.0.2.1:4840", cfg);
   ASSERT_TRUE(r.has_value()) << r.get_error()->what();
   auto c = std::move(*r.get());
 
@@ -111,7 +112,7 @@ TEST(Client, T18_RecreateVsInFlightRead_OldFailsNewUsable) {
 
   ClientConfig cfg;
   cfg.applyProfile(ClientConfig::PROFILE_LOCAL);
-  auto r = OPC_UA_Client::createWithSdk(sdk, "opc.tcp://192.0.2.1:4840", cfg);
+  auto r = ClientTestHooks::createWithSdk(sdk, "opc.tcp://192.0.2.1:4840", cfg);
   ASSERT_TRUE(r.has_value()) << r.get_error()->what();
   auto c = std::move(*r.get());
 
@@ -194,7 +195,7 @@ TEST(Client, T19_GiveUp_ThresholdBoundary_VirtualClock) {
   ASSERT_FALSE(cfg.check().has_value()) << *cfg.check();
 
   sdk->setMode(MockSdk::Mode::Connected);
-  auto r = OPC_UA_Client::createWithSdk(sdk, "opc.tcp://192.0.2.1:4840", cfg);
+  auto r = ClientTestHooks::createWithSdk(sdk, "opc.tcp://192.0.2.1:4840", cfg);
   ASSERT_TRUE(r.has_value()) << r.get_error()->what();
   auto c = std::move(*r.get());
 

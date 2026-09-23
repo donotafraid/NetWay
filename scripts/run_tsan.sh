@@ -24,7 +24,7 @@ fi
 
 TSAN_ENV="halt_on_error=1:exitcode=66:report_signal_unsafe=1:second_deadlock_stack=1:suppressions=${TSAN_SUPP}"
 
-FILTER_CONCURRENCY='Client.T3_*:Client.TA2_*:Client.TC_*:ClientTest.T5_*:Client.T16_*:Client.T17_*:Client.T18_*:Client.T25_*:Client.T40_*:Client.T41_*:Client.T42_*:Client.T44_*'
+FILTER_CONCURRENCY='Client.T3_*:Client.TA2_*:Client.TC_*:ClientTest.T5_*:Client.T16_*:Client.T17_*:Client.T18_*:Client.T25_*:Client.T40_*:Client.T41_*:Client.T42_*:Client.T44_*:Client.T51_*'
 FILTER_API_LEASE='Client.T27_*'
 FILTER_DESTRUCTOR='Client.T8C1*'
 FILTER_CHECK_CONNECTED='Client.T31_*:Client.T32_*:Client.T33_*'

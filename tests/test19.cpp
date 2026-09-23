@@ -17,14 +17,14 @@
 #include <vector>
 #include "tests/MockSdk.h"
 #include "tests/util/wait_for.h"
-#include "OPCUAPacking/detail/ClientTestHooks.h"
+#include "OPCUAPacking/internal/ClientTestHooks.h"
 
 namespace {
 std::unique_ptr<OPC_UA_Client>
 makeClient(const std::shared_ptr<MockSdk> &sdk, bool enableWatchdog) {
   ClientConfig cfg;
   cfg.applyProfile(ClientConfig::PROFILE_LOCAL);
-  auto r = OPC_UA_Client::createWithSdk(
+  auto r = ClientTestHooks::createWithSdk(
       sdk, "opc.tcp://192.0.2.1:4840", cfg, /*usedefault=*/false,
       enableWatchdog);
   EXPECT_TRUE(r.has_value()) << (r.is_fail() ? r.get_error()->what() : "");

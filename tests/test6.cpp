@@ -8,7 +8,7 @@
 #include "tests/util/Cxx17Compat.h"   
 #include "tests/util/wait_for.h"
 
-#include "OPCUAPacking/detail/ClientTestHooks.h"
+#include "OPCUAPacking/internal/ClientTestHooks.h"
 
 // T8-B: 验证"非 GIVEN_UP 状态下 recreate 必须返回错误"
 TEST(Client, T8B_RecreateRequiresGivenUpState_Mock) {
@@ -17,7 +17,7 @@ TEST(Client, T8B_RecreateRequiresGivenUpState_Mock) {
   ClientConfig cfg;
   cfg.applyProfile(ClientConfig::PROFILE_LOCAL);
   std::string endpointUrl = "opc.tcp://192.0.2.1:4841";
-  auto createResult = OPC_UA_Client::createWithSdk(sdk, endpointUrl, cfg);
+  auto createResult = ClientTestHooks::createWithSdk(sdk, endpointUrl, cfg);
   ASSERT_TRUE(createResult.has_value());
   auto c = std::move(*createResult.get());
 
@@ -46,7 +46,7 @@ TEST(Client, T8C1_ShutdownRejectedWhileRecreating) {
   ASSERT_FALSE(cfg.check().has_value()) << *cfg.check();
 
   auto createResult =
-      OPC_UA_Client::createWithSdk(sdk, "opc.tcp://192.0.2.1:4840", cfg);
+      ClientTestHooks::createWithSdk(sdk, "opc.tcp://192.0.2.1:4840", cfg);
   ASSERT_TRUE(createResult.has_value())
       << "create failed: " << createResult.get_error()->what();
   auto client = std::move(*createResult.get());
@@ -121,7 +121,7 @@ TEST(Client, T8C2_DestructorAfterRecreate_CompletesPromptly) {
   ASSERT_FALSE(cfg.check().has_value()) << *cfg.check();
 
   auto createResult =
-      OPC_UA_Client::createWithSdk(sdk, "opc.tcp://192.0.2.1:4840", cfg);
+      ClientTestHooks::createWithSdk(sdk, "opc.tcp://192.0.2.1:4840", cfg);
   ASSERT_TRUE(createResult.has_value())
       << "create failed: " << createResult.get_error()->what();
   auto client = std::move(*createResult.get());
