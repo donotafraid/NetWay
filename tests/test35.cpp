@@ -1,0 +1,402 @@
+// tests/test35.cpp
+//
+// 补充用例：（在 T1~T120 之后）。只补此前没有任何用例触达、
+// 且能对应到 open62541 v1.4.14 官方行为的出口/状态；T121~T123 是
+// “修复前必失败、修复后通过”的红→绿回归，配套生产修复在同一份补丁里。
+//
+//   T121  disconnect() 的阻塞必须有界，即使 ISdk::runIterate 立即返回且不推进
+//         虚拟时钟（MockSdk 默认就是如此），且 disconnectAsync 不真正关通道。
+//         修复前该轮询只比较 ISdk::nowMs() 的 elapsed，形成无界阻塞；
+//         这与 T120 修好的 Impl::connect() 形成不对称。
+//
+//   T122  看门狗不能把“channel CLOSED 但 session 仍 ACTIVATED”的实例标成
+//         RUNNING。lifeState==RUNNING 的文档契约是“三元组全就绪、可正常读写”
+//         （Types.h:281-286），此时 isHealthy() 必须同样成功。
+//
+//   T123  看门狗必须把“具体 Bad 连接码”（如 BADSESSIONIDINVALID）识别为故障。
+//         修复前 isConnectBad() 用 == UA_STATUSCODE_BAD（0x80000000）比较，
+//         而 stateCallback 回传的是具体码，永远不相等，分支恒不命中。
+//
+//   T124  serviceResult != GOOD 且 results 数组已分配时，读/写都必须返回
+//         SERVICE_FAILED，并由出口守卫释放响应（LSan 裁决）。
+//         现有用例只覆盖了 serviceResult==GOOD 的按项失败。
+//
+//   T125  sessionTimeoutMs 必须从 ClientConfig 快照应用到 SDK 活配置，
+//         调用方事后改 cfg 不得影响实例。
+//
+//   T126  同一次批量里重复 NodeId 必须按索引逐项映射，不得被去重/折叠。
+//
+//   T127  并发批读 × 批写 × 健康查询 × recreate 的混合压力，由 TSan 裁决。
+//
+// 运行：
+//   ctest --test-dir build
+//   ./scripts/run_asan.sh
+//   ./scripts/run_tsan.sh
+
+#include "tests/include/util/ClientTestFixture.h"
+
+#include "OPCUAPacking/ua.h"
+
+#include <gtest/gtest.h>
+#include <open62541/client.h>
+#include <open62541/server.h>
+#include <open62541/server_config_default.h>
+
+#include <atomic>
+#include <chrono>
+#include <memory>
+#include <string>
+#include <thread>
+#include <variant>
+#include <vector>
+
+#include "tests/include/ClientTestHooks.h"
+#include "tests/include/MockSdk.h"
+#include "tests/include/util/Cxx17Compat.h"
+#include "tests/include/util/wait_for.h"
+
+#if defined(__has_feature)
+#  if __has_feature(address_sanitizer)
+#    include <sanitizer/lsan_interface.h>
+#    define OPCUA_LSAN_CHECK() __lsan_do_recoverable_leak_check()
+#  else
+#    define OPCUA_LSAN_CHECK() 0
+#  endif
+#elif defined(__SANITIZE_ADDRESS__)
+#  include <sanitizer/lsan_interface.h>
+#  define OPCUA_LSAN_CHECK() __lsan_do_recoverable_leak_check()
+#else
+#  define OPCUA_LSAN_CHECK() 0
+#endif
+
+using namespace std::chrono_literals;
+
+namespace {
+
+std::unique_ptr<OPC_UA_Client>
+makeMockClient(const std::shared_ptr<MockSdk> &sdk, ClientConfig cfg,
+               bool watchdog = false) {
+  auto r = OPCUAPacking::test::ClientTestHooks::createWithSdk(
+      sdk, "opc.tcp://192.0.2.1:4840", cfg, /*usedefault=*/false, watchdog);
+  EXPECT_TRUE(r.has_value()) << (r.is_fail() ? r.get_error()->what() : "");
+  if (r.is_fail())
+    return nullptr;
+  return std::move(*r.get());
+}
+
+ClientConfig localCfg() {
+  ClientConfig cfg;
+  cfg.applyProfile(ClientConfig::PROFILE_LOCAL);
+  return cfg;
+}
+
+bool isExpectedConcurrentResult(RichError::ErrorCode code) {
+  switch (code) {
+  case RichError::ErrorCode::OK:
+  case RichError::ErrorCode::ALREADY_TERMINATED:
+  case RichError::ErrorCode::RECREATING:
+  case RichError::ErrorCode::NOT_CONNECTED:
+  case RichError::ErrorCode::THREAD_BUSY:
+  case RichError::ErrorCode::GIVENUP_ING:
+    return true;
+  default:
+    return false;
+  }
+}
+
+} // namespace
+
+// ============================================================
+// T121（红→绿）: disconnect() 在 SDK 时钟冻结时也必须有限返回
+//
+// MockSdk 默认不推进 nowMs（autoAdvance=0）；再把 allowAuto 关掉，
+// disconnectAsync() 就不会把 mode 改成 Disconnected，通道一直保持 OPEN。
+// 修复前 disconnect() 只比较 ISdk::nowMs() 的 elapsed，于是无界阻塞。
+// ============================================================
+TEST(ClientBug, T121_Disconnect_BoundedWhenSdkClockFrozen) {
+  auto sdk = std::make_shared<MockSdk>();
+  sdk->setMode(MockSdk::Mode::Connected);
+
+  ClientConfig cfg = localCfg();
+  cfg.timeoutMs = 200;
+  cfg.retryBackoffBaseMs = 50;
+  cfg.retryMaxBackoffMs = 100;
+  cfg.maxTotalWaitMs = 5000;
+  cfg.giveUpThresholdMs = 60000;
+  ASSERT_FALSE(cfg.check().has_value()) << *cfg.check();
+
+  auto c = makeMockClient(sdk, cfg, /*watchdog=*/false);
+  ASSERT_NE(c, nullptr);
+
+  // 建连之后关闭隐式状态转换：disconnectAsync 不再改通道状态；
+  // 虚拟时钟保持冻结（autoAdvanceMs 默认 0）。
+  sdk->setMode(MockSdk::Mode::Connected, /*allowAuto=*/false);
+  sdk->setAutoAdvancePerIterateMs(0);
+
+  const auto t0 = std::chrono::steady_clock::now();
+  auto r = c->disconnect();
+  const auto wallMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                          std::chrono::steady_clock::now() - t0)
+                          .count();
+
+  ASSERT_TRUE(r.is_fail()) << "通道始终未 CLOSED，disconnect() 竟然成功";
+  EXPECT_EQ(r.get_error()->code(), RichError::ErrorCode::DISCONNECT_TIMEOUT)
+      << "actual=" << r.get_error()->codeName();
+  // 墙钟上界：2*timeoutMs + 500ms + 余量，绝不允许无界阻塞。
+  EXPECT_LT(wallMs, 3000)
+      << "disconnect() 在 SDK 时钟冻结时超过 3s 仍未返回，疑为无界阻塞";
+}
+
+// ============================================================
+// T122（红→绿）: 看门狗不得在 channel CLOSED 时报告 RUNNING
+//
+// 注入不一致三元组 (connectStatus=GOOD, channel=CLOSED, session=ACTIVATED)：
+// 修复前该状态既不命中 session 分支、也不命中 isConnectBad()（GOOD），
+// 于是落到叶分支 TurnToRunning()，把 channel 未 OPEN 的实例标成 RUNNING，
+// 而同一时刻 isHealthy() 必然失败——RUNNING 的文档契约被破坏。
+// ============================================================
+TEST(ClientBug, T122_Watchdog_MustNotReportRunningWithClosedChannel) {
+  auto sdk = std::make_shared<MockSdk>();
+  sdk->setMode(MockSdk::Mode::Connected);
+
+  auto c = makeMockClient(sdk, localCfg(), /*watchdog=*/false);
+  ASSERT_NE(c, nullptr);
+  ASSERT_EQ(c->checkLifeState().value_or(LifeState::GIVEN_UP),
+            LifeState::RUNNING)
+      << "前置条件：刚建连的客户端应为 RUNNING";
+
+  // 让恢复无法成功：注入 (GOOD, CLOSED, ACTIVATED) 后，getState 一律返回
+  // Unreachable，于是 disconnect()/connect() 都不能把实例带回健康。
+  // allowAuto=false 很关键：否则 connectAsync 会把 mode 翻回 Connected。
+  sdk->setMode(MockSdk::Mode::Unreachable, /*allowAuto=*/false);
+  sdk->setAutoAdvancePerIterateMs(1000);
+  sdk->enqueueState(UA_STATUSCODE_GOOD, UA_SECURECHANNELSTATE_CLOSED,
+                    UA_SESSIONSTATE_ACTIVATED);
+
+  OPCUAPacking::test::ClientTestHooks::pumpWatchdogForTest(*c);
+
+  // 确定性断言：通道 CLOSED 且无法恢复时，看门狗不得报 RUNNING。
+  // 旧写法把断言包在 `if (ls == RUNNING)` 里：若看门狗退化成永不报 RUNNING，
+  // 断言根本不会执行，测试空过。
+  EXPECT_TRUE(c->isHealthy().is_fail())
+      << "前置条件不成立：channel CLOSED 时三元组本应不健康";
+  auto ls = c->checkLifeState();
+  ASSERT_TRUE(ls.has_value()) << ls.get_error()->what();
+  EXPECT_NE(ls.value_or(LifeState::RUNNING), LifeState::RUNNING)
+      << "看门狗在 channel CLOSED 且恢复无望时仍把实例标成 RUNNING，"
+         "破坏 Types.h 的 RUNNING 契约";
+}
+
+// ============================================================
+// T123（红→绿）: 看门狗必须把“具体 Bad 码”识别为故障并尝试恢复
+//
+// stateCallback 回传的是具体码（BADSESSIONIDINVALID=0x80250000），不是
+// 泛型 UA_STATUSCODE_BAD=0x80000000。修复前 isConnectBad() 用等号比较，
+// 分支恒不命中，看门狗既不重连也不进入恢复流程。
+// ============================================================
+TEST(ClientBug, T123_Watchdog_TreatsSpecificBadConnectStatusAsBad) {
+  auto sdk = std::make_shared<MockSdk>();
+  sdk->setMode(MockSdk::Mode::Connected);
+
+  auto c = makeMockClient(sdk, localCfg(), /*watchdog=*/false);
+  ASSERT_NE(c, nullptr);
+
+  sdk->setAutoAdvancePerIterateMs(1000);
+  // 具体 Bad 连接码 + channel CLOSED + session ACTIVATED：
+  // 只有把“具体 Bad 码”当故障，看门狗才会去 connect()。
+  sdk->enqueueState(UA_STATUSCODE_BADSESSIONIDINVALID,
+                    UA_SECURECHANNELSTATE_CLOSED, UA_SESSIONSTATE_ACTIVATED);
+
+  const unsigned before = sdk->connectAsyncCallCount();
+  OPCUAPacking::test::ClientTestHooks::pumpWatchdogForTest(*c);
+
+  EXPECT_GT(sdk->connectAsyncCallCount(), before)
+      << "看门狗没有把具体 Bad 连接状态（BADSESSIONIDINVALID）识别为故障，"
+         "未发起任何重连";
+}
+
+// ============================================================
+// T124: serviceResult != GOOD 且 results 已分配时，出口守卫必须释放响应
+// ============================================================
+TEST(Client, T124_ServiceResultBad_WithAllocatedResults_NoLeak) {
+  auto sdk = std::make_shared<MockSdk>();
+  sdk->setMode(MockSdk::Mode::Connected);
+
+  auto c = makeMockClient(sdk, localCfg(), /*watchdog=*/false);
+  ASSERT_NE(c, nullptr);
+
+  // 读：serviceResult=BADINTERNALERROR，同时分配 2 项 results。
+  sdk->setReadResponseShape(UA_STATUSCODE_BADINTERNALERROR, /*resultsSize=*/2,
+                            /*allocResults=*/true);
+  std::vector<OPC_UA_Client::ReadValue> rv{
+      {1, "A", S7DataType::INT}, {1, "B", S7DataType::INT}};
+  auto rr = c->batchRead(rv);
+  ASSERT_TRUE(rr.is_fail()) << "serviceResult 非 GOOD 时不应返回成功";
+  EXPECT_EQ(rr.get_error()->code(), RichError::ErrorCode::SERVICE_FAILED)
+      << "actual=" << rr.get_error()->codeName();
+  EXPECT_EQ(sdk->serviceReadCallCount(), 1u)
+      << "非可重试码不应触发重试";
+
+  // 写：serviceResult=BADINTERNALERROR，同时分配 2 项 results。
+  sdk->setWriteResponseShape(UA_STATUSCODE_BADINTERNALERROR, /*resultsSize=*/2);
+  sdk->setWriteItemStatus(0, UA_STATUSCODE_GOOD);
+  sdk->setWriteItemStatus(1, UA_STATUSCODE_BADNOTWRITABLE);
+  std::vector<OPC_UA_Client::WriteValue> wv{
+      {{1, "A", S7DataType::INT}, int16_t(1)},
+      {{1, "B", S7DataType::INT}, int16_t(2)}};
+  auto wr = c->batchWrite(wv);
+  ASSERT_TRUE(wr.is_fail()) << "serviceResult 非 GOOD 时不应返回成功";
+  EXPECT_EQ(wr.get_error()->code(), RichError::ErrorCode::SERVICE_FAILED)
+      << "actual=" << wr.get_error()->codeName();
+
+  // 两个出口都必须已释放 results 数组；LSan 下此处为 0。
+  EXPECT_EQ(OPCUA_LSAN_CHECK(), 0);
+
+  sdk->resetResponseShape();
+  EXPECT_TRUE(c->shutdown().is_success());
+}
+
+// ============================================================
+// T125: sessionTimeoutMs 快照必须应用到 SDK 活配置，且不受调用方后续修改影响
+// ============================================================
+TEST(Client, T125_SessionTimeout_SnapshotPassthrough) {
+  auto sdk = std::make_shared<MockSdk>();
+  sdk->setMode(MockSdk::Mode::Connected);
+
+  ClientConfig cfg = localCfg();
+  cfg.sessionTimeoutMs = 424242;
+  cfg.secureChannelLifeTimeMs = 500000;
+  cfg.giveUpThresholdMs = 60000;
+  ASSERT_FALSE(cfg.check().has_value()) << *cfg.check();
+
+  auto c = makeMockClient(sdk, cfg, /*watchdog=*/false);
+  ASSERT_NE(c, nullptr);
+
+  UA_Client *raw = sdk->rawClient();
+  ASSERT_NE(raw, nullptr);
+  UA_ClientConfig *live = sdk->getConfig(raw);
+  ASSERT_NE(live, nullptr);
+  EXPECT_EQ(live->requestedSessionTimeout, 424242u)
+      << "sessionTimeoutMs 没有从 ClientConfig 快照应用到 SDK config";
+
+  // 调用方事后修改 cfg 不得影响已创建实例。
+  cfg.sessionTimeoutMs = 999999;
+  EXPECT_EQ(sdk->getConfig(sdk->rawClient())->requestedSessionTimeout, 424242u)
+      << "实例引用了调用方 cfg，快照语义被破坏";
+
+  EXPECT_TRUE(c->shutdown().is_success());
+}
+
+// ============================================================
+// T126: 重复 NodeId 必须按索引逐项映射，不得去重/折叠
+// ============================================================
+TEST(Client, T126_DuplicateNodeIds_PreservePerIndexAlignment) {
+  auto sdk = std::make_shared<MockSdk>();
+  sdk->setMode(MockSdk::Mode::Connected);
+
+  auto c = makeMockClient(sdk, localCfg(), /*watchdog=*/false);
+  ASSERT_NE(c, nullptr);
+
+  // 读：同一 NodeId 出现三次，按索引返回 11/22/33。
+  sdk->setReadResponseShape(UA_STATUSCODE_GOOD, /*resultsSize=*/3,
+                            /*allocResults=*/true);
+  sdk->setReadItemInt16(0, 11);
+  sdk->setReadItemInt16(1, 22);
+  sdk->setReadItemInt16(2, 33);
+
+  const OPC_UA_Client::NodeId dup{1, "DupNode", S7DataType::INT};
+  std::vector<OPC_UA_Client::ReadValue> rv{{dup}, {dup}, {dup}};
+  auto rr = c->batchRead(rv);
+  ASSERT_TRUE(rr.is_success()) << rr.get_error()->what();
+  const auto &out = rr.value_or({});
+  ASSERT_EQ(out.size(), 3u) << "重复 NodeId 被去重/折叠";
+  ASSERT_TRUE(out[0].value.has_value());
+  ASSERT_TRUE(out[1].value.has_value());
+  ASSERT_TRUE(out[2].value.has_value());
+  EXPECT_EQ(std::get<int16_t>(*out[0].value), 11);
+  EXPECT_EQ(std::get<int16_t>(*out[1].value), 22);
+  EXPECT_EQ(std::get<int16_t>(*out[2].value), 33)
+      << "逐项结果与请求索引错位（重复 NodeId 被折叠）";
+
+  // 写：同一 NodeId 出现两次，逐项状态必须按索引区分。
+  sdk->setWriteResponseShape(UA_STATUSCODE_GOOD, /*resultsSize=*/2);
+  sdk->setWriteItemStatus(0, UA_STATUSCODE_GOOD);
+  sdk->setWriteItemStatus(1, UA_STATUSCODE_BADNOTWRITABLE);
+  std::vector<OPC_UA_Client::WriteValue> wv{
+      {dup, int16_t(1)}, {dup, int16_t(2)}};
+  auto wr = c->batchWrite(wv);
+  ASSERT_TRUE(wr.is_success()) << wr.get_error()->what();
+  ASSERT_EQ(wr.value_or({}).size(), 2u);
+  EXPECT_EQ(wr.value_or({})[0].status,
+            OPC_UA_Client::WriteResult::Status::Good);
+  EXPECT_EQ(wr.value_or({})[1].status,
+            OPC_UA_Client::WriteResult::Status::Bad)
+      << "重复 NodeId 的写入逐项状态被折叠";
+  EXPECT_EQ(sdk->lastWriteObservation().nodeIds.size(), 2u)
+      << "重复 NodeId 没有全部下发到 SDK";
+
+  sdk->resetResponseShape();
+  EXPECT_TRUE(c->shutdown().is_success());
+}
+
+// ============================================================
+// T127: 并发批读 × 批写 × 健康查询 × recreate（由 TSan 裁决）
+// ============================================================
+TEST(Client, T127_ConcurrentReadWriteHealthRecreate_TSan) {
+  auto sdk = std::make_shared<MockSdk>();
+  sdk->setMode(MockSdk::Mode::Connected);
+
+  auto c = makeMockClient(sdk, localCfg(), /*watchdog=*/false);
+  ASSERT_NE(c, nullptr);
+
+  sdk->setReadResponseShape(UA_STATUSCODE_GOOD, /*resultsSize=*/1,
+                            /*allocResults=*/true);
+  sdk->setReadItemInt16(0, 7);
+  sdk->setWriteResponseShape(UA_STATUSCODE_GOOD, /*resultsSize=*/1);
+  sdk->setWriteItemStatus(0, UA_STATUSCODE_GOOD);
+
+  std::atomic<bool> stop{false};
+  std::atomic<int> unexpected{0};
+
+  const OPC_UA_Client::NodeId node{1, "N", S7DataType::INT};
+
+  std::thread reader([&] {
+    while (!stop.load(std::memory_order_acquire)) {
+      auto r = c->batchRead({{node}});
+      if (r.is_fail() &&
+          !isExpectedConcurrentResult(r.get_error()->code())) {
+        unexpected.fetch_add(1);
+      }
+    }
+  });
+  std::thread writer([&] {
+    while (!stop.load(std::memory_order_acquire)) {
+      auto r = c->batchWrite({{node, int16_t(1)}});
+      if (r.is_fail() &&
+          !isExpectedConcurrentResult(r.get_error()->code())) {
+        unexpected.fetch_add(1);
+      }
+    }
+  });
+  std::thread health([&] {
+    while (!stop.load(std::memory_order_acquire)) {
+      (void)c->checkLifeState();
+      (void)c->isHealthy();
+    }
+  });
+
+  std::this_thread::sleep_for(50ms);
+  (void)c->setGiveUpSignal();
+  auto rec = c->recreateGiveUpClient();
+  EXPECT_TRUE(rec.is_success())
+      << (rec.is_fail() ? rec.get_error()->what() : "");
+
+  stop.store(true, std::memory_order_release);
+  reader.join();
+  writer.join();
+  health.join();
+
+  EXPECT_EQ(unexpected.load(), 0)
+      << "并发窗口内出现了预期之外的错误码（可能存在竞态/状态泄漏）";
+  EXPECT_TRUE(c->shutdown().is_success());
+}

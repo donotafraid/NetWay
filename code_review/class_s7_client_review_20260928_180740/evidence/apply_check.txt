@@ -1,0 +1,1 @@
+git apply --check: APPLY_OK (exit 0)

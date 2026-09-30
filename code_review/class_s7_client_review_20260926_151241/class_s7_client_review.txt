@@ -1,0 +1,553 @@
+================================================================================
+OPC_UA_Client 代码审查报告（第二轮）
+对象：include/OPCUAPacking、src/OPCUAPacking、tests/、include/PLC/TypeTraits.h、
+      .github/workflows/sanitizers.yml、scripts/、CMakeLists.txt
+环境：open62541 v1.4.14（锁定）、C++17、Clang 17、libc++、UA_MULTITHREADING=100
+方法：逐行走查 ua.cpp / Types.h / TypeTraits.h / MockSdk.h / test1~test34，
+      对照 open62541 v1.4.14 官方头文件与实现源码（ua_client.c /
+      ua_client_connect.c / client.h），并在本会话内真实编译 + ASan/UBSan
+      跑通全部 121 个用例后给出结论。
+================================================================================
+
+【关于本报告的位置】
+你要求写到
+  /root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/
+该目录在本会话沙箱中是只读挂载（touch 直接被内核以
+"Read-only file system" 拒绝），因此报告与补丁落盘在会话工作区：
+  <session-workspace>/code_review/class_s7_client_review_<时间戳>/
+迁移到你的项目（把 <D> 换成上面目录）：
+  mkdir -p /root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/code_review
+  cp -r <D> /root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/code_review/
+  cd /root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main
+  git apply --check <D>/patches/class_s7_client_review.patch   # 先干跑
+  git apply         <D>/patches/class_s7_client_review.patch   # 再落盘
+  git apply -R      <D>/patches/class_s7_client_review.patch   # 需要回退时
+
+
+================================================================================
+1. 结论摘要（先给结论，再给证据）
+================================================================================
+
+总体评分：B+
+  架构设计        A-   pImpl + ISdk 接缝 + Result 错误模型 + ApiLease/RecreateSync 三层生命周期
+  资源与生命周期  A-   全部 UA_* 出口均有 RAII Guard；OOM/析构/recreate 竞争已修复
+  并发落地        B    原子 CAS 状态机扎实；1 个契约矛盾 + 1 个无界忙等 + 1 个看门狗恢复盲区
+  公开 API 封装    A-   ua.h 零 open62541 泄漏且有编译期探针；友元后门仍在
+  测试工程        A-   34 个文件 121 用例 + ASan/LSan/TSan + 编译期探针；仍有 3 处结构性盲区
+  文档一致性      C+   LifeState 语义与 disconnect() 实际行为自相矛盾；注释残留评审痕迹
+
+一句话结论：
+  上一轮的补丁（RealSdk OOM、ThreadGuard 自 join、析构等待 recreate、STRING 错误码、
+  free 函数 inline）我逐条确认已经落盘且正确。这一轮没有找到新的内存泄漏或
+  use-after-free，但找到了三个"行为与契约不一致"级别的真实问题：
+    (1) 显式 disconnect() 之后 checkLifeState() 仍报 RUNNING，而 isHealthy() 已失败
+        —— LifeState::RUNNING 的文档定义是"三元组全就绪、可正常读写"（本次修复）；
+    (2) connect() 的轮询只比较可注入的 ISdk::nowMs()，SDK 实现若 runIterate 立即
+        返回且不推进时钟，就会无界忙等（本次修复 + 红→绿用例 T120）；
+    (3) 看门狗对"通道 OPEN + 会话未激活"不做任何恢复，connectAsync 一次都不会调用，
+        只能一路耗到 GIVEN_UP；叠加 noNewSession=true，SDK 也不会自动重建会话。
+
+直接回答你的问题："这些测试结果是否足够？"
+  - 对"控制流正确性 / 错误码映射 / 生命周期 / Rule of Five / 封装完整性"：
+    足够，甚至优于绝大多数社招 C++ 作品。
+  - 对"工业现场：多线程 + 真实网络 + 长时间运行"：这一轮补上了真实断连往返、
+    数值写回读、混合批量、四套 profile、命名空间透传，基本补齐；
+    仍然缺的是"压力/耐久"维度（长时运行、内存曲线、P99 延迟），那属于 benchmark
+    而不是单元测试，见第 7 节行动清单。
+  - 新增 T114~T120 七个用例（见第 6 节补丁），其中 T114 / T120 是红→绿回归，
+    已在本会话用真实编译验证：打修复前 T114 失败、T120 无限忙等被 timeout 杀掉；
+    打修复后两者通过，且全量 121 用例 120 通过 / 1 跳过（T1 环境门控）/ 0 失败。
+
+
+================================================================================
+2. 以官方代码/文档为准的 SDK 运行事实
+================================================================================
+（以下引用全部来自 open62541 v1.4.14 源码；获取方式为 raw.githubusercontent.com/
+ open62541/open62541/v1.4.14/...，与官方 1.4 文档
+ https://open62541.org/doc/1.4/client.html 一致。）
+
+[A] 客户端没有自己的线程，必须周期调用 UA_Client_run_iterate
+    client.h 顶部原文：
+      "the client does not yet contain its own thread or event-driven main-loop ...
+       The user will have to periodically call UA_Client_run_iterate to ensure that
+       asynchronous events are handled, including keeping a secure connection
+       established."
+    对应实现：Impl::runWatchdog() → callRunIterate()（ua.cpp:1544-1580, 2507）。
+
+[B] isFullyConnected 看的是 noSession，不是 noNewSession
+    src/client/ua_client_connect.c  v1.4.14：
+      UA_Boolean
+      isFullyConnected(UA_Client *client) {
+          /* No Session, but require one */
+          if(client->sessionState != UA_SESSIONSTATE_ACTIVATED && !client->config.noSession)
+              return false;
+          if(client->channel.state != UA_SECURECHANNELSTATE_OPEN)
+              return false;
+          ...
+      }
+    结论：你的封装把 noReconnect / noNewSession 都固定为 true（ua.cpp:1369-1370），
+    但 isFullyConnected 只受 noSession 影响，所以同步服务调用仍会走 connectSync 补连。
+    这一点上一轮报告判断正确。
+
+[C] noNewSession 的真实语义：会话失效即主动断开
+    client.h 原文：
+      "noNewSession: Don't automatically create a new Session when the intial one is
+       lost. Instead abort the connection when the Session is lost."
+    src/client/ua_client.c  processMSGResponse()：
+      if(responseType != &UA_TYPES[UA_TYPES_ACTIVATESESSIONRESPONSE] &&
+         (response->responseHeader.serviceResult == UA_STATUSCODE_BADSESSIONIDINVALID ||
+          response->responseHeader.serviceResult == UA_STATUSCODE_BADSESSIONCLOSED)) {
+          cleanupSession(client);
+          if(client->config.noNewSession) {
+              client->connectStatus = response->responseHeader.serviceResult;
+              UA_LOG_ERROR(..., "Session cannot be activated ... The client is configured
+                                 not to create a new Session.");
+              closeSecureChannel(client);
+          } else { ... }
+      }
+    结论：noNewSession=true 时，SDK 不会在服务调用里自动重建会话，而是把通道关掉、
+    把 connectStatus 置成 BADSESSIONIDINVALID。恢复会话的责任落回封装层。
+
+[D] initConnect 在通道未 CLOSED 时直接返回
+    src/client/ua_client_connect.c  initConnect()：
+      if(client->channel.state != UA_SECURECHANNELSTATE_CLOSED) {
+          UA_LOG_WARNING(client->config.logging, UA_LOGCATEGORY_CLIENT,
+                         "Client connection already initiated");
+          return;
+      }
+    这是第 4.2 节"看门狗盲区"的直接原因：只要通道还 OPEN，connect()/connectSync()
+    都无法真正重建会话。
+
+[E] 同步服务调用会自动补连
+    src/client/ua_client.c  __Client_Service()：
+      if(!isFullyConnected(client)) {
+          UA_LOG_INFO(..., "Re-establish the connction for the synchronous service call");
+          connectSync(client);
+          if(client->connectStatus != UA_STATUSCODE_GOOD) {
+              respHeader->serviceResult = client->connectStatus;
+              return;
+          }
+      }
+    注意：connectSync 不会重置 connectStatus；重置只发生在 connectInternal()。
+    因此 [C] 里被置为 BADSESSIONIDINVALID 之后，同一次 batchRead 的内部重试即使
+    再进 connectSync 也拿不回 GOOD——这也是为什么 [C] 的状态必须由显式 connect()
+    （走 connectInternal → 重置 connectStatus）来收拾。
+
+[F] 配置浅拷贝与 logger 所有权（上一轮 R1 已被正确修复）
+    client.h：UA_Client_newWithConfig "Moves the config into the client with a shallow copy."
+    ua_client.c：UA_Client_delete → UA_Client_clear → UA_ClientConfig_clear
+      if(config->logging != NULL && config->logging->clear != NULL)
+          config->logging->clear(config->logging);
+    你的 RealSdk::clientNew 现在在 setDefault 失败与 newWithConfig 失败两条路径都补了
+    UA_ClientConfig_clear（RealSdk.h:22, 41），静态 logger 的 clear=nullptr 也不会二次释放。
+    这处 OOM 泄漏已消除。
+
+-------------------------------------------------------------------------------
+2.1 路径图 A：batchRead → SDK 自动补连（含 noNewSession 分支）
+-------------------------------------------------------------------------------
+  OPC_UA_Client::batchRead                          [ua.cpp:2308]
+   └─ ApiLease(m_recreateSync)                      // terminated/recreating 直接拒绝
+   └─ Impl::batchRead                               [ua.cpp:581]
+       ├─ getEffectiveStopSignal() / lifeState / m_connState 预检
+       ├─ 构造 UA_ReadRequest + ReadRequestGuard    // 所有提前 return 不漏
+       ├─ lock(m_sdkMutex) ───────────────┐
+       │   ISdk::serviceRead              │
+       │    └─ UA_Client_Service_read     │  open62541 v1.4.14
+       │        └─ __UA_Client_Service    │  (client.h, UA_THREADSAFE)
+       │            ├─ lock(client->clientMutex)
+       │            ├─ UA_init(response)
+       │            ├─ isFullyConnected()? ─ 否 → connectSync()
+       │            │      └─ initConnect(): channel==CLOSED ? 建链 : 直接 return  ←[D]
+       │            ├─ sendRequest() → EventLoop.run() 直到 MSG / config->timeout
+       │            └─ processMSGResponse():
+       │                  BADSESSIONIDINVALID/CLOSED?
+       │                     ├─ noNewSession==true  → connectStatus=BAD...; closeSecureChannel  ←[C]
+       │                     └─ noNewSession==false → 下次服务调用重建 Session
+       └─ ReadResponseGuard → UA_ReadResponse_clear()  // 正常/超时/重试/畸形全部出口
+
+-------------------------------------------------------------------------------
+2.2 路径图 B：看门狗裁决树（第 4.2 节盲区所在）
+-------------------------------------------------------------------------------
+  runWatchdog()                                     [ua.cpp:1544]
+   └─ 每 watchdogIntervalMs → doWatchdogDecision()  [ua.cpp:1582]
+        ├─ isConnected() → run_iterate + getState → 更新三元组 + updateBadStatusTime
+        ├─ healthy? → TurnToRunning(); sessionLost? → disconnect()+connect()
+        └─ !healthy:
+             ├─ shouldTriggerGiveUp()? → TurnToGiveup()
+             ├─ callRunIterate()
+             ├─ isChannelClosed()? ── false ─→ TurnToRecovring(); return   ★盲区
+             └─ connect() → CAS m_connState IDLE→CONNECTING
+                    connectAsync + isConnected() 轮询 → TurnToRunning
+
+  盲区后果（官方事实 [C]+[D] 叠加）：
+    通道 OPEN + 会话 CLOSED 时，isChannelClosed()==false → 永不调用 connect()；
+    而 noNewSession=true 又让 SDK 不会自动重建会话；
+    最终只能耗尽 giveUpThresholdMs → GIVEN_UP。T119 把这一现状钉死。
+
+-------------------------------------------------------------------------------
+2.3 路径图 C：显式 disconnect 的状态迁移（第 4.1 节缺陷所在）
+-------------------------------------------------------------------------------
+  OPC_UA_Client::disconnect()                       [ua.cpp:1922]
+   └─ Impl::disconnect()                            [ua.cpp:1133]
+        ├─ CAS IDLE→CONNECTING；disconnectAsync()
+        ├─ 轮询 isConnected() 直到 sdkChannelState==CLOSED
+        │     └─ 成功 return（修复前：不写 m_lifeState）
+        └─ CASGuard → IDLE
+
+  LifeState 的三个写点（修复前）：TurnToRunning / TurnToRecovring / TurnToGiveup
+  —— 显式 disconnect() 不在其中，于是：
+     isHealthy()       → false（读缓存三元组，通道 CLOSED）
+     checkLifeState()  → RUNNING（读 m_lifeState，从未被写过）
+     而 Types.h:281-286 定义 RUNNING = "三元组全部就绪 … 可正常读写"。
+     同一对象上两个只读 API 对同一事实给出相反答案。T114 复现。
+
+-------------------------------------------------------------------------------
+2.4 路径图 D：connect() 轮询的两个时钟（第 4.3 节缺陷所在）
+-------------------------------------------------------------------------------
+  Impl::connect()                                    [ua.cpp:1023]
+   ├─ CAS IDLE→CONNECTING；connectAsync()
+   └─ while(true):
+        isConnected()          // 内部 callRunIterate → ISdk::runIterate
+        elapsed = m_sdk->nowMs() - start
+        if (elapsed > timeoutMs) → disconnectAsync(); return TIMEOUT_NOTCONNECT
+        if (getEffectiveStopSignal()) → return SHUTDOWN
+        // 修复前没有 sleep、没有墙钟兜底：
+        //   ISdk::runIterate 若立即返回且 nowMs 不推进 ⇒ elapsed 恒为 0 ⇒ 无界忙等
+
+  对照 Impl::disconnect() [ua.cpp:1232] 反而有 std::this_thread::sleep_for(50ms)，
+  两条轮询循环的健壮性不对称。T120 复现。
+
+
+================================================================================
+3. 按审查侧重点逐项结论
+================================================================================
+
+3.1 资源泄漏（UA_ReadResponse 出口路径）                       结论：A-
+  - ReadRequestGuard / ReadResponseGuard / WriteRequestGuard / WriteResponseGuard
+    四个 RAII 覆盖 batchRead/batchWrite 的全部出口：正常、重试、预算超限、
+    逐项错误、参数校验提前失败、服务层错误、畸形响应（results==nullptr 且 size>0）。
+    response 声明在 for 循环体内，Guard 每轮构造/析构，重试不累积。
+  - 上一轮 R1（RealSdk::clientNew 的 OOM 泄漏）已修复并落盘：两条失败分支都
+    调用 UA_ClientConfig_clear（RealSdk.h:22, 41）。本轮未发现新泄漏；
+    全量 ASan(detect_leaks=1)+UBSan 121 用例 0 泄漏报告。
+
+  仍建议（非缺陷，异常安全）：
+    (E-1) ua.cpp:735-740 的出口顺序对"ISdk 抛异常"不设防：
+            UA_ReadResponse response;
+            {
+              std::lock_guard<std::recursive_mutex> sdkLock(m_sdkMutex);
+              response = m_sdk->serviceRead(client.get(), request); // ★
+            }
+            ReadResponseGuard guard(&response);
+          ISdk 是 C 实现，正常情况下不抛；但它是可注入的虚接口，Mock/未来 SDK
+          一旦抛异常，response 尚未构造 Guard，且它本身是未初始化的 POD。
+          低风险，但既然你把 ISdk 当接缝，建议在公共入口再包一层 try/catch
+          把 std::bad_alloc / std::exception 转成 RichError::INTERNAL_ERROR，
+          让 Result 契约不被异常穿透。
+
+3.2 配置快照与悬垂指针                                         结论：A-
+  - ClientConfig 是纯值类型；create 入参按值拷贝，Impl::m_config 再拷贝一份，
+    调用方事后改 cfg 不影响实例（T52）。endpointUrl 在 Impl 与 RecreateSync
+    各存 std::string 拷贝（T39）。applyDefaultIfInvalid() 只改 m_config 副本。
+  - 回调上下文所有权链正确：Impl::m_callbackContext(shared_ptr) +
+    UA_ClientDeleter::ctx(shared_ptr, 随 shared_ptr<UA_Client> 快照复制) +
+    config->clientContext(raw)。Impl 先析构时 Deleter 仍持有 ctx，
+    stateCallback/inactivityCallback 里的 UA_Client_getContext 不悬垂。
+  - 上一轮 D1（~OPC_UA_Client 等 recreate 只等 10s → UAF）已修复为无超时等待
+    （ua.cpp:1837-1838），且 ApiLease 保证 m_terminated 后普通 API 不再进入，
+    recreate 是有界的（drain 2s + connect 超时）。本轮未发现新的悬垂路径。
+
+3.3 线程安全（基于 v1.4.14 实际行为）                          结论：B
+  事实基础见第 2 节 [A][B][C]。
+  做得好的：
+    - m_connState 用 CAS 做 connect/disconnect 单飞；m_lifeState 用 CAS 迁移且
+      TurnToRunning()/setGiveUpSignal() 刻意用 CAS 防丢失更新（T100 验证粘性）。
+    - InFlightGuard(m_taskCounter) 与 ApiLease(m_inFlight) 两套计数器边界清晰，
+      分别服务 shutdown() 与 recreateGiveUpClient()。
+    - 回调只碰原子、不加 m_lock；watchdog 只取 shared_ptr 快照。
+  扣分项：
+    (C1) 【本轮新发现，已修复】Impl::connect() 轮询无 sleep、上界只信 ISdk::nowMs()，
+         构成无界忙等风险（详见 4.3 / T120）。
+    (C2) 【本轮新发现，未改代码，给出方案】看门狗对"通道 OPEN + 会话未激活"不恢复
+         （详见 4.2 / T119）。
+    (C3) m_sdkMutex 与 open62541 内部 clientMutex 语义重叠。功能安全（锁序恒定），
+         但会放大阻塞：一次 Service_read 会把 watchdog 的 run_iterate 挡在门外；
+         反过来 watchdog 的 run_iterate 也让业务读写排队。面试里要能讲清
+         "它是为了把 connectAsync + getState 轮询组成不可分割段，代价是阻塞放大"。
+    (C4) m_connState 同时表示 connect/disconnect 的进行态（都写 CONNECTING），
+         THREAD_BUSY 无法区分"正在连"还是"正在断"。
+
+3.4 Rule of Five 与移动语义                                    结论：A-
+  - OPC_UA_Client 是 final，拷贝/移动全删、析构非平凡，编译期断言钉死
+    （tests/compile/RuleOfFiveAsserts.cpp）。对持有 shared_ptr<Impl>、watchdog
+    线程、被 SDK 回调以 raw ptr 引用的 CallbackContext 而言，禁止移动是正确理由。
+  - 领域值类型 NodeId/ReadValue/WriteValue/ReadResult/WriteResult 的 noexcept
+    移动断言齐全，保证 vector 扩容走移动。
+  - 唯一建议：NodeId 是聚合体，ns 无范围校验，dataType 与 batchWrite 的
+    ValueType 是两处独立输入，靠运行期 get_if 校验（T49/T62 覆盖）。
+    可加 makeNodeId() 工厂在入口收敛。
+
+3.5 公开 API 的封装完整性                                      结论：A-（封装干净，但有后门）
+  - ua.h 不包含任何 open62541 头，ReadResult/WriteResult 用 uint32_t 而非
+    UA_StatusCode；tests/CMakeLists.txt 的 only_ua_h 目标故意不带 open62541
+    include 路径来编译 EncapsulationProbe.cpp——把"封装完整"变成可证伪构建产物。
+  - 注意边界：include/PLC/TypeTraits.h、ConversionDispatcher.h 是公开头且
+    直接 #include <open62541/client_highlevel.h>。only_ua_h 只证明 ua.h 自洽，
+    不能证明整个 include/ 树自洽。若 PLC 头对业务方可见，请在文档里说明。
+  - 后门：ua.h:102 `friend struct ClientTestHooks;` 是授予"全局命名空间里叫这个
+    名字的类型"。任何 TU 定义同名 struct 即获得 pImpl/createWithSdk/
+    pumpWatchdogForTest/getRecreatingStatus 的私有访问。建议宏隔离：
+      #ifdef OPCUAPACKING_ENABLE_TEST_HOOKS
+      namespace OPCUAPacking::test { struct ClientTestHooks; }
+      #endif
+      friend struct OPCUAPacking::test::ClientTestHooks;
+    生产构建不开启该宏，头文件里根本不存在友元声明。
+
+3.6 其它（低优先级）
+  (M1) ua.cpp:763 使用 std::stringstream，但 ua.cpp 没有 #include <sstream>。
+       当前能编过是 spdlog 传递包含的巧合；显式补上更稳。
+  (M2) 注释里残留评审过程语言（"报告 §x""Txx""审查补充""by report"），
+       include/src/tests 合计 20 处。面试官看到会觉得这是"给 AI/评审看的"，
+       不是产品代码。建议清理成描述行为的注释。
+  (M3) 无偏袒地说，Types.h 里的 applyProfile 预设都自洽（T118 已钉死四套）。
+
+
+================================================================================
+4. 本轮新发现（含问题原文）
+================================================================================
+
+4.1 【已修复，红→绿】disconnect() 之后 LifeState 与 isHealthy() 自相矛盾
+--------------------------------------------------------------------------------
+问题原文（src/OPCUAPacking/ua.cpp，Impl::disconnect() 的出口，修复前）：
+      if (sdkChannelState.load(std::memory_order_acquire) ==
+          UA_SECURECHANNELSTATE_CLOSED)
+        break;
+      ...
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  }
+
+  return Result<Unit, DisconnectErrorState>::success(Unit{});
+问题原文（ua.cpp，getEffectiveStopSignal()）：
+  bool OPC_UA_Client::Impl::getEffectiveStopSignal() {
+    return (m_shutdown.load(std::memory_order_acquire) &&
+            !m_running.load(std::memory_order_acquire)) ||
+           m_lifeState.load(std::memory_order_acquire) == LifeState::GIVEN_UP;
+  }
+问题原文（include/OPCUAPacking/Types.h，LifeState 定义）：
+    /// 三元组全部就绪：
+    ///   sdkConnectStatus == GOOD
+    ///   sdkChannelState  == OPEN
+    ///   sdkSessionState  == ACTIVATED
+    /// 由 TurnToRunning() 置位（看门狗判定健康时）。
+    RUNNING,
+后果：显式 disconnect() 成功后，m_lifeState 仍是 RUNNING；
+      isHealthy() → 失败，checkLifeState() → RUNNING。
+      两个只读 API 对"当前能不能读写"给出相反答案，且与 RUNNING 的文档定义冲突。
+复现：tests/test34.cpp 的 T114。
+修复：disconnect() 两条成功出口都调用 TurnToRecovring()（TurnToRecovring 的
+      健康条件此时必然成立：sdkSessionState != ACTIVATED）。
+      已在真机编译 + 全量回归验证：T114 修复前 FAIL，修复后 PASS；
+      其余 120 个用例 0 失败。
+
+4.2 【已定位，给出修复方向】看门狗不修复"通道 OPEN + 会话未激活"
+--------------------------------------------------------------------------------
+问题原文（src/OPCUAPacking/ua.cpp，doWatchdogDecision()！healthy 分支）：
+    callRunIterate(client);
+    auto checkCs = isChannelClosed();
+    if(!checkCs)
+    {
+      TurnToRecovring();
+      return;
+    }
+    auto connectResult = connect();
+问题原文（ua.cpp，applyConfiguration()）：
+  config->noReconnect = true;//固定设为true
+  config->noNewSession = true;//固定设为true
+后果：按官方 [C][D]，通道仍 OPEN 时 initConnect() 直接返回，connect() 无法重建
+      会话；而 noNewSession=true 又让 SDK 不自动重建。于是该状态无自愈路径，
+      只能耗到 giveUpThresholdMs → GIVEN_UP。
+复现：tests/test34.cpp 的 T119（特征化：connectAsync 调用次数恒为 0，最终 GIVEN_UP）。
+修复方向（本次未强行改生产代码，避免在无法真机复现该状态时引入新风险）：
+  在 !healthy 分支中，当通道未 CLOSED 且 sdkSessionState != ACTIVATED 时，
+  先 disconnect() 把通道打回 CLOSED，再走 connect()。伪代码：
+      callRunIterate(client);
+      if (sdkSessionState.load(std::memory_order_acquire) != UA_SESSIONSTATE_ACTIVATED) {
+        (void)disconnect();          // 关掉 OPEN 的通道
+        callRunIterate(client);
+      }
+      if (!isChannelClosed()) { TurnToRecovring(); return; }
+      auto connectResult = connect();
+  若采用该修复，请把 T119 从"特征化"改成"恢复后 isHealthy() 成功"的正向断言。
+
+4.3 【已修复，红→绿】connect() 在 SDK 时钟冻结时无界忙等
+--------------------------------------------------------------------------------
+问题原文（src/OPCUAPacking/ua.cpp，Impl::connect() 轮询，修复前）：
+  auto start = pImplQuote->nowMsImpl();
+  while (true) {
+    ...
+    auto elapsed = pImplQuote->nowMsImpl() - start;
+    if (elapsed > static_cast<int64_t>(pImplQuote->m_config.timeoutMs)) {
+      ...
+    }
+    ...
+    // 没有 sleep / 没有墙钟兜底
+  }
+对照 disconnect() 反而有：
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+后果：ISdk::runIterate 若立即返回且 nowMs 不推进（MockSdk 默认就是），
+      elapsed 恒为 0，connect() 变成无界忙等：CPU 100%、永不返回。
+      现有 T2 之所以没暴露，是因为它显式 setAutoAdvancePerIterateMs(50)。
+复现：tests/test34.cpp 的 T120（修复前实测被 timeout 杀掉，exit=124）。
+修复：加入 steady_clock 墙钟兜底（2*timeoutMs+500ms），并保留原虚拟时钟判据。
+      验证：T120 修复前 timeout，修复后 900ms 内返回 CONNECT_TIMEOUT；
+      T2/T74 等依赖虚拟时钟的用例仍然通过（全量回归 0 失败）。
+
+4.4 【测试盲区，已补 T115】NodeId.ns 从未被断言
+--------------------------------------------------------------------------------
+问题原文（tests/include/MockSdk.h，serviceRead 的观察点，修复前）：
+      lastReadNodeIdLengths_.clear();
+      for (size_t i = 0; i < req.nodesToReadSize; ++i) {
+        lastReadNodeIdLengths_.push_back(
+            req.nodesToRead[i].nodeId.identifier.string.length);
+      }
+只记录了字符串长度，从不记录 namespaceIndex。若有人把 UA_NODEID_STRING_ALLOC 的
+ns 参数写死为 0，现有 100+ 用例全部照样通过。本轮在 MockSdk 增加
+lastReadNamespaces()/lastWriteNamespaces()，T115 钉死读 ns=7、写 ns=9 的透传。
+
+4.5 【测试盲区，已补 T116/T117】真实 SDK 的断连连往返与数值往返
+--------------------------------------------------------------------------------
+- 没有任何用例做"显式 disconnect → connect → 再真实读"（T32 只验证断开后
+  checkConnected() 失败，没验证还能连回来）。这正是计划检修后恢复采集的主路径。
+- 真实服务器上只验证过 STRING 往返（T94），没有数值写回读；T95 只验证单个无效项，
+  没有"同一次批量里混合有效/无效 + 索引对齐"。
+  T116/T117 补上；T117 同时校验逐项索引对齐（out[0] 有效、out[1] Bad）。
+
+4.6 【测试盲区，已补 T118】只测过 PROFILE_LOCAL
+--------------------------------------------------------------------------------
+T1~T113 中所有 applyProfile 都是 PROFILE_LOCAL；另外三套预设从未被 check() 覆盖。
+T118 遍历四套并断言全部合法，同时把预算边界
+maxTotalWaitMs == 2*timeoutMs*(maxRetries+1) 的"等于放行、少 1ms 拒绝"钉死。
+
+
+================================================================================
+5. 测试充分性评估
+================================================================================
+5.1 现有资产（务必在简历/面试里讲）
+  - 34 个测试文件（原 test1~test33 + 本轮 test34.cpp）、121 个用例，
+    编号 T1~T120 + TC/TA/T8B/T8C + B1~B3；
+  - tests/include/MockSdk.h 是一个可编程 fake SDK：mode / 虚拟时钟 / state 队列 /
+    read&write 脚本 / 响应形状 / 逐项状态 / 标量&数组&字符串播种 / 阻塞钩子 /
+    在途计数 / clientNew&Delete 计数；
+  - ClientTestFixture 起真实 open62541 server（每用例独立端口），并支持
+    断开-重启（stopServerAndJoin/startServerThread，T110 使用）；
+  - sanitizers.yml 四 job：ASan+UBSan / LSan / TSan / flaky(--gtest_repeat=50 --gtest_shuffle)；
+  - run_tsan.sh 还会做"并发用例过滤器覆盖审计"，漏测即 exit 1；
+  - 编译期探针：only_ua_h（封装）、RuleOfFiveAsserts（五法）。
+  本轮我在会话内用 Clang 17 + ASan/UBSan 实跑：121 用例，120 PASS，1 SKIP
+  （T1 需 OPCUA_RUN_INTEGRATION=1），0 FAIL，0 泄漏。
+
+5.2 本轮补上之后的覆盖矩阵
+  维度                              补测前     本轮
+  --------------------------------- ---------- --------------------------
+  控制流 / 错误出口                 A          A
+  类型矩阵（12 个 S7 类型）         A          A
+  Rule of Five / 封装完整性         A          A
+  真实断连-恢复（服务器重启）       有(T110)   有
+  真实显式 disconnect→connect       无         T116
+  真实数值写回读 + 混合批量         无         T117
+  NodeId.ns 透传                    无         T115 + MockSdk 观察点
+  四套网络预设 / 预算精确边界        无         T118
+  看门狗盲区（OPEN+session closed） 无         T119（特征化）
+  connect() 有界性（冻结时钟）      无         T120（红→绿）
+  长时运行 / 内存曲线 / P99 延迟    无         属 benchmark，见第 7 节
+
+5.3 对"是否足够"的直接回答
+  足够证明"控制流与所有权正确"；不足以证明"工业现场的耐久与性能"。
+  T114~T120 补的是前者最后几块结构性盲区；后者请用第 7 节的 benchmark 补齐。
+
+
+================================================================================
+6. 补丁（已在真机编译 + 全量回归验证）
+================================================================================
+补丁文件：patches/class_s7_client_review.patch
+验证记录：
+  · git apply --check   → exit 0（干净可应用）
+  · Clang 17 + ASan/UBSan 全量：121 用例 / 120 PASS / 1 SKIP / 0 FAIL
+  · 红→绿：
+      T114  修复前 FAIL（checkLifeState==RUNNING），修复后 PASS
+      T120  修复前无限忙等被 timeout 杀（exit=124），修复后 900ms 内 PASS
+
+涉及 4 个文件、11 个 hunk：
+
+  [生产修复] src/OPCUAPacking/ua.cpp
+   1) Impl::disconnect() 两条成功出口补 TurnToRecovring()
+      → 修 4.1，使 checkLifeState() 与 isHealthy() 一致。
+   2) Impl::connect() 增加 steady_clock 墙钟兜底
+      → 修 4.3，消除 SDK 时钟冻结时的无界忙等。
+
+  [测试] tests/test34.cpp（新增）
+   T114 ClientBug      disconnect 后 checkLifeState 不得报 RUNNING（红→绿）
+   T115 Client         NodeId.ns 读/写透传
+   T116 ClientTest     真实 SDK 显式 disconnect→connect→读 往返
+   T117 ClientTest     真实 SDK 数值写回读 + 混合有效/无效批量
+   T118 ClientConfig   四套 profile 合法 + 预算精确边界
+   T119 Client         看门狗不修复 OPEN+session-closed 的特征化
+   T120 ClientBug      connect() 在 SDK 时钟冻结时有界返回（红→绿）
+
+  [测试基建] tests/include/MockSdk.h
+   增加 lastReadNamespaces()/lastWriteNamespaces() 观察点（T115 依赖）。
+
+  [构建] tests/CMakeLists.txt
+   注册 test34.cpp。
+
+应用：
+  cd /root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main
+  git apply --check <D>/patches/class_s7_client_review.patch
+  git apply         <D>/patches/class_s7_client_review.patch
+  # 然后
+  ctest --test-dir build
+  ./scripts/run_asan.sh
+  ./scripts/run_tsan.sh
+回退：
+  git apply -R <D>/patches/class_s7_client_review.patch
+
+注意：T114/T120 与 ua.cpp 的两处修复是配套的。若只想先要"会红的测试"来确认缺陷，
+可以先只应用 test34.cpp + MockSdk.h + CMakeLists.txt 三个文件，运行后应看到
+T114 FAIL、T120 挂死；再应用 ua.cpp 的两处修复转绿。
+
+
+================================================================================
+7. 以"优秀求职作品"为标杆：加分 / 扣分 / 行动清单
+================================================================================
+7.1 面试官会记住的加分项（主动讲）
+  - pImpl + 前向声明，公共头零 SDK 泄漏，且有 only_ua_h 编译期探针证明；
+  - ISdk 抽象接缝，MockSdk 可注入虚拟时钟/阻塞钩子，测试可确定性；
+  - Result<T,E> + RichError 错误码，而不是抛异常/返回 -1；
+  - ApiLease + RecreateSync + InFlightGuard 三层生命周期算术；
+  - 三套 sanitizer + flaky 抖动 + TSan 过滤器覆盖审计 + 编译期 Rule of Five；
+  - 本轮新增：能用官方源码路径解释 noReconnect/noNewSession/isFullyConnected 的差别。
+
+7.2 会被追问/扣分的点（先想好答案）
+  - "你为什么上加第二把 m_sdkMutex，SDK 不是已经 UA_THREADSAFE 了吗？"
+    → 用于把 connectAsync + getState 轮询组成不可分割段；承认阻塞放大。
+  - "noReconnect=true 还能恢复吗？"→ 能，引 [B]：isFullyConnected 看的是 noSession。
+  - "noNewSession=true 会怎样？"→ 会话失效即主动断开（引 [C]），恢复责任在看门狗；
+    并主动承认当前看门狗对 OPEN+session-closed 有盲区（4.2），这是加分项。
+  - "disconnect 之后 checkLifeState 返回什么？"→ 修复后不会再是 RUNNING。
+  - "batchRead 会不会阻塞 60s？"→ 会，最长 maxTotalWaitMs，单次尝试含 connectSync。
+
+7.3 14 天提升清单（按投入产出排序）
+  1. 应用本补丁，跑 ctest + ASan/LSan/TSan，把日志存档；
+  2. 决定 4.2 是否落地（看门狗盲区）；落地后把 T119 改成正向断言；
+  3. 写 README：一张架构图（第 2.1/2.2 节可直接用）、一张时序图、
+     快速开始、线程模型与阻塞上界、已知限制；
+  4. 写 benchmark：单实例吞吐/延迟、8 线程 batchRead P50/P99、断线恢复耗时、
+     连续 24h 的 RSS 曲线，出一张表放简历；
+  5. 清理注释里的评审痕迹（"报告 §x""Txx""审查补充"，共 20 处）；
+  6. 把 friend ClientTestHooks 做宏隔离（3.5）；
+  7. 给 ua.cpp 补 #include <sstream>，给公共头补线程/阻塞契约说明。
+
+最终评级（与第 1 节一致）：
+  总体 B+：架构 A-、资源与生命周期 A-、并发落地 B、公开 API 封装 A-、
+          测试工程 A-、文档一致性 C+
+================================================================================

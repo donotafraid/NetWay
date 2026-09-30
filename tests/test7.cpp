@@ -1,14 +1,12 @@
-#include "OPCUAPacking/ua.h"
 #include <gtest/gtest.h>
 #include <atomic>
-#include <string>
 #include <thread>
-#include "tests/util/ClientTestFixture.h"
-#include "tests/MockSdk.h"
-#include "tests/util/Cxx17Compat.h"   // §6.4: latch 由它提供
+#include "tests/include/util/ClientTestFixture.h"
+#include "tests/include/MockSdk.h"
+#include "tests/include/util/Cxx17Compat.h"   // §6.4: latch 由它提供
 #include <future>
 
-#include "OPCUAPacking/internal/ClientTestHooks.h"
+#include "tests/include/ClientTestHooks.h"
 
 
 // ==================== TC: shutdown 并发 + 幂等 + 副作用 ====================
@@ -19,7 +17,7 @@ TEST(Client, TC_ConcurrentShutdownIdempotent) {
     ClientConfig cfg;
     cfg.applyProfile(ClientConfig::PROFILE_LOCAL);
 
-    auto createResult = ClientTestHooks::createWithSdk(
+    auto createResult = OPCUAPacking::test::ClientTestHooks::createWithSdk(
         sdk, "opc.tcp://192.0.2.1:4840", cfg);
     ASSERT_TRUE(createResult.has_value());
     auto client = std::move(*createResult.get());
@@ -37,17 +35,13 @@ TEST(Client, TC_ConcurrentShutdownIdempotent) {
     EXPECT_TRUE(client->shutdown().is_success())
         << "第三次 shutdown 应幂等成功";
 
-    // P2: 副作用——shutdown 后 checkConnected 必须返回失败或非 CONNECTED
+    // P2: 副作用——shutdown 后 checkConnected 必须返回失败
     auto conn = client->checkConnected();
-    if (conn.has_value()) {
-        EXPECT_NE(conn.value_or(ConnectionState::OBJECT_ONLY),
-                  ConnectionState::CONNECTED)
-            << "shutdown 后不应仍报 CONNECTED";
-    }
+    EXPECT_EQ(conn.has_value(), false);
 }
 
 // ==================== TD: create+shutdown 生命周期（改名） ====================
-// 报告 §3.11 TA-4/TA-5：原名 TD_RecreateLifecycleNoLeak 名实不符，
+// §3.11 TA-4/TA-5：原名 TD_RecreateLifecycleNoLeak 名实不符，
 // 循环体是 create→shutdown→destroy，从未调用 recreateGiveUpClient()。
 // 此处按报告"或改名"的选项，改为 TD_CreateShutdownLifecycleNoLeak。
 // 泄漏 oracle 由 CI 的 LSan 作业裁决；本测试只做趋势护栏。
@@ -86,7 +80,7 @@ TEST(Client, TA2_ConcurrentConnect_ExactlyOneWins) {
   ASSERT_FALSE(cfg.check().has_value()) << *cfg.check();
 
   TA2_LOG("-> createWithSdk");
-  auto r = ClientTestHooks::createWithSdk(
+  auto r = OPCUAPacking::test::ClientTestHooks::createWithSdk(
       sdk, "opc.tcp://192.0.2.1:4840", cfg);
   ASSERT_TRUE(r.has_value()) << r.get_error()->what();
   auto c = std::move(*r.get());

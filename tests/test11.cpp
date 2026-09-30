@@ -1,27 +1,23 @@
 
 // tests/test11_error_paths.cpp
 //
-// 报告 §6.3：补齐"错误出口也有测试"。
+// §6.3：补齐"错误出口也有测试"。
 // T20: 所有 batchRead/batchWrite 错误出口 + LSan
 // T21: 可重试状态 → 成功（覆盖重试循环 + delayFunction + 双 Guard）
 // T22: maxTotalWaitMs 预算超限
 // T23: create 的 useDefault 语义
 // T24: ClientConfig::check() 边界表驱动
 //
-// 说明：T23 需要 createWithSdk 提供 useDefault 形参（报告 §6.3.4 建议）。
+// 说明：T23 需要 createWithSdk 提供 useDefault 形参。
 
 #include "OPCUAPacking/ua.h"
 #include <gtest/gtest.h>
-#include <atomic>
 #include <functional>
 #include <string>
-#include <variant>
 #include <vector>
-#include "tests/MockSdk.h"
-#include "tests/util/Cxx17Compat.h"
-#include "tests/util/wait_for.h"
+#include "tests/include/MockSdk.h"
 
-#include "OPCUAPacking/internal/ClientTestHooks.h"
+#include "tests/include/ClientTestHooks.h"
 // ============================================================
 // T20: batchRead/batchWrite 所有错误出口
 // ============================================================
@@ -31,7 +27,7 @@ TEST(Client, T20_AllReadWriteErrorPaths_NoLeak) {
 
   ClientConfig cfg;
   cfg.applyProfile(ClientConfig::PROFILE_LOCAL);
-  auto r = ClientTestHooks::createWithSdk(sdk, "opc.tcp://192.0.2.1:4840", cfg);
+  auto r = OPCUAPacking::test::ClientTestHooks::createWithSdk(sdk, "opc.tcp://192.0.2.1:4840", cfg);
   ASSERT_TRUE(r.has_value()) << r.get_error()->what();
   auto c = std::move(*r.get());
 
@@ -89,7 +85,7 @@ TEST(Client, T21_BatchRead_RetriesTransientThenSucceeds) {
   cfg.applyProfile(ClientConfig::PROFILE_LOCAL);
   cfg.retryBackoffBaseMs = 10;
   cfg.retryMaxBackoffMs  = 20;
-  auto r = ClientTestHooks::createWithSdk(sdk, "opc.tcp://192.0.2.1:4840", cfg);
+  auto r = OPCUAPacking::test::ClientTestHooks::createWithSdk(sdk, "opc.tcp://192.0.2.1:4840", cfg);
   ASSERT_TRUE(r.has_value()) << r.get_error()->what();
   auto c = std::move(*r.get());
 
@@ -129,7 +125,7 @@ TEST(Client, T22_BatchRead_BudgetExceeded_VirtualClock) {
     sdk->enqueueReadServiceResult(UA_STATUSCODE_BADCONNECTIONCLOSED);
   }
 
-  auto r = ClientTestHooks::createWithSdk(sdk, "opc.tcp://192.0.2.1:4840", cfg);
+  auto r = OPCUAPacking::test::ClientTestHooks::createWithSdk(sdk, "opc.tcp://192.0.2.1:4840", cfg);
   ASSERT_TRUE(r.has_value()) << r.get_error()->what();
   auto c = std::move(*r.get());
 
@@ -169,14 +165,14 @@ TEST(Client, T22_BatchRead_BudgetExceeded_VirtualClock) {
 
 // ============================================================
 // T23: create 的 useDefault 语义
-// 需要 createWithSdk(..., useDefault) 形参；见报告 §6.3.4
+// 需要 createWithSdk(..., useDefault) 形参；见§6.3.4
 // ============================================================
 TEST(Client, T23_CreateWithInvalidConfig_useDefaultFalse_Rejected) {
   ClientConfig bad;                        // 全默认：maxTotalWaitMs==0
   ASSERT_TRUE(bad.check().has_value());
   auto sdk = std::make_shared<MockSdk>();
   sdk->setMode(MockSdk::Mode::Connected);
-  auto r = ClientTestHooks::createWithSdk(
+  auto r = OPCUAPacking::test::ClientTestHooks::createWithSdk(
       sdk, "opc.tcp://192.0.2.1:4840", bad);
   EXPECT_TRUE(r.is_fail());
 }

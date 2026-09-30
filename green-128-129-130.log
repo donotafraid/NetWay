@@ -1,0 +1,22 @@
+Running main() from /root/.conan2/p/b/gtestfd5ccee71f8a1/b/src/googletest/src/gtest_main.cc
+Note: Google Test filter = *T128*:*T129*:*T130*
+[==========] Running 3 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 3 tests from ClientBug
+[ RUN      ] ClientBug.T128_GiveUpTimer_ArmsWithGoodStatusButLostSession
+Client Status: ChannelState: Fresh, SessionState: Closed, ConnectStatus: BadConnectionClosed
+Process delayed callbacks
+[       OK ] ClientBug.T128_GiveUpTimer_ArmsWithGoodStatusButLostSession (1 ms)
+[ RUN      ] ClientBug.T129_Disconnect_ChannelClosedSessionActivated_MustNotStayRunning
+Client Status: ChannelState: Fresh, SessionState: Closed, ConnectStatus: BadConnectionClosed
+Process delayed callbacks
+[       OK ] ClientBug.T129_Disconnect_ChannelClosedSessionActivated_MustNotStayRunning (0 ms)
+[ RUN      ] ClientBug.T130_MalformedDiagnosticInfos_NoNullDerefNoLeak
+Client Status: ChannelState: Fresh, SessionState: Closed, ConnectStatus: BadConnectionClosed
+Process delayed callbacks
+[       OK ] ClientBug.T130_MalformedDiagnosticInfos_NoNullDerefNoLeak (11 ms)
+[----------] 3 tests from ClientBug (12 ms total)
+
+[----------] Global test environment tear-down
+[==========] 3 tests from 1 test suite ran. (12 ms total)
+[  PASSED  ] 3 tests.

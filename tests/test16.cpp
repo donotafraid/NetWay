@@ -9,14 +9,14 @@
 #include <string>
 
 #include "OPCUAPacking/ua.h"
-#include "tests/MockSdk.h"
-#include "tests/util/wait_for.h"
+#include "tests/include/MockSdk.h"
+#include "tests/include/util/wait_for.h"
 
-#include "OPCUAPacking/internal/ClientTestHooks.h"
+#include "tests/include/ClientTestHooks.h"
 
 
 // ---------------------------------------------------------------------------
-// T31：连接不健康时，checkConnected() 必须降级为 OBJECT_ONLY。
+// T31：连接不健康时，checkConnected() 必须降级为 NOT_CONNECTED
 //      当前实现（P1-3）会把 success(false) 误判为 CONNECTED。
 // ---------------------------------------------------------------------------
 TEST(Client, T31_CheckConnected_MustNotReportConnectedWhenUnhealthy) {
@@ -24,7 +24,7 @@ TEST(Client, T31_CheckConnected_MustNotReportConnectedWhenUnhealthy) {
 
     ClientConfig cfg;
     cfg.applyProfile(ClientConfig::PROFILE_LOCAL);
-    auto r = ClientTestHooks::createWithSdk(sdk, "opc.tcp://192.0.2.1:4840", cfg);
+    auto r = OPCUAPacking::test::ClientTestHooks::createWithSdk(sdk, "opc.tcp://192.0.2.1:4840", cfg);
     ASSERT_TRUE(r.has_value());
     auto c = std::move(*r.get());
     ASSERT_TRUE(c != nullptr);
@@ -33,23 +33,30 @@ TEST(Client, T31_CheckConnected_MustNotReportConnectedWhenUnhealthy) {
     {
         auto s = c->checkConnected();
         ASSERT_TRUE(s.has_value());
-        EXPECT_EQ(s.value_or(ConnectionState::OBJECT_ONLY),
-                  ConnectionState::CONNECTED);
     }
 
     // 切到不可达：看门狗应把内部连接状态推进到不健康。
     sdk->setMode(MockSdk::Mode::Unreachable, /*allowAuto=*/false);
 
     std::string lastErr;
-    bool becameObjectOnly = waitFor([&] {
-        auto s = c->checkConnected();
-        if (!s.has_value()) {
-            lastErr = s.get_error() ? s.get_error()->what() : "<no error>";
+    bool becameObjectOnly = waitFor(
+        [&] {
+          auto s = c->checkConnected();
+          if (s.has_value()) {
+            lastErr = "connect status not match  Unreachable mode";
             return false;
-        }
-        return s.value_or(ConnectionState::CONNECTED) ==
-               ConnectionState::OBJECT_ONLY;
-    }, std::chrono::milliseconds(3000));
+          }
+          auto error = *s.get_error();
+          if (error.code() == RichError::ErrorCode::NOT_CONNECTED) {
+            return true;
+          }
+          else
+          {
+            lastErr = "error code is unknown";
+            return false;
+          }
+        },
+        std::chrono::milliseconds(3000));
 
     EXPECT_TRUE(becameObjectOnly)
         << "checkConnected 仍报 CONNECTED，last error=" << lastErr;
@@ -58,7 +65,7 @@ TEST(Client, T31_CheckConnected_MustNotReportConnectedWhenUnhealthy) {
 }
 
 // ---------------------------------------------------------------------------
-// T32：显式 disconnect() 之后，checkConnected() 必须返回 OBJECT_ONLY，
+// T32：显式 disconnect() 之后，checkConnected() 必须返回 NOT_CONNECTED
 //      而不是 CONNECTED，也不是错误。
 // ---------------------------------------------------------------------------
 TEST(Client, T32_CheckConnected_AfterDisconnect_IsObjectOnly) {
@@ -66,7 +73,7 @@ TEST(Client, T32_CheckConnected_AfterDisconnect_IsObjectOnly) {
 
     ClientConfig cfg;
     cfg.applyProfile(ClientConfig::PROFILE_LOCAL);
-    auto r = ClientTestHooks::createWithSdk(sdk, "opc.tcp://192.0.2.1:4840", cfg);
+    auto r = OPCUAPacking::test::ClientTestHooks::createWithSdk(sdk, "opc.tcp://192.0.2.1:4840", cfg);
     ASSERT_TRUE(r.has_value());
     auto c = std::move(*r.get());
     ASSERT_TRUE(c != nullptr);
@@ -74,23 +81,21 @@ TEST(Client, T32_CheckConnected_AfterDisconnect_IsObjectOnly) {
     {
         auto s = c->checkConnected();
         ASSERT_TRUE(s.has_value());
-        EXPECT_EQ(s.value_or(ConnectionState::OBJECT_ONLY),
-                  ConnectionState::CONNECTED);
     }
 
     ASSERT_TRUE(c->disconnect().is_success());
 
     auto s = c->checkConnected();
-    ASSERT_TRUE(s.has_value())
-        << (s.get_error() ? s.get_error()->what() : "<no error>");
-    EXPECT_EQ(s.value_or(ConnectionState::CONNECTED),
-              ConnectionState::OBJECT_ONLY);
+    ASSERT_TRUE(s.has_error())
+        << ("disconnect should not have good status");
+    auto error = *s.get_error();
+    EXPECT_EQ(error.code(), RichError::ErrorCode::NOT_CONNECTED);
 
     EXPECT_TRUE(c->shutdown().is_success());
 }
 
 // ---------------------------------------------------------------------------
-// T33：通道已打开但会话未激活时，checkConnected() 必须返回 OBJECT_ONLY。
+// T33：通道已打开但会话未激活时，checkConnected() 必须返回 NOT_CONNECTED。
 //      覆盖 MockSdk::enqueueState 与 Mode::ChannelOpenSessionClosed。
 // ---------------------------------------------------------------------------
 TEST(Client, T33_CheckConnected_ChannelOpenSessionClosed_IsObjectOnly) {
@@ -98,7 +103,7 @@ TEST(Client, T33_CheckConnected_ChannelOpenSessionClosed_IsObjectOnly) {
 
     ClientConfig cfg;
     cfg.applyProfile(ClientConfig::PROFILE_LOCAL);
-    auto r = ClientTestHooks::createWithSdk(sdk, "opc.tcp://192.0.2.1:4840", cfg);
+    auto r = OPCUAPacking::test::ClientTestHooks::createWithSdk(sdk, "opc.tcp://192.0.2.1:4840", cfg);
     ASSERT_TRUE(r.has_value());
     auto c = std::move(*r.get());
     ASSERT_TRUE(c != nullptr);
@@ -106,8 +111,6 @@ TEST(Client, T33_CheckConnected_ChannelOpenSessionClosed_IsObjectOnly) {
     {
         auto s = c->checkConnected();
         ASSERT_TRUE(s.has_value());
-        EXPECT_EQ(s.value_or(ConnectionState::OBJECT_ONLY),
-                  ConnectionState::CONNECTED);
     }
 
     // 下一次 getState 返回：通道 OPEN，会话 CLOSED。
@@ -118,12 +121,20 @@ TEST(Client, T33_CheckConnected_ChannelOpenSessionClosed_IsObjectOnly) {
     std::string lastErr;
     bool becameObjectOnly = waitFor([&] {
         auto s = c->checkConnected();
-        if (!s.has_value()) {
-            lastErr = s.get_error() ? s.get_error()->what() : "<no error>";
-            return false;
+        if (s.has_value()) {
+          lastErr = "bad status should not have good connect";
+          return false;
         }
-        return s.value_or(ConnectionState::CONNECTED) ==
-               ConnectionState::OBJECT_ONLY;
+        auto error = *s.get_error();
+        if(error.code()==RichError::ErrorCode::NOT_CONNECTED)
+        {
+            return true;
+        }
+        else
+        {
+          lastErr = "bad status has unknown code";
+          return false;
+        }
     }, std::chrono::milliseconds(3000));
 
     EXPECT_TRUE(becameObjectOnly)

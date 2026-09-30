@@ -1,0 +1,33 @@
+Running main() from /root/.conan2/p/b/gtestfd5ccee71f8a1/b/src/googletest/src/gtest_main.cc
+Note: Google Test filter = *T128*:*T129*:*T130*
+[==========] Running 3 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 3 tests from ClientBug
+[ RUN      ] ClientBug.T128_GiveUpTimer_ArmsWithGoodStatusButLostSession
+/root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/tests/test36.cpp:117: Failure
+Value of: reachedGivenUp
+  Actual: false
+Expected: true
+watchdog kept looping disconnect/connect without ever arming the give-up timer; GIVEN_UP is unreachable when the SDK reports GOOD connectStatus with a lost session
+Client Status: ChannelState: Fresh, SessionState: Closed, ConnectStatus: BadConnectionClosed
+Process delayed callbacks
+[  FAILED  ] ClientBug.T128_GiveUpTimer_ArmsWithGoodStatusButLostSession (2 ms)
+[ RUN      ] ClientBug.T129_Disconnect_ChannelClosedSessionActivated_MustNotStayRunning
+/root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/tests/test36.cpp:148: Failure
+Expected: (ls.value_or(LifeState::RUNNING)) != (LifeState::RUNNING), actual: 1-byte object <00> vs 1-byte object <00>
+disconnect() succeeded and isHealthy() fails, but checkLifeState() still reports RUNNING: TurnToRecovring() ignores the channel state
+Client Status: ChannelState: Fresh, SessionState: Closed, ConnectStatus: BadConnectionClosed
+Process delayed callbacks
+[  FAILED  ] ClientBug.T129_Disconnect_ChannelClosedSessionActivated_MustNotStayRunning (1 ms)
+[ RUN      ] ClientBug.T130_MalformedDiagnosticInfos_NoNullDerefNoLeak
+AddressSanitizer:DEADLYSIGNAL
+=================================================================
+==714258==ERROR: AddressSanitizer: SEGV on unknown address 0x000000000018 (pc 0x73cb6282b46b bp 0x000000000001 sp 0x7ffd2b345210 T0)
+==714258==The signal is caused by a READ memory access.
+==714258==Hint: address points to the zero page.
+    #0 0x73cb6282b46b in String_clear /root/open62541-v1.4.14-noSanitizer/src/ua_types.c:181:33
+    #1 0x73cb6282b46b in DiagnosticInfo_clear.llvm.13726729220151892743 /root/open62541-v1.4.14-noSanitizer/src/ua_types.c:1173:5
+
+AddressSanitizer can not provide additional info.
+SUMMARY: AddressSanitizer: SEGV /root/open62541-v1.4.14-noSanitizer/src/ua_types.c:181:33 in String_clear
+==714258==ABORTING

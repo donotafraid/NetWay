@@ -1,0 +1,728 @@
+================================================================================
+OPC_UA_Client 代码审查报告（第五轮）
+对象：include/OPCUAPacking/ua.h、include/OPCUAPacking/Types.h、
+      src/OPCUAPacking/ua.cpp、src/OPCUAPacking/detail/*、
+      include/PLC/TypeTraits.h、tests/（test1~test36 + MockSdk + Fixture）、
+      scripts/、CMakeLists.txt、.github/workflows/sanitizers.yml
+环境：open62541 v1.4.14（锁定，本机源码 /root/open62541-v1.4.14-noSanitizer）、
+      C++17、Clang 17、libc++、UA_MULTITHREADING=100
+方法：逐行走查 ua.cpp / Types.h / detail/TypeTraits.h / MockSdk.h / Fixture；
+      清点全部 131 个 GoogleTest 用例的断言强度；对照 open62541 v1.4.14
+      官方头文件与实现（client.h / ua_client.c / ua_client_connect.c /
+      types.h / common.h）核对每一处行为断言；补丁已 git apply --check 验证，
+      并在只读原目录之外的工作副本完成全量编译 + 回归（135 用例，见第 6 节）。
+================================================================================
+
+【关于输出位置】
+  目标目录 /root/Cross_platform_file_transfer_tool-main/... 在本会话是只读挂载
+  （mkdir 返回 "Read-only file system"），因此报告与补丁先落盘在会话工作区，
+  再整体拷贝进项目：
+      cp -r <本目录> /root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/code_review/
+  迁移后应用补丁：
+      cd /root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main
+      git apply --check code_review/class_s7_client_review_<时间戳>/patches/class_s7_client_review.patch
+      git apply       code_review/class_s7_client_review_<时间戳>/patches/class_s7_client_review.patch
+  回退：
+      git apply -R    code_review/class_s7_client_review_<时间戳>/patches/class_s7_client_review.patch
+
+
+================================================================================
+1. 结论摘要（先给结论，再给证据）
+================================================================================
+
+评级（现状 = 未打本补丁；括号内 = 补丁落地后）：
+
+  总体              A-   （A）
+  架构设计          A    （A）
+  资源与生命周期    A-   （A-）
+  并发落地          B+   （A-）  ← 本轮修掉 connect/disconnect 失败出口
+  Rule of Five      A    （A）
+  公开 API 封装     A-   （A-）  ← TypeTraits 已迁入 detail/；include/PLC 仍有重复件
+  测试工程          B+   （A-）  ← 补 T131~T134 后
+  文档一致性        B+   （A-）  ← 三份文档已成型；仅 3 处测试头残留评审语气
+
+直接回答你的问题：“这些测试结果是否足够？”
+
+  · 对“控制流 / 错误码映射 / Rule of Five / 生命周期 / 封装完整性”：
+    足够，而且明显高于社招作品的常见水位。131 个用例 + 四 job 的 sanitizer
+    （ASan+UBSan / LSan / TSan / flaky 重复乱序）+ 编译期探针，这套基建本身
+    就是加分项。
+  · 但“都通过了”不等于“没有缺口”。本轮用静态走查 + 断言强度审计得到三类
+    具体结论：
+      (1)【红→绿】Impl::connect() 的 CONNECT_FAILED / TIMEOUT_NOTCONNECT 出口
+          不调用 TurnToRecovring()。当缓存三元组已经不健康时，会出现
+          checkLifeState()==RUNNING 与 isHealthy()==false 并存，破坏 Types.h
+          对 RUNNING 的定义。现有 T58/T74 只断言错误码与收尾调用，没有断言
+          LifeState，所以测试全绿也看不见。→ 新增 T131。
+      (2)【红→绿】Impl::disconnect() 的 DISCONNECT_FAIL /
+          TIMEOUT_NOTDISCONNECT 出口同理。现有 T59/T60/T121 都停在“缓存三元组
+          仍健康”的形态上，恰好绕过了缺陷。→ 新增 T132。
+      (3) 断言强度：131 个用例里有 15 处属于“弱断言/空断言”，13 组重复覆盖；
+          例如 test35.cpp:176 的 T122 是条件断言（看门狗若退化成永不上报
+          RUNNING，该 EXPECT 根本不会执行），test12.cpp:11 的 T25 整个用例没有
+          任何 EXPECT/ASSERT。→ 本轮新增用例全部钉死具体错误码与状态，并给出
+          可复制的改进建议。
+  · 测试之外还缺 benchmark 与真实网络抖动。这一块本轮直接补齐为可执行代码
+    （bench/ 三个可执行文件 + scripts/run_bench.sh + scripts/netem_faults.sh），
+    第 7 节给出逐条命令与归档模板。
+  · 注释、README、线程模型、已知限制：本轮一并完成（第 8 节）。
+
+一句话：这不是“学生作业”，是一个有真实工程判断的封装作品。本轮的两处生产
+修复都不是靠“再加一个测试”掩盖，而是找到了“测试全绿但契约被破坏”的具体状态，
+并把它们变成会红的回归用例。
+
+
+================================================================================
+2. 以官方代码/文档为准的 SDK 运行事实
+================================================================================
+（以下引用全部来自本机 v1.4.14 源码，行号为该文件真实行号。）
+
+[A] 客户端没有自己的线程，必须周期调用 UA_Client_run_iterate
+    include/open62541/client.h:46-50 原文：
+      "**However**: At this time, the client does not yet contain its own thread
+       or event-driven main-loop, meaning that the client will not perform any
+       actions automatically in the background. ... The user will have to
+       periodically call `UA_Client_run_iterate` to ensure that asynchronous
+       events are handled, including keeping a secure connection established."
+    对应封装：Impl::runWatchdog() → callRunIterate()（ua.cpp 内）。
+
+[B] isFullyConnected 看 noSession，而不是 noReconnect/noNewSession
+    src/client/ua_client_connect.c:121-129 原文：
+      UA_Boolean
+      isFullyConnected(UA_Client *client) {
+          /* No Session, but require one */
+          if(client->sessionState != UA_SESSIONSTATE_ACTIVATED && !client->config.noSession)
+              return false;
+          /* No SecureChannel */
+          if(client->channel.state != UA_SECURECHANNELSTATE_OPEN)
+              return false;
+          ...
+    结论：封装把 noReconnect / noNewSession 固定为 true，但 isFullyConnected
+    只受 noSession 影响 → 同步服务调用仍会走 connectSync。
+
+[C] noReconnect 的真实语义：只禁止“被动失联后的后台重连”
+    client.h:112-113 原文：
+      "noReconnect; /* Don't reconnect SecureChannel when the connection
+                     * is lost without explicitly closing. */"
+    → 不阻止同步服务调用前的 connectSync 补连。
+
+[D] noNewSession 的真实语义：会话失效即主动断开通道
+    client.h:114-116 原文：
+      "noNewSession; /* Don't automatically create a new Session when
+                      * the intial one is lost. Instead abort the
+                      * connection when the Session is lost. */"
+    src/client/ua_client.c:465-487 原文：
+      if(responseType != &UA_TYPES[UA_TYPES_ACTIVATESESSIONRESPONSE] &&
+         (response->responseHeader.serviceResult == UA_STATUSCODE_BADSESSIONIDINVALID ||
+          response->responseHeader.serviceResult == UA_STATUSCODE_BADSESSIONCLOSED)) {
+          cleanupSession(client);
+          if(client->config.noNewSession) {
+              client->connectStatus = response->responseHeader.serviceResult;
+              ...
+              closeSecureChannel(client);
+          } else { ... }
+      }
+    结论：noNewSession=true 时 SDK 不会在服务调用里自动重建会话，而是关通道、
+    把 connectStatus 置成具体 Bad 码。恢复会话的责任落回封装层。
+
+[E] 同步服务调用会自动补连
+    src/client/ua_client.c:570-578 原文：
+      if(!isFullyConnected(client)) {
+          UA_LOG_INFO(..., "Re-establish the connction for the synchronous service call");
+          connectSync(client);
+          if(client->connectStatus != UA_STATUSCODE_GOOD) {
+              respHeader->serviceResult = client->connectStatus;
+              return;
+          }
+      }
+
+[F] initConnect 在通道未 CLOSED 时直接返回
+    src/client/ua_client_connect.c:1698-1701 原文：
+      UA_LOG_WARNING(client->config.logging, UA_LOGCATEGORY_CLIENT,
+                     "Client connection already initiated");
+      return;
+    → 通道还 OPEN/CONNECTING 时，connect()/connectSync() 都无法真正重建会话。
+
+[G] StatusCode 的“坏”必须按 severity 位判断，不能与泛型码等号比较
+    include/open62541/types.h:161-166 原文：
+      /* Extracts the severity from a StatusCode. See Part 4, Section 7.34 */
+      UA_INLINABLE(UA_Boolean
+                   UA_StatusCode_isBad(UA_StatusCode code), {
+          return ((code >> 30) >= 0x02);
+      })
+    → UA_STATUSCODE_BADSESSIONIDINVALID=0x80250000 与 UA_STATUSCODE_BAD=0x80000000
+      永不相等；isConnectBad() 已改用 UA_StatusCode_isBad()（正确）。
+
+[H] disconnectAsync 必须被 run_iterate 驱动到 CLOSED
+    client.h:468-469 原文：
+      "/* Disconnect async. Run UA_Client_run_iterate until the callback
+       * notifies that all connections are closed. */"
+    → 封装用 getState 轮询 CLOSED 是正确方向；但“有界性”必须由封装自己保证。
+
+[I] UA_Array_new 零初始化，因此“半成品请求被 clear”不会踩脏内存
+    src/ua_types.c:1937 起原文：
+      UA_Array_new(size_t size, const UA_DataType *type) {
+          if(size > UA_INT32_MAX) return NULL;
+          if(size == 0) return UA_EMPTY_ARRAY_SENTINEL;
+          return UA_calloc(size, type->memSize);
+      }
+    → batchRead/batchWrite 先设 *_Size 再逐项 init，中途失败时后续槽位是
+      calloc 的 0，ReadRequestGuard/WriteRequestGuard 的 clear 是安全的。
+      （这是本轮核对后“确认不是缺陷”的一条，面试时可以主动讲。）
+
+--------------------------------------------------------------------------------
+2.1 路径图 A：batchRead → 同步服务调用自动补连
+--------------------------------------------------------------------------------
+  OPC_UA_Client::batchRead
+   └─ ApiLease(m_recreateSync)                 // terminated/recreating 拒绝
+   └─ Impl::batchRead
+       ├─ getEffectiveStopSignal()/lifeState/connState 预检
+       ├─ 构造 UA_ReadRequest + ReadRequestGuard   // 所有提前 return 不漏
+       ├─ lock(m_sdkMutex) ──────────────────┐
+       │   ISdk::serviceRead                  │
+       │    └─ UA_Client_Service_read          │ open62541 v1.4.14
+       │        └─ __UA_Client_Service         │ [E]
+       │            ├─ lock(client->clientMutex)
+       │            ├─ isFullyConnected()? ─ 否 → connectSync()   [B][E]
+       │            │      └─ initConnect(): channel==CLOSED ? 建链 : return [F]
+       │            ├─ sendRequest() → EventLoop.run() 直到 MSG / config->timeout
+       │            └─ processMSGResponse(): 具体 Bad 码 → noNewSession 关通道 [D]
+       └─ ReadResponseGuard → UA_ReadResponse_clear()
+             // 正常 / 超时 / 重试 / 逐项错误 / 畸形 results / 畸形 diagnosticInfos
+
+--------------------------------------------------------------------------------
+2.2 路径图 B：看门狗裁决树
+--------------------------------------------------------------------------------
+  runWatchdog()
+   └─ 每 watchdogIntervalMs → doWatchdogDecision()
+        ├─ isConnected()（run_iterate + getState）→ 刷新三元组
+        ├─ healthy? → TurnToRunning(); return
+        └─ !healthy:
+             ├─ connectionLost || session != ACTIVATED
+             │     → updateBadStatusTime; shouldTriggerGiveUp? → TurnToGiveup
+             │     → disconnect() → connect()
+             ├─ !isChannelClosed()（通道 OPEN）
+             │     → updateBadStatusTime; shouldTriggerGiveUp? → TurnToGiveup
+             │     → callRunIterate; 仍非 CLOSED → TurnToRecovring; 否则 connect()
+             ├─ isConnectBad() || !isHealthyCached()
+             │     → updateBadStatusTime; shouldTriggerGiveUp? → TurnToGiveup
+             │     → disconnect() → connect()
+             └─ else → TurnToRunning()   （只有 isHealthyCached() 为真才可达）
+
+--------------------------------------------------------------------------------
+2.3 路径图 C：connect()/disconnect() 的失败出口（本轮 2 个缺陷所在）
+--------------------------------------------------------------------------------
+  Impl::connect()
+   ├─ CAS IDLE→CONNECTING；connectAsync()
+   │    └─ 非 GOOD → return CONNECT_FAILED      ★ 缺陷 1a：不迁移 LifeState
+   └─ while(true):
+        isConnected()（run_iterate + getState）
+        ├─ 三元组健康 → TurnToRunning(); success
+        └─ elapsed > timeoutMs || wallDeadline:
+             isConnected() 复核
+             disconnectAsync()
+             return TIMEOUT_NOTCONNECT            ★ 缺陷 1b：不迁移 LifeState
+
+  Impl::disconnect()
+   ├─ CAS IDLE→CONNECTING；disconnectAsync()
+   │    └─ 非 GOOD → return DISCONNECT_FAIL     ★ 缺陷 2a：不迁移 LifeState
+   └─ while(true):
+        isConnected()；channel==CLOSED → TurnToRecovring(); success
+        └─ elapsed > timeoutMs || wallDeadline:
+             getState()；cs==CLOSED → TurnToRecovring(); success
+             否则 disconnectAsync(); return TIMEOUT_NOTDISCONNECT
+                                                 ★ 缺陷 2b：不迁移 LifeState
+
+  两条路径的共同点：成功出口已经会离开 RUNNING，失败出口不会。于是当失败发生
+  时缓存三元组已经处于“不健康”形态（如 channel CLOSED / CONNECTING），就出现
+  RUNNING 与 isHealthy()==false 并存。
+
+
+================================================================================
+3. 按审查侧重点逐项结论
+================================================================================
+
+3.1 资源泄漏（UA_ReadResponse 出口路径）                        结论：A-
+  做得好的：
+   - ReadRequestGuard / ReadResponseGuard / WriteRequestGuard / WriteResponseGuard
+     四个 RAII 覆盖 batchRead/batchWrite 全部出口：正常、重试、预算超限、
+     逐项错误、参数校验提前失败、服务层错误、畸形响应（results==nullptr 且
+     size>0、diagnosticInfos==nullptr 且 size>0）。response 声明在 for 循环体内，
+     Guard 每轮构造/析构，重试不累积。
+   - 本轮核对确认：UA_Array_new 走 UA_calloc（官方 ua_types.c:1937），所以
+     “先设 size 再逐项 init、中途失败”的请求数组是安全的。
+   - T124/T130 覆盖了 serviceResult!=GOOD 且 results 已分配、以及
+     diagnosticInfos 空指针+size>0 两类畸形出口；ASan+LSan 实测 0 泄漏。
+  仍建议（非阻塞）：
+   - 给 MockSdk 增加“响应清理计数器”，把“靠 LSan 兜底”升级为“可断言已释放”。
+
+3.2 配置快照与悬垂指针                                        结论：A-
+   - ClientConfig 是纯值类型；create 入参按值拷贝，Impl::m_config 再拷贝一份，
+     调用方事后改 cfg 不影响实例（T52/T125 钉死 sessionTimeoutMs）。
+   - 回调上下文所有权链正确：Impl::m_callbackContext(shared_ptr) +
+     UA_ClientDeleter::ctx(shared_ptr，随 shared_ptr<UA_Client> 快照复制) +
+     config->clientContext(raw)。Impl 先析构时 Deleter 仍持有 ctx，
+     stateCallback/inactivityCallback 里的 UA_Client_getContext 不悬垂。
+   - endpointUrl 在构造函数按值保存，调用方清空/修改原串不影响实例（T39）。
+
+3.3 线程安全（基于 v1.4.14 实际行为）                          结论：B+ → A-
+  事实基础见第 2 节 [A]~[H]。
+  做得好的：
+   - m_connState 用 CAS 做 connect/disconnect 单飞；m_lifeState 用 CAS 迁移，
+     TurnToRunning()/TurnToGiveup()/TurnToRecovring()/setGiveUpSignal() 都刻意
+     用 CAS 防丢失更新。
+   - InFlightGuard(m_taskCounter) 与 ApiLease(m_inFlight) 两套计数器边界清晰，
+     分别服务 shutdown() 与 recreateGiveUpClient()。
+   - 回调只碰原子、不加 m_lock；watchdog 只取 shared_ptr 快照。
+  本轮修复：
+   - (C1)【已修，T131】connect() 的 CONNECT_FAILED / TIMEOUT_NOTCONNECT 出口
+     不迁移 LifeState。
+   - (C2)【已修，T132】disconnect() 的 DISCONNECT_FAIL /
+     TIMEOUT_NOTDISCONNECT 出口不迁移 LifeState。
+  仍建议：
+   - (C3) MockSdk::getState() 从 stateQueue_ 弹出即销毁；connect() 与 watchdog
+     的轮询都会消耗脚本状态，脚本化状态迁移存在时序耦合，易 flaky。建议区分
+     “一次性事件队列”和“当前状态寄存器”，或增加 peek。
+   - (C4) m_connState 同时表示 connect/disconnect 进行态（都写 CONNECTING），
+     THREAD_BUSY 无法区分“正在连”还是“正在断”。
+   - (C5) doWatchdogDecision 的“通道 OPEN + 具体 Bad”分支只做 callRunIterate，
+     不 disconnect→connect；结合官方事实 [F]（通道未 CLOSED 无法真正重建），
+     该分支可能只能等 giveUpThreshold 到期转 GIVEN_UP，而不是自愈。属判断题，
+     建议在 README/面试里主动说明取舍。
+
+3.4 Rule of Five 与移动语义                                    结论：A
+   - OPC_UA_Client 是 final，拷贝/移动全删、析构非平凡，编译期断言钉死
+     （tests/compile/RuleOfFiveAsserts.cpp、test9.cpp）。
+   - 领域值类型 NodeId/ReadValue/WriteValue/ReadResult/WriteResult 的 noexcept
+     移动断言齐全，保证 vector 扩容走移动（T55/T87/T101）。
+
+3.5 公开 API 的封装完整性                                      结论：A-
+   - ua.h 不包含任何 open62541 头；ReadResult/WriteResult 用 uint32_t 而非
+     UA_StatusCode；only_ua_h 目标故意不带 open62541 include 路径编译
+     EncapsulationProbe.cpp，把“封装完整”变成可证伪构建产物。
+   - 上一轮的 TypeTraits.h 已从 include/PLC/ 迁入
+     src/OPCUAPacking/detail/，公开头不再拖入 UA_*；friend 后门也用
+     OPCUAPACKING_ENABLE_TEST_HOOKS 宏隔离。
+   - 未干净的部分：include/PLC/ConversionDispatcher.h 与
+     src/OPCUAPacking/detail/ConversionDispatcher.h 目前是逐字节相同的两份，
+     且 include/ 那份用 "src/OPCUAPacking/detail/TypeTraits.h" 路径反向引用
+     detail，仍被 src/PLC/OPC_UA.cpp 使用。建议删除 include/PLC 那份，让
+     src/PLC/OPC_UA.cpp 直接 include detail/ 版本（或在文档里明确
+     include/PLC 属内部转换层，公共入口只有 OPCUAPacking/ua.h）。
+
+3.6 其它
+   (M1) 3 处测试头仍有评审语气：test21.cpp:3（“第四轮补充”）、
+        test24.cpp:3（“第六轮补测”）、test36.cpp:3-4（“Fourth review round /
+        red -> green”）。已扩展 scripts/clean_review_comments.py 覆盖它们，
+        第 8.1 节给命令。
+   (M2) tests/test23.cpp 文件头自称 test24_bugrepro.cpp（历史遗留）。
+   (M3) CMakeLists.txt 把 OPEN62541_ROOT 默认值写死为本机绝对路径
+        "/root/open62541-v1.4.14-noSanitizer"，作品拿去别的机器会直接失败。
+        建议改为空默认 + 缺失时 FATAL_ERROR 并打印设置方法。
+   (M4) run_asan.sh / run_lsan.sh 的 FILTER='Client*' 只覆盖以 Client 开头的
+        suite；当前所有 suite 都满足，但未来新增 suite 会被静默漏测。
+        建议像 run_tsan.sh 一样加一个“未匹配 suite”自查。
+   (M5) sanitizers.yml 缓存 conan_debug_build（构建目录）；缓存构建产物容易
+        导致陈旧对象文件，建议只缓存 ~/.conan2。
+
+
+================================================================================
+4. 本轮新发现（含问题原文）
+================================================================================
+
+4.1 【已修，红→绿】connect() 失败出口不迁移 LifeState
+--------------------------------------------------------------------------------
+问题原文（src/OPCUAPacking/ua.cpp，Impl::connect()，修复前）：
+    UA_StatusCode retval =
+        m_sdk->connectAsync(client.get(), endpointUrl.c_str()); // ★
+    if (retval != UA_STATUSCODE_GOOD) {
+      return Result<Unit, ConnectErrorState>::error(
+          ConnectErrorState::CONNECT_FAILED);
+    }
+    ...
+      {
+        std::lock_guard<std::recursive_mutex> lock(m_sdkMutex);
+        m_sdk->disconnectAsync(client.get()); // ★
+      }
+      return Result<Unit, ConnectErrorState>::error(
+          ConnectErrorState::TIMEOUT_NOTCONNECT);
+
+对照文档契约（include/OPCUAPacking/Types.h，原文）：
+      /// 三元组全部就绪：
+      ///   sdkConnectStatus == GOOD
+      ///   sdkChannelState  == OPEN
+      ///   sdkSessionState  == ACTIVATED
+      /// 由 TurnToRunning() 置位（看门狗判定健康时）。
+      RUNNING,
+
+后果：当公开 connect() 在“缓存三元组已经不健康”时失败（例如链路静默失效，
+  getState 报 (GOOD, CLOSED, CLOSED)），两个失败出口直接 return，lifeState 停在
+  RUNNING；同一时刻 isHealthy() 必然失败。于是 checkLifeState()==RUNNING 与
+  isHealthy()==false 同时成立，RUNNING 的充要条件被破坏。
+为什么现有测试看不见：T58 只断言 CONNECT_FAILED→SERVICE_FAILED 与 CAS 复位；
+  T74 只断言超时后调用了一次 disconnectAsync；T120 从 create() 进入、失败后对象
+  直接销毁，都不读 checkLifeState()。
+复现：tests/test37.cpp 的 T131（修复前 FAIL）。
+修复：两个失败出口在 return 前调用 pImplQuote->TurnToRecovring()
+  （该函数只在 !isHealthyCached() 时才迁移，故不会误伤仍然健康的实例）。
+
+4.2 【已修，红→绿】disconnect() 失败出口不迁移 LifeState
+--------------------------------------------------------------------------------
+问题原文（src/OPCUAPacking/ua.cpp，Impl::disconnect()，修复前）：
+    UA_StatusCode retval = m_sdk->disconnectAsync(client.get()); // ★
+    if (retval != UA_STATUSCODE_GOOD) {
+      return Result<Unit, DisconnectErrorState>::error(
+          DisconnectErrorState::DISCONNECT_FAIL);
+    }
+    ...
+      {
+        std::lock_guard<std::recursive_mutex> lock(m_sdkMutex);
+        m_sdk->disconnectAsync(client.get()); // ★
+      }
+      return Result<Unit, DisconnectErrorState>::error(
+          DisconnectErrorState::TIMEOUT_NOTDISCONNECT);
+
+后果：当 getState 报告通道停在 CONNECTING（既非 OPEN 也非 CLOSED）时，
+  disconnect() 等不到 CLOSED 而超时；缓存三元组不健康，但 lifeState 仍是
+  RUNNING。与 4.1 是同一类契约破坏。T60/T121 恰好都把 mode 设成“缓存三元组
+  仍健康”，因此测试全绿也看不见。
+复现：tests/test37.cpp 的 T132（修复前 FAIL）。
+修复：两个失败出口在 return 前调用 pImplQuote->TurnToRecovring()。
+
+4.3 测试断言强度（引用本轮对 131 个用例的逐条审计，非泛泛而谈）
+--------------------------------------------------------------------------------
+弱断言 / 空断言 15 处，典型：
+  - tests/test12.cpp:11 T25_ConcurrentLifecycle_TSan：整个用例没有任何
+    EXPECT/ASSERT，只有一句注释“只依赖 TSan 报告”。TSan 未开启时永远通过。
+  - tests/test27.cpp:77 T101_PublicValueTypeMembersAreUaFree：函数体只有
+    SUCCEED();（真正的判断在文件作用域 static_assert，属编译期）。
+  - tests/test35.cpp:176 T122：断言被 `if (ls == RUNNING)` 包住；看门狗若退化成
+    永不上报 RUNNING，EXPECT 根本不会执行，测试空过。
+  - tests/test11.cpp:177 / test15.cpp:60,69,177,186 / test28.cpp:124 /
+    test31.cpp:193：只 `EXPECT_TRUE(r.is_fail())`，不校验错误码，任何失败路径
+    都能满足。
+重复覆盖 13 组，典型：T31/T32/T33/T104/T114 都在验证“不健康时 checkConnected
+  失败”；T40/T41/TA2/T91 都是“并发 CAS 恰好一个赢”；T42/T98 是 recreate 在途
+  超时的读写镜像。
+建议：不必删除，但把 `is_fail()` 改成 `EXPECT_EQ(code, 具体码)`；把 T122 的条件
+  断言改成先断言“不得为 RUNNING”（或断言 isHealthy 与 checkLifeState 一致）。
+
+
+================================================================================
+5. 测试充分性评估（回答“是否足够”）
+================================================================================
+5.1 现有资产（务必在简历/面试里讲）
+  - 36 个测试文件、131 个用例；本轮补到 37 个文件、135 个用例；
+  - MockSdk 是可编程 fake SDK：mode / 虚拟时钟 / state 队列 / read&write 脚本 /
+    响应形状 / 逐项状态 / 标量&数组&字符串播种 / 阻塞钩子 / 在途计数 /
+    clientNew&Delete 计数；
+  - ClientTestFixture 起真实 open62541 server（每用例独立端口），支持断开-重启；
+  - sanitizers.yml 四 job：ASan+UBSan / LSan / TSan / flaky（重复50次+乱序）；
+  - 编译期探针：only_ua_h（封装）、RuleOfFiveAsserts（五法）。
+
+5.2 覆盖矩阵
+  维度                                    现状    本轮
+  --------------------------------------  ------  ----------------------
+  控制流 / 错误出口                        A       A
+  UA_Read/WriteResponse 全出口清理         A       A（T124/T130）
+  NodeId 命名空间/长度透传                 A       A
+  配置快照                                 A       A（T125）
+  重复 NodeId 逐项对齐                     A       A（T126）
+  disconnect() 有界性（冻结时钟）          A       A（T121）
+  看门狗 RUNNING 一致性                    A-      A（T122/T129）
+  具体 Bad 连接码识别                      A       A（T123）
+  connect() 失败后的 LifeState 一致性      F       A（T131，红→绿）
+  disconnect() 超时后的 LifeState 一致性   F       A（T132，红→绿）
+  公开工厂 create() 的配置校验             C       B+（T134）
+  GIVEN_UP 幂等语义                        B       B+（T133）
+  长时运行 / 内存曲线 / P99 延迟           缺      bench/（观测值）
+  多机 / 真实网络抖动 / 工业现场           缺      netem_faults.sh + 人工注入
+
+5.3 仍然不足以证明的部分（诚实说）
+  - 压力/耐久：长时 RSS 曲线、8 线程 P50/P99、断线恢复耗时分布需要人工跑并把
+    原始数据归档（第 7 节给了命令），CI 不设阈值；
+  - 真实网络：MockSdk 不建模 connectSync、noNewSession 关通道、connectAsync 的
+    真实异步/超时；这些必须由真实 server 用例（T110/T116/T117）与 netem 注入
+    共同保证；
+  - 工业现场多跳网络、PLC 侧行为无法在本机回环复现。
+
+
+================================================================================
+6. 本轮补丁（T131~T134 + benchmark）
+================================================================================
+补丁文件：patches/class_s7_client_review.patch
+统计：15 个文件，+1123 / -5。
+
+  [生产修复] src/OPCUAPacking/ua.cpp（+10）
+    1) Impl::connect()   CONNECT_FAILED 出口前 TurnToRecovring()      → 修 4.1
+    2) Impl::connect()   TIMEOUT_NOTCONNECT 出口前 TurnToRecovring()  → 修 4.1
+    3) Impl::disconnect() DISCONNECT_FAIL 出口前 TurnToRecovring()    → 修 4.2
+    4) Impl::disconnect() TIMEOUT_NOTDISCONNECT 出口前 TurnToRecovring() → 修 4.2
+
+  [测试] tests/test37.cpp（新增，193 行；注册到 tests/CMakeLists.txt）
+    T131 ClientBug   connect() 失败且三元组不健康时不得报 RUNNING（红→绿）
+    T132 ClientBug   disconnect() 超时且三元组不健康时不得报 RUNNING（红→绿）
+    T133 Client      重复 setGiveUpSignal() 返回 GIVENUP_ING
+    T134 Client      公开 create() 在触网前拒绝非法配置（INVALID_CONFIG）
+
+  [benchmark] bench/（新增）
+    bench_common.h        in-process server / 百分位 / RSS 读取
+    bench_latency.cpp     多线程 batchRead/batchWrite P50/P99
+    bench_recovery.cpp    disconnect+connect 往返 / 看门狗恢复耗时分布
+    bench_rss.cpp         长跑 RSS CSV
+    CMakeLists.txt        三个可执行文件（不注册 ctest）
+  [脚本] scripts/run_bench.sh、scripts/netem_faults.sh（新增，可执行）
+  [清理] scripts/clean_review_comments.py（扩展目标目录与重写规则）
+  [文档] README.md、docs/thread-model.md、docs/limitations.md、根 CMakeLists.txt
+
+应用：
+  cd /root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main
+  git apply --check code_review/class_s7_client_review_<时间戳>/patches/class_s7_client_review.patch
+  git apply       code_review/class_s7_client_review_<时间戳>/patches/class_s7_client_review.patch
+
+先看“会红的测试”再修：
+  git apply <补丁> 是可一次性全打的；若想先复现缺陷，可只手工改 ua.cpp 之外的
+  新增用例并运行，应看到 T131/T132 FAIL；再打生产修复转绿。
+
+验证状态（本会话，Clang 17 + libc++ + open62541 v1.4.14 本机源码）：
+  · git apply --check → exit 0（干净可应用）
+  · 在只读原目录之外的工作副本里 cmake 配置 + 构建 tests 目标 → exit 0；
+    135 个用例 134 PASS / 1 SKIP（T1 需 OPCUA_RUN_INTEGRATION=1）/ 0 FAIL，
+    约 58s 跑完。
+  · 红→绿（同一份测试，先回退 ua.cpp 的生产修复再跑）：
+      T131  修复前 FAIL：checkLifeState() 仍报 RUNNING（actual <00> vs <00>）
+      T132  修复前 FAIL：checkLifeState() 仍报 RUNNING
+      打上修复后 T131/T132/T133/T134 全部 PASS。
+  · bench 三个可执行文件构建通过并冒烟成功：
+      bench_latency  --threads 4 --ops 200 --batch 4 → errors=0，输出 P50/P99
+      bench_recovery --api-cycles 2 --restart-cycles 2 → 输出 api/restart 两段分布
+      bench_rss      --hours 0.0005 → 输出 elapsed_s,rss_kb,calls,errors
+  · 未在本会话跑：ASan / LSan / TSan（需要各自的 build-asan/build-lsan/
+    build-tsan 构建；命令见 README 与 .github/workflows/sanitizers.yml）。
+
+
+================================================================================
+7. Benchmark / 耐久：具体指令（直接回答报告第 7 节第 8 项）
+================================================================================
+
+7.0 一次性构建
+
+  cd /root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main
+  export OPEN62541_ROOT=/root/open62541-v1.4.14-noSanitizer
+
+  # 方式 A：一键（自动 configure + build + 跑三项）
+  ./scripts/run_bench.sh
+
+  # 方式 B：手动
+  cmake -B build-bench -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+        -DCMAKE_C_COMPILER=clang-17 -DCMAKE_CXX_COMPILER=clang++-17 \
+        -DCMAKE_TOOLCHAIN_FILE=conan_debug_build/conan_toolchain.cmake \
+        -DOPEN62541_ROOT="$OPEN62541_ROOT"
+  cmake --build build-bench --target bench_latency bench_recovery bench_rss -j
+  # 产物：build-bench/bench-build/bench_{latency,recovery,rss}
+
+  说明：bench 默认自己起一个 in-process open62541 server（127.0.0.1），
+  所以每条命令都能单机复现；也可用 --endpoint 指向真实设备。
+
+7.1 8 线程 batchRead P50/P99
+
+  # 读，batch=16
+  ./build-bench/bench-build/bench_latency --threads 8 --ops 8000 --batch 16 \
+    | tee bench-results/latency_8thread_read.txt
+
+  # 写
+  ./build-bench/bench-build/bench_latency --threads 8 --ops 8000 --batch 16 --write \
+    | tee bench-results/latency_8thread_write.txt
+
+  # 批量大小敏感性（面试常问“batch 多大合适”）
+  for b in 1 16 128; do
+    ./build-bench/bench-build/bench_latency --threads 8 --ops 4000 --batch "$b"
+  done | tee bench-results/latency_batch_sweep.txt
+
+  输出示例（格式固定，便于贴进报告）：
+    mode=read threads=8 ops=8000 batch=16 calls=8000 wall_ms=... calls_s=... items_s=... errors=0
+    latency_ms p50=... p90=... p99=... p999=... max=... mean=...
+  解读：errors 必须为 0；p99/p50 比值反映排队（m_sdkMutex 串行化）程度；
+  batch 增大时 calls_s 下降、items_s 上升，用于选型。
+
+7.2 断线恢复耗时分布
+
+  ./build-bench/bench-build/bench_recovery --api-cycles 30 --restart-cycles 20 \
+    | tee bench-results/recovery_distribution.txt
+
+  输出示例：
+    api_reconnect_ms   n=30 p50=...ms p90=...ms p99=...ms max=...ms mean=...ms
+    restart_recovery_ms n=20 p50=...ms p90=...ms p99=...ms max=...ms mean=...ms
+  解读：
+    api_reconnect_ms    = 显式 disconnect()+connect() 的往返，反映 API 路径开销；
+    restart_recovery_ms = 服务端宕机 → 看门狗发现 → 服务端恢复 → isHealthy()
+                          再次成功。它天然受 watchdogIntervalMs（校验下限 1000ms）
+                          支配，p99 约等于一个 watchdog 周期 + connect 时间。
+  面试表述：不要只说“能自愈”，要给出“检测 + 重建”两段耗时及其受配置支配的
+  关系，并说明 giveUpThresholdMs 决定最坏多久转 GIVEN_UP。
+
+7.3 24h RSS 曲线
+
+  # 先跑 36s 冒烟，确认 CSV 正常
+  ./build-bench/bench-build/bench_rss --hours 0.01 --interval 5 --hz 20
+
+  # 正式 24h（建议 nohup；机器不要休眠）
+  nohup ./build-bench/bench-build/bench_rss --hours 24 --interval 60 --hz 1 \
+      > bench-results/rss_24h.csv 2> bench-results/rss_24h.err &
+
+  # CSV 表头：elapsed_s,rss_kb,calls,errors
+  # 画图（有 gnuplot 时）
+  gnuplot -e "set terminal png size 1200,600; set output 'bench-results/rss_24h.png'; \
+              set xlabel 'elapsed (s)'; set ylabel 'RSS (KiB)'; \
+              plot 'bench-results/rss_24h.csv' using 1:2 with lines title 'RSS'"
+
+  # 无 gnuplot 时用 Python
+  python3 - <<'PY'
+  import csv
+  rows = list(csv.DictReader(open('bench-results/rss_24h.csv')))
+  xs = [float(r['elapsed_s'])/3600 for r in rows]
+  ys = [int(r['rss_kb']) for r in rows]
+  if ys:
+      print(f"hours={xs[-1]:.2f} rss_first={ys[0]}KiB rss_last={ys[-1]}KiB "
+            f"delta={ys[-1]-ys[0]}KiB peak={max(ys)}KiB calls={rows[-1]['calls']} "
+            f"errors={rows[-1]['errors']}")
+  PY
+
+  判读标准：稳定期 RSS 曲线应围绕一条水平线波动；若单调上升，优先怀疑
+  UA_ReadResponse/UA_WriteResponse 出口或回调上下文泄漏，再跑 LSan 定位。
+  errors 在任何长跑里都必须为 0。
+
+7.4 高延迟 / 丢包 / 半开连接
+
+  Linux 回环注入（需要 root；客户端与自起 server 都在 lo 上，正好只影响被测链路）：
+
+  # 200ms 延迟
+  sudo ./scripts/netem_faults.sh delay 200ms
+  ./build-bench/bench-build/bench_latency --threads 8 --ops 4000 --batch 16 \
+    | tee bench-results/latency_delay200.txt
+
+  # 5% 丢包
+  sudo ./scripts/netem_faults.sh loss 5%
+  ./build-bench/bench-build/bench_recovery --api-cycles 20 --restart-cycles 10 \
+    | tee bench-results/recovery_loss5.txt
+
+  # 延迟 + 抖动
+  sudo ./scripts/netem_faults.sh jitter 200ms 50ms
+
+  # 半开连接：iptables 黑洞指定端口，SYN/数据被静默丢弃，不由内核 RST
+  sudo ./scripts/netem_faults.sh halfopen 4890
+  ./build-bench/bench-build/bench_latency --threads 1 --ops 20 --batch 1; echo "exit=$?"
+  # 预期：单次调用在 timeoutMs 附近返回错误（不是立即且不是永久挂死），
+  #       随后 recovery benchmark 能恢复到健康。
+  sudo ./scripts/netem_faults.sh clear
+
+  # 一条命令完成“注入→测→自动恢复”
+  sudo ./scripts/netem_faults.sh with loss 5% -- \
+       ./build-bench/bench-build/bench_latency --threads 8 --ops 2000 --batch 16
+
+  注意：`tc netem` 作用于整个 lo，会同时影响本机其他回环流量；测完务必 clear。
+  报告里要写明这是“本机回环注入”，不能等同于真实工业现场多跳网络。
+
+7.5 归档与简历表述模板
+
+  建议的产物目录：
+    bench-results/
+      latency_8thread_read.txt
+      latency_8thread_write.txt
+      latency_batch_sweep.txt
+      recovery_distribution.txt
+      rss_24h.csv
+      latency_delay200.txt
+      recovery_loss5.txt
+
+  简历一行模板（数字替换成你实测值）：
+    “open62541 v1.4.14 多线程封装；8 线程共享实例 batchRead
+     P50=__ms / P99=__ms（batch=16，0 error）；服务端宕机自愈
+     P50=__ms / P99=__ms；24h soak RSS 波动 <__KiB、0 泄漏（ASan/LSan）；
+     在 netem 200ms RTT / 5% 丢包 / iptables 半开下恢复验证通过。”
+
+
+================================================================================
+8. 注释清理 / README / 线程模型 / 已知限制（本轮已完成的文档工作）
+================================================================================
+
+8.1 注释清理
+  scripts/clean_review_comments.py 已扩展：
+    · 目标目录新增 src/OPCUAPacking/、include/OPCUAPacking/、tests/include/util/；
+    · 新增重写规则：第N轮补充/补测、Fourth review round、red -> green、red→green。
+  用法：
+    python3 scripts/clean_review_comments.py --check   # 干跑，列出将改动文件
+    python3 scripts/clean_review_comments.py           # 就地重写（幂等）
+  当前它会命中 3 个文件：tests/test21.cpp、tests/test24.cpp、tests/test36.cpp。
+  建议再手工确认 test36.cpp 头部的英文段落已读顺。
+
+8.2 README（已更新）
+  新增“性能与耐久（benchmark）”整节：三条 bench 命令、netem 注入命令、
+  结果目录；目录树补上 bench/ 与 scripts/；测试数量更新为 37 文件/135 用例。
+
+8.3 docs/thread-model.md（已更新）
+  在 LifeState 小节补上“connect()/disconnect() 的失败出口也必须
+  TurnToRecovring()”，并关联 T131/T132/T129。原有 SDK 事实清单
+  [A]~[J]、锁序、运行时序继续保持准确。
+
+8.4 docs/limitations.md（已更新）
+  把“没有 benchmark”改成“benchmark 已提供但不在 CI 门禁内”，并新增
+  “真实网络抖动需人工注入”“长跑曲线依赖进程存活”两条边界，保持“主动交底”
+  的风格。
+
+
+================================================================================
+9. 以“优秀求职作品”为标杆：加分 / 扣分 / 行动清单
+================================================================================
+9.1 面试官会记住的加分项（主动讲）
+  - pImpl + 前向声明，公共头零 SDK 泄漏，且有 only_ua_h 编译期探针证明；
+  - ISdk 抽象接缝，MockSdk 可注入虚拟时钟/阻塞钩子，测试可确定性；
+  - Result<T,E> + RichError 错误码，而不是抛异常/返回 -1；
+  - ApiLease + RecreateSync + InFlightGuard 三层生命周期算术；
+  - 四 job sanitizer + 编译期 Rule of Five；
+  - 能用官方源码路径解释 noReconnect/noNewSession/isFullyConnected 的差别；
+  - 能用 T131/T132 讲清“测试全绿但契约被破坏”，这是社招最缺的判断力；
+  - 有可复现的 benchmark 与网络故障注入脚本，而不是只写“性能良好”。
+
+9.2 会被追问/扣分的点（先想好答案）
+  - “为什么上 m_sdkMutex，SDK 不是已经 UA_THREADSAFE 了吗？”
+    → 把 connectAsync + getState 轮询组成不可分割段；承认阻塞放大。
+  - “noReconnect=true 还能恢复吗？”→ 能，引 [B]：isFullyConnected 看 noSession。
+  - “noNewSession=true 会怎样？”→ 会话失效即主动断开（引 [D]）。
+  - “connect() 失败后 checkLifeState 返回什么？”→ 修复后不会是 RUNNING。
+  - “MockSdk 与真实 SDK 差异？”→ 见 5.3，主动承认哪些结论不能由 Mock 推出。
+  - “include/PLC/* 为什么还在公开 include 树？”→ 承认是内部转换层，已把
+    TypeTraits 迁入 detail；下一步删 include/PLC/ConversionDispatcher.h 重复件。
+
+9.3 可执行清单（按投入产出排序）
+  1. 应用本补丁，跑 ctest + ASan + LSan + TSan，日志存档；
+  2. 运行第 7 节 benchmark，把 bench-results/ 归档进仓库（或截图）；
+  3. 运行 clean_review_comments.py，清掉 3 处评审语气；
+  4. 删 include/PLC/ConversionDispatcher.h 重复件，改 src/PLC/OPC_UA.cpp 的 include；
+  5. 修 CMakeLists.txt 的 OPEN62541_ROOT 写死路径；
+  6. 给 run_asan.sh/run_lsan.sh 加“未匹配 suite”自查；
+  7. 把 15 处弱断言升级为“具体错误码”断言（尤其 test35.cpp:176 的条件断言）；
+  8. 用 T131/T132 的红→绿记录做一页“缺陷发现与修复”面试材料。
+
+
+================================================================================
+10. 最终评级
+================================================================================
+
+  总体（未打补丁） A-
+  总体（本补丁落地后） A
+    架构设计        A
+    资源与生命周期  A-
+    并发落地        B+ → A-（修掉 connect/disconnect 失败出口的 LifeState 不一致）
+    Rule of Five    A
+    公开 API 封装   A-（ua.h 干净 + 编译期探针；include/PLC 仍有重复件）
+    测试工程        B+ → A-（补 T131~T134；benchmark 就位）
+    文档一致性      B+ → A-（三份文档成型；清掉 3 处评审语气后 A）
+
+  一句话总结：
+    这份作品已经具备“能进面试、经得起追问”的工程密度。本轮的价值不在于又加了
+    几个用例，而在于把“测试全绿但 RUNNING 契约被破坏”的两种具体状态钉成会红的
+    回归，并把 benchmark 与网络故障注入从“报告里的一句话”落成了可执行命令。
+    把 9.3 的 8 件事做完，足以支撑社招 C++/工业软件岗位的面试。
+
+================================================================================

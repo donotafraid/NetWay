@@ -1,0 +1,29 @@
+Running main() from /root/.conan2/p/b/gtestfd5ccee71f8a1/b/src/googletest/src/gtest_main.cc
+Note: Google Test filter = *T131*:*T132*:*T133*:*T134*
+[==========] Running 4 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 2 tests from Client
+[ RUN      ] Client.T133_SetGiveUpSignal_TwiceIsRejectedAsGivenUpIng
+Client Status: ChannelState: Fresh, SessionState: Closed, ConnectStatus: BadConnectionClosed
+Process delayed callbacks
+[       OK ] Client.T133_SetGiveUpSignal_TwiceIsRejectedAsGivenUpIng (1 ms)
+[ RUN      ] Client.T134_PublicCreate_InvalidConfig_RejectedBeforeConnect
+Client Status: ChannelState: Fresh, SessionState: Closed, ConnectStatus: BadConnectionClosed
+Process delayed callbacks
+[       OK ] Client.T134_PublicCreate_InvalidConfig_RejectedBeforeConnect (1 ms)
+[----------] 2 tests from Client (2 ms total)
+
+[----------] 2 tests from ClientBug
+[ RUN      ] ClientBug.T131_ConnectFailure_MustNotLeaveRunningWithUnhealthyTriplet
+Client Status: ChannelState: Fresh, SessionState: Closed, ConnectStatus: BadConnectionClosed
+Process delayed callbacks
+[       OK ] ClientBug.T131_ConnectFailure_MustNotLeaveRunningWithUnhealthyTriplet (0 ms)
+[ RUN      ] ClientBug.T132_DisconnectTimeout_MustNotLeaveRunningWithUnhealthyTriplet
+Client Status: ChannelState: Fresh, SessionState: Closed, ConnectStatus: BadConnectionClosed
+Process delayed callbacks
+[       OK ] ClientBug.T132_DisconnectTimeout_MustNotLeaveRunningWithUnhealthyTriplet (1 ms)
+[----------] 2 tests from ClientBug (1 ms total)
+
+[----------] Global test environment tear-down
+[==========] 4 tests from 2 test suites ran. (3 ms total)
+[  PASSED  ] 4 tests.

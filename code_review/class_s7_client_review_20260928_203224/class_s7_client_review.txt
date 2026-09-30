@@ -1,0 +1,780 @@
+================================================================================
+OPC_UA_Client 代码审查报告（第七轮：异常安全 / 耐久证据闭环 / 作品可交付性）
+对象：include/OPCUAPacking/ua.h、Types.h、S7TypeStruct.h、WriteRequestAddres.h、
+      src/OPCUAPacking/ua.cpp、src/OPCUAPacking/detail/*、
+      tests/（38 文件 / 143 用例 + MockSdk + Fixture + 编译期探针）、
+      bench/（4 可执行文件）、scripts/（11 脚本）、
+      CMakeLists.txt、.github/workflows/sanitizers.yml、README.md、docs/
+环境：open62541 v1.4.14（锁定，本机源码 /root/open62541-v1.4.14-noSanitizer）、
+      C++17、Clang 17.0.6、libc++、UA_MULTITHREADING=100、
+      Ubuntu / i7-7700HQ（4 核 8 线程）
+方法：以 v1.4.14 官方源码逐条核对 UA_Server_run_iterate / housekeeping /
+      UA_MAXTIMEOUT 与客户端事件循环语义；在工作区复制一份可写源码树，
+      编译并复跑全集（143 用例）；对新增用例做 git apply --check 与实跑；
+      用两个只读子代理分别审计「测试覆盖矩阵」与「脚本/文档一致性」。
+================================================================================
+
+【关于输出位置（只读挂载，沿用前几轮的处理方式）】
+  目标目录 /root/Cross_platform_file_transfer_tool-main/... 在本会话是只读挂载
+  （touch 返回 "Read-only file system"），所以报告与补丁落在会话工作区：
+
+      /root/deepseek-harness/deepseek-harness/code_review/
+        class_s7_client_review_20260928_203224/
+          class_s7_client_review.txt          ← 本报告
+          patches/class_s7_client_review.patch
+          evidence/new_tests.txt
+          evidence/full_suite.txt
+          evidence/patch_summary.txt
+          evidence/rss_csv_purity.txt
+
+  请整目录拷贝进项目后应用：
+      cp -r /root/deepseek-harness/deepseek-harness/code_review/class_s7_client_review_20260928_203224 \
+            /root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/code_review/
+      cd /root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main
+      git apply --check code_review/class_s7_client_review_20260928_203224/patches/class_s7_client_review.patch
+      git apply       code_review/class_s7_client_review_20260928_203224/patches/class_s7_client_review.patch
+  回退：
+      git apply -R code_review/class_s7_client_review_20260928_203224/patches/class_s7_client_review.patch
+
+  补丁 16 个文件：1 个新增、15 个修改；已在你的当前工作树上通过
+  git apply --check（APPLY_OK），并实测编译 + 143 用例全绿（见第五节）。
+
+【关于你列出的路径】
+  你给的 include/tests/MockSdk.h、include/tests/util/ClientTestFixture.h、
+  include/PLC/TypeTraits.h 在当前工作树里已经不存在（前几轮已迁移/删除）：
+    · MockSdk        实际在 tests/include/MockSdk.h
+    · ClientTestFixture 实际在 tests/include/util/ClientTestFixture.h + tests/util/ClientTestFixture.cpp
+    · TypeTraits    实际在 src/OPCUAPacking/detail/TypeTraits.h
+  本报告按当前工作树的真实路径审查。
+
+
+================================================================================
+1. 结论摘要（先给结论，再给证据）
+================================================================================
+
+直接回答你的问题：「这些测试结果是否足够？」
+
+  · 单测/控制流层面：足够，而且水位很高。143 用例（本轮 +8）、四 job
+    sanitizer、编译期 Rule of Five 与封装探针，覆盖了错误码、生命周期、
+    并发、畸形响应、类型转换。本轮在库的控制流里**没有找到新的会导致用例变红
+    的缺陷**——这是好事，说明前六轮把库本体榨干了。
+  · 耐久/网络层面：**仍然没有闭环**，而且我实测发现你那一轮 24h soak
+    **在 43 分钟处已经死了，当前并没有在跑**：
+      bench-results/rss_client.pid=868838、rss_server.pid=868340 对应的进程
+      在本会话检查时 `kill -0` 均为 DEAD；rss_curve.csv 只到 2580s（43min）；
+      rss_server.log 最后一行停在 20:24:01。原因是 run_bench.sh 的 soak 段是
+      前台进程，会话/终端一退出，它的 `trap cleanup_soak_server EXIT`
+      就把独立 server 一起杀了。本轮把这个坑写进 README/docs，并给出
+      setsid nohup 的脱离终端命令（第 7 节）。
+  · 工程质量层面：本轮抓到一个**对求职作品而言比任何代码 bug 都致命**的问题：
+      bench/、docs/、README.md 和 6 个脚本**根本没进 git**
+      （`git ls-files bench` = 0，`git status` 里它们是 `??`，`HEAD:README.md`
+      不存在）。也就是说：面试官 clone 你的仓库，看到的**没有 README、没有
+      docs、没有 benchmark、没有这些脚本**。这必须在下次提交里先解决，
+      比再写 10 个 gtest 重要得多（第 4.1 节给了逐条命令）。
+  · 本轮把「异常安全」这条此前完全没有用例覆盖的路径补上了（8 个新用例，
+    已编译 + 全绿）：SDK 接缝抛异常时 UA_ReadRequest/UA_WriteRequest/
+    UA_ReadResponse/UA_WriteResponse 守卫是否配平、InFlightGuard 是否归零、
+    connect 的 CASGuard 是否复位、写路径内嵌 NUL NodeId 是否在进入 SDK 前
+    被拒、STRING 请求遇到非 STRING/无值变体是否确定性地 nullopt。
+  · 顺带修掉 4 个能一行复现的真 bug：
+      1) 测试 fixture 忙等一个 CPU 核（与第六轮修 bench 的是同一类问题）
+      2) run_bench.sh 丢弃 RSS 判据、且不传 --min-hours（文档承诺的 PASS/FAIL
+         根本没生效）
+      3) run_netem_matrix 的 halfopen 会把「故障没注入成功」判成 PASS，
+         jitter 会把 n=0（恢复全部失败）判成 PASS
+      4) sanitizers.sh 硬编码绝对路径并无条件覆盖 OPEN62541_ROOT
+
+评级（现状 = 未打本补丁；括号内 = 本补丁落地 + 补齐 24h/netem 数据后）：
+
+  总体                      B+   （A-）
+  架构设计                  A-   （A-）
+  资源与生命周期            A    （A）
+  并发落地                  B+   （A-）   ← 8 线程数据已量化，根因清楚
+  公开 API 封装             A-   （A-）
+  Rule of Five              A    （A）
+  测试工程（单测/异常安全） A    （A）
+  测试工程（耐久/网络）     C+   （B+）   ← 工具与判据就位，数据仍未闭环
+  文档一致性                B+   （A-）   ← 本轮修正 4 处错误/失实
+  作品可交付性（git 追踪）  D    （A-）   ← 本轮最该先做的事
+
+一句话：库本体已经是一份经得起追问的作品；这一轮的价值是（a）把「异常安全」
+从零覆盖补成有确定性断言，（b）把耐久脚本从「看起来能跑」修成「判据真的会红」，
+（c）指出你的作品还没被 git 追踪这个致命交付问题。把第 7 节两件事做完，
+这份作品在社招 C++/工业软件岗位里就完整了。
+
+
+================================================================================
+2. 本轮输入：benchmark 实测数据（先给原始数字，再给结论）
+================================================================================
+
+2.1 8 线程 batchRead / batchWrite P50/P99（--repeats 3，引用 median 行）
+
+  归档 bench-results/latency_8thread_read.txt：
+    median mode=read threads=8 ops=8000 batch=16 repeats=3
+      calls_s=1845.3 p50=0.388 p90=10.061 p99=67.036 p999=126.332 max=160.122
+      errors=0
+  归档 bench-results/latency_8thread_write.txt：
+    median mode=write threads=8 ops=8000 batch=16 repeats=3
+      calls_s=1740.1 p50=0.394 p90=10.174 p99=69.989 p999=123.689 max=151.105
+      errors=0
+
+  三次单跑 p50 稳定在 0.378~0.391，p99 在 62~72 之间，说明这一组已比第六轮
+  归档的单次采样可信得多。结论（可写进简历，但必须带条件）：
+    · 吞吐不随线程数扩展：8 线程 ~1800 calls/s，而第六轮线程扫描显示单线程本底
+      ~7200 calls/s。因为业务调用在 m_sdkMutex 与 open62541 内部 clientMutex
+      上双层串行（路径图 A）。
+    · p99 随线程数单调上升，是排队（lock convoy），不是偶发抖动。
+    · 引用数字请用 median 行；单次 p99 最大可以差一个数量级。
+
+2.2 断线恢复耗时分布（本轮明显改善）
+
+  归档 bench-results/recovery_distribution.txt：
+    api_reconnect_ms      n=30 p50=149.4ms p90=240.5ms p99=248.5ms max=248.7ms
+    restart_recovery_ms   n=20 p50=452.4ms p90=744.9ms p99=866.1ms max=893.8ms
+
+  对比第六轮归档：restart_recovery p50 从 898.4ms 降到 452.4ms。这正是第六轮
+  把 bench_common.h 的 server 从 `UA_Server_run_iterate(server_, false)`
+  改成 `true` 的效果——忙等 server 不再和 8 个业务线程抢 CPU，看门狗下一次
+  裁决来得更早。这是一条「改一处、指标翻倍」的好素材：
+    · api_reconnect ~149ms 主要是 disconnect() 的轮询粒度：
+      每轮 callRunIterate(50ms) + sleep_for(50ms)。它测的是封装层 API 往返，
+      不是网络 RTT——面试要主动说明。
+    · restart_recovery ≈ 一个 watchdogIntervalMs + connect。
+
+2.3 24h RSS 曲线：只跑到 43 分钟，而且**进程已死**
+
+  bench-results/rss_curve.csv 用 scripts/check_rss.py 解析：
+    rows=44 hours=0.72 first=4648KiB last=4652KiB delta=4KiB peak=4652KiB
+    slope_h2=0.0KiB/h errors=0
+  Server 在独立进程（bench_server）——第六轮的方法学修复是有效的，
+  曲线本身是平的。但：
+    · 只跑了 0.72h（要求 24h），因为会话退出把 soak 杀了；
+    · 当前 pid 868838 / 868340 均已 DEAD，即你贴给我的「正在运行、还需等待」
+      事实不成立；需要重新起，并且这次必须 setsid nohup。
+  → 0.72h 的平线不能作为「客户端无泄漏」的证据；必须 24h + 独立 server 重跑，
+    并用 check_rss.py --min-hours 23.5 拒绝被截断的曲线。
+
+2.4 高延迟 / 丢包 / 半开连接：仍没有任何结果
+
+  bench-results/ 下没有 netem/ 目录，也没有 latency_delay200.txt /
+  recovery_loss5.txt / 任何 halfopen 结果。scripts/run_netem_matrix.sh 就位，
+  但本轮审计发现它的 halfopen 判据是错的（4.6 节，已修），所以即使跑了，
+  结论也可能不可信。
+
+
+================================================================================
+3. 以官方源码为准的 SDK 运行事实与路径图
+================================================================================
+（行号均来自本机 /root/open62541-v1.4.14-noSanitizer 源码。）
+
+[A] 客户端没有自己的线程，必须周期调用 UA_Client_run_iterate
+    include/open62541/client.h:46-50 原文：
+      "**However**: At this time, the client does not yet contain its own thread
+       or event-driven main-loop, meaning that the client will not perform any
+       actions automatically in the background. ... The user will have to
+       periodically call `UA_Client_run_iterate` ..."
+    对应封装：Impl::runWatchdog() → callRunIterate()（ua.cpp）。
+
+[B] UA_Client_run_iterate 在 event loop 期间**释放** SDK 自己的 clientMutex
+    src/client/ua_client.c 原文：
+      UA_Client_run_iterate(UA_Client *client, UA_UInt32 timeout) {
+          lockClient(client);
+          UA_StatusCode rv = __UA_Client_startup(client);
+          unlockClient(client);
+          ...
+          /* All timers and network events are triggered in the EventLoop. Release
+           * the client lock before. The callbacks from the EventLoop take the lock
+           * again. */
+          UA_EventLoop *el = client->config.eventLoop;
+          rv = el->run(el, timeout);      // ← 最多阻塞 timeout 毫秒
+          ...
+      }
+    → 看门狗那 50ms 的阻塞只被封装层的 m_sdkMutex 持有，不是被 SDK 持有。
+      也就是说，是封装自己把业务线程挡在门外。
+
+[C] 同步服务调用全程持有 SDK clientMutex
+    src/client/ua_client.c 的 __UA_Client_Service：
+      lockClient(client);
+      __Client_Service(client, request, requestType, response, responseType);
+      unlockClient(client);
+    → UA_Client_Service_read/write 都走这里；8 线程业务调用在 SDK 层本来
+      就会串行，封装层的 m_sdkMutex 是在此之上再加一层。
+
+[D] isFullyConnected 看 noSession，而不是 noReconnect/noNewSession
+    src/client/ua_client_connect.c 的 isFullyConnected：
+      if(client->sessionState != UA_SESSIONSTATE_ACTIVATED && !client->config.noSession)
+          return false;
+      if(client->channel.state != UA_SECURECHANNELSTATE_OPEN)
+          return false;
+    → 封装固定 noReconnect/noNewSession=true，但同步服务调用前的补连仍会走
+      connectSync。
+
+[E] noReconnect / noNewSession 的真实语义（client.h:112-116 原文）
+      "noReconnect; /* Don't reconnect SecureChannel when the connection is lost
+                     * without explicitly closing. */"
+      "noNewSession; /* Don't automatically create a new Session when the intial
+                      * one is lost. Instead abort the connection when the Session
+                      * is lost. */"
+    → noReconnect 不阻止同步服务调用前的 connectSync；noNewSession 才会在
+      会话丢失时主动断开通道。
+
+[F] 本轮新增：UA_Server_run_iterate(server, true) 的阻塞**有上界**
+    src/server/ua_server.c:652 原文：
+      #define UA_MAXTIMEOUT 500 /* Max timeout in ms between main-loop iterations */
+    src/server/ua_server.c 的 UA_Server_run_iterate：
+      UA_UInt32 timeout = (waitInternal) ? UA_MAXTIMEOUT : 0;
+      el->run(el, timeout);
+    并且 open62541 官方 server 主循环本身就用 true：
+      src/server/ua_server.c:917  UA_Server_run_iterate(server, true);
+    另有 1s 的 housekeeping 定时器（ua_server.c:742-744：
+      /* Add a regular callback for housekeeping tasks. With a 1s interval. */）。
+    → 所以 waitInternal=true 既不会空转一个核，也不会无限阻塞：
+      每轮最多 500ms 返回一次。这条事实是本轮修测试 fixture 忙等的依据。
+
+--------------------------------------------------------------------------------
+3.1 路径图 A：延迟尾巴的根因（业务调用 vs 看门狗 runIterate 争 m_sdkMutex）
+--------------------------------------------------------------------------------
+
+    业务线程 batchRead                         看门狗线程 runWatchdog()
+    ------------------                         -----------------------
+    lock(m_sdkMutex)  ──┐                       callRunIterate()
+                        │ 竞争                  └─ lock(m_sdkMutex)  ← 先到者持有
+    __UA_Client_Service │                          UA_Client_run_iterate(c, 50)
+      lockClient()      │                            lockClient(); ...; unlockClient();
+      ... 阻塞 ...      │                            el->run(el, 50)   ← 最多 50ms
+      unlockClient()    │                          unlock(m_sdkMutex)
+    unlock(m_sdkMutex) ─┘
+                                                    等 100ms ... 循环 ...
+
+    · 看门狗每轮先 sleep_for(100ms)，再 callRunIterate(50ms)。在链空闲时，
+      那 50ms 是实打实的阻塞；业务线程想进 service 就得排队。
+    · 线程扫描的数据与之吻合：p99 随并发线程数单调上升。
+    · 修复方向（判断题，本轮未强改）：给 callRunIterate 加 timeout 形参，
+      看门狗路径传比 50ms 更小的值（例如 0，非阻塞 iterate + 100ms 轮询），
+      connect/disconnect 的轮询路径保留 50ms。这样既不丢事件，又消掉 50ms
+      的锁持有。这是「面试会被问、且你有数据支撑」的取舍点。
+
+--------------------------------------------------------------------------------
+3.2 路径图 B：测试 fixture 忙等一个核（本轮已修）
+--------------------------------------------------------------------------------
+
+    修复前 tests/util/ClientTestFixture.cpp（两处）：
+      serverThread_ = std::thread([this] {
+          while (running_.load(std::memory_order_acquire)) {
+              UA_Server_run_iterate(server_, false);   // ← waitInternal=false
+          }
+      });
+
+    → false 时 el->run(..., 0) 立即返回，while 变成纯忙等，占满一个 CPU 核。
+      每个用到 ClientTest fixture 的用例都起这样一个线程；在一台 4 核 8 线程
+      机器上它同时和被测线程抢 CPU，会把 sleep/超时类用例的时序推向边界。
+      第六轮只把 bench 的同类问题修成 true，漏了 tests fixture。本轮修掉，
+      并把注释同步改对（见补丁）。修复后全集 143 用例 64.4s 跑完、142 PASS。
+
+--------------------------------------------------------------------------------
+3.3 路径图 C：同一 UA_Server* 可以 stop/start（证明 restart benchmark 合法）
+--------------------------------------------------------------------------------
+    bench_recovery 用 server->stopServing()/startServing() 模拟服务端宕机。
+    官方源码证明这是受支持的：
+      UA_Server_run_startup 开头：if(server->state != UA_LIFECYCLESTATE_STOPPED)
+        { ... "The server has already been started" ... return BADINTERNALERROR; }
+      UA_Server_run_shutdown 结尾：setServerLifecycleState(server,
+        UA_LIFECYCLESTATE_STOPPED);
+    → run_shutdown 把状态复位 STOPPED，因此可再次 run_startup。restart_recovery
+      的测量对象合法。
+
+
+================================================================================
+4. 本轮发现（含问题原文）
+================================================================================
+
+4.1 【P0·作品交付】bench/、docs/、README、6 个脚本没有进 git
+--------------------------------------------------------------------------------
+  实测：
+      $ git ls-files bench          # 0 行
+      $ git ls-files README.md docs # 0 行
+      $ git status --short
+      ?? README.md
+      ?? bench/
+      ?? docs/
+      ?? scripts/run_bench.sh
+      ?? scripts/netem_faults.sh
+      ?? scripts/run_netem_matrix.sh
+      ?? scripts/check_rss.py
+      ?? scripts/clean_review_comments.py
+      ?? scripts/sanitizers.sh
+      $ git cat-file -e HEAD:README.md
+      fatal: Not a valid object name HEAD:README.md
+  后果（对求职是致命的）：
+    · 面试官 clone 你的仓库，看到的是一个**没有 README、没有线程模型文档、
+      没有 benchmark、也没有这些脚本**的项目；
+    · 你简历/面试里引用的「143 用例、ASan/LSan/TSan、24h soak、
+      netem 矩阵」在 clean clone 里全部不存在；
+    · 根 CMakeLists 里有 `add_subdirectory(bench/)`，但 bench/CMakeLists.txt
+      不在 HEAD——clean clone 直接配置失败。
+  修复（不是补丁，是提交动作；请先做）：
+      cd /root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main
+      git add README.md docs bench scripts .github tests src include CMakeLists.txt
+      git add .gitignore
+      git status --short          # 确认没有把 build-*/、bench-results/ 误加
+      git commit -m "docs+bench: add README, thread model, benchmarks, gates"
+      git ls-files bench docs README.md | wc -l    # 期望 > 0
+  另外 .gitignore 缺 4 个条目（本轮补丁已加）：
+      build-bench/  conan_bench_build/  bench-results/  sanitizer-logs/
+  提示：不要 `git add -A` 一把梭——工作树里有 build-asan/、build-tsan/、
+  conan_debug_build/ 等大目录；确认 .gitignore 生效后再 add 具体路径。
+
+4.2 【P1·真 bug】测试 fixture 忙等一个 CPU 核
+--------------------------------------------------------------------------------
+  问题原文（tests/util/ClientTestFixture.cpp，main 与 restart 两处）：
+      UA_Server_run_iterate(server_, false);
+  证据见 3.2 路径图 B 与 [F]。修复：改为 true，并同步注释。实测全集仍全绿。
+
+4.3 【P1·真 bug】run_bench.sh 丢弃 RSS 判据，且从不传 --min-hours
+--------------------------------------------------------------------------------
+  问题原文（scripts/run_bench.sh）：
+      echo "=== RSS acceptance check ==="
+      python3 "${PROJECT_ROOT}/scripts/check_rss.py" "${OUT_DIR}/rss_curve.csv" || true
+  后果：
+    · `|| true` 让 check_rss 的 PASS/FAIL 永远不影响退出码——soak 无论多烂都
+      「通过」；
+    · check_rss 的 `--min-hours` 默认 0.0，从不传入，于是「拒绝被截断的曲线」
+      这条能力从未启用（正是你 43 分钟曲线被判 PASS 的原因）。
+  而 README 与 docs/limitations 都写了「四项阈值」「check_rss.py --min-hours
+  用于拒绝被截断的曲线」——文档承诺与实际行为不一致。
+  修复：run_bench.sh 自动算 min-hours（SOAK_HOURS 的 98%，冒烟跑为 0）、
+  归档 rss_check.txt、判据失败时脚本非零退出（见补丁）。
+
+4.4 【P1·方法学】24h soak 前台运行会被会话退出截断
+--------------------------------------------------------------------------------
+  问题：run_bench.sh 的 soak 段直接前台跑 bench_rss，并注册
+      trap cleanup_soak_server EXIT
+  会话/终端一退出（或 agent 的 bash job 结束），trap 触发，独立 server 被杀，
+  曲线截断在 43 分钟。这不是脚本写错，而是「长跑必须脱离终端」的方法学问题，
+  但 README 没有给出正确姿势。
+  修复：README 增加 setsid nohup 命令；docs/limitations 写明实测截断与验收方式。
+
+4.5 【P2·产物质量】rss_curve.csv 首行是 spdlog 日志，不是 CSV 表头
+--------------------------------------------------------------------------------
+  问题：库代码 ua.cpp 用 spdlog 默认 logger（stdout）打印
+      spdlog::info("Watchdog thread started");
+  而 bench_rss 的约定是「stdout 即 CSV」。归档文件首行是：
+      [2026-09-28 19:38:59.266] [info] Watchdog thread started
+      elapsed_s,rss_kb,calls,errors
+  check_rss.py 用正则容忍了它，但用 pandas.read_csv 直接读会失败，归档不干净。
+  修复：bench_common.h 增加 bench::initLogging()，把 spdlog 默认 logger 的 sink
+  换成 std::cerr；四个 bench main 首行调用。实测 bench_rss 的 CSV 首行即表头，
+  check_rss 的 rows/hours 解析正确（见 evidence/rss_csv_purity.txt）。
+  说明：bench_latency/bench_recovery 的内建 open62541 server 仍会把自身启动日志
+  写到 stdout，但这两支产物靠 `grep '^median '` 解析，不受影响；已在 docs 注明。
+
+4.6 【P2·真 bug】run_netem_matrix 会把「故障没生效」和「恢复全失败」判成 PASS
+--------------------------------------------------------------------------------
+  问题原文（scripts/run_netem_matrix.sh）：
+      if [[ ${rc} -eq 124 ]]; then
+        note "FAIL halfopen: call did not return within 60s (unbounded)"
+        FAILED=1
+      else
+        note "PASS halfopen: failed/succeeded in ${elapsed_ms}ms (rc=${rc}), link cleared"
+      fi
+    → 只有「超时」才 FAIL；如果 iptables 规则没生效、调用干干净净成功，
+      也判 PASS。注释说要证明「调用在有界时间内失败」，但实现没验证失败。
+  另一处：
+      elif grep -q 'restart_recovery_ms' "${out_recovery}"; then
+        note "PASS jitter200_50: $(grep ... | tail -1)"
+    → bench_recovery 在所有恢复周期都失败时会打印 `restart_recovery_ms n=0`
+      并 return 0，grep 只匹配前缀，于是「恢复 0 次成功」也判 PASS。
+  修复：halfopen 增加「rc==0 且 errors=0 则 FAIL（故障未生效）」分支；
+  jitter 要求 `n>=1`；summary 归档到 summary.txt；把文档里写成位置参数、
+  实际无效的 `./scripts/run_bench.sh SKIP_LONG=1` 改成环境变量写法；
+  让此前从未生效的 `RECOVERY_PORT` 真正传给 bench_recovery --port。
+
+4.7 【P2·可移植性】sanitizers.sh 硬编码路径并无条件覆盖 OPEN62541_ROOT
+--------------------------------------------------------------------------------
+  问题原文（scripts/sanitizers.sh）：
+      cd /root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main
+      export OPEN62541_ROOT=/root/open62541-v1.4.14-noSanitizer
+  而根 CMakeLists 明确把 OPEN62541_ROOT 定义为用户可传的 cache 变量
+  （"Supply it with -DOPEN62541_ROOT=..."）。`export` 把调用者传的值覆盖掉，
+  换台机器必然指向错误路径。另外汇总 grep 匹配不到 gtest 输出：
+      grep -E 'tests passed|tests failed|...'
+  而 gtest 实际打印 `[  PASSED  ] 143 tests.` / `[  FAILED  ]`，所以成功时
+  汇总区什么都不显示。
+  修复：cd 到脚本自身目录的上一级；`: "${OPEN62541_ROOT:=...}"`（未设置才回退）；
+  grep 改为匹配 `[  PASSED  ]` / `[  FAILED  ]`。
+
+4.8 【P3·健壮性】四个 bench 工具在「尾部缺值」时崩溃
+--------------------------------------------------------------------------------
+  问题原文（bench_latency.cpp / bench_recovery.cpp / bench_rss.cpp /
+  bench_server.cpp 共有的 parse）：
+      auto next = [&]() -> const char * {
+        return (i + 1 < argc) ? argv[++i] : nullptr;
+      };
+      ...
+      a.hours = std::strtod(next(), nullptr);     // ← 尾部 --hours 时 next()==nullptr
+  修复：next() 在缺值时打印错误并 exit(2)。
+
+4.9 【P3·注释说谎】代码与注释/文档不一致
+--------------------------------------------------------------------------------
+  (a) src/OPCUAPacking/ua.cpp 的 applyConfiguration：
+        注释： // SDK 通道状态 - 设置为 OPEN（初始通道打开）
+        代码： sdkChannelState.store(UA_SECURECHANNELSTATE_CLOSED, ...);
+        注释： // SDK 会话状态 - 设置为 ACTIVATED（初始会话激活）
+        代码： sdkSessionState.store(UA_SESSIONSTATE_CLOSED, ...);
+      注释说的与代码相反。修复：注释改为「先置 CLOSED，紧随其后的 getState()
+      会覆盖为实际值」。
+  (b) tests/test31.cpp 顶部注释：
+        「（T25 无任何断言，是纯 TSan 用例）」
+      但第六轮已给 T25 加了 churn 后的功能断言与 new/delete 配平断言（T25
+      现在会真的失败）。修复：注释改为「T25 已有 churn 后的功能断言与
+      new/delete 配平断言」。
+  (c) docs/limitations.md：
+        「- **STRING 值不允许内嵌 `'\0'`**，同理显式拒绝。」
+      这是**错的**：读路径用 src->length 原样返回内嵌 NUL（T75 钉死
+      "A\0B\0C" 保留 5 字节），只有写路径拒绝。修复：改成「读、写不对称」。
+  这类「注释/文档与代码相反」的问题，在面试里比一个小 bug 更伤：面试官会认为
+  你没读自己的代码。已全部随补丁修正。
+
+4.10 库本体：本轮没有发现新的会导致失败的缺陷（正面结论）
+--------------------------------------------------------------------------------
+  我把资源出口、配置快照、线程安全、Rule of Five、封装完整性又过了一遍，
+  重点核对了你点名的 UA_ReadResponse 出口：
+    · ReadResponseGuard / WriteResponseGuard 对
+      `results==nullptr && resultsSize>0` 与
+      `diagnosticInfos==nullptr && diagnosticInfosSize>0` 分别中和，两个数组
+      是独立所有权（T124/T130 钉死）；
+    · UA_ReadResponse/UA_WriteResponse 是平凡 C 结构，`response = serviceRead(...)`
+      的按值赋权是所有权转移，临时对象无析构清理，不会重复释放；
+    · 每轮重试都在新作用域里重建 response + guard，重试不累积；
+    · 拷贝/移动全部 delete，pImpl 用 shared_ptr + 自定义 deleter 持有
+      CallbackContext，回调用 weak_ptr lock，无悬垂。
+  没有发现需要新增红用例的库内出口。
+
+
+================================================================================
+5. 测试充分性评估（正面回答「够不够」）
+================================================================================
+
+5.1 已经足够的部分（可以放心讲）
+  · 控制流/错误出口：143 用例，覆盖 connect/disconnect 失败、看门狗三分支、
+    预算超限、逐项错误、畸形响应、Rule of Five、封装探针。
+  · 资源：Read/WriteRequest/Response 四个 RAII 全覆盖；T124/T130 覆盖畸形
+    results/diagnosticInfos；ASan+LSan 实测 0 泄漏。
+  · 并发：四 job sanitizer + TSan 并发过滤器完整性自查；本轮补了异常路径的
+    守卫配平（T135/T136）与 CAS 复位（T137）。
+  · 确定性：MockSdk 的虚拟时钟/状态脚本/响应形状注入，让上述绝大多数结论是
+    **确定性**的，不是靠 sleep 撞出来的。
+
+5.2 本轮补齐的覆盖缺口
+  两个只读子代理给出了完整覆盖矩阵与缺口清单。本轮补的 8 个用例对应其中
+  最高价值的几条（括号内是缺口编号）：
+    T135/T136  SDK 接缝抛异常时 Read/WriteRequest/Response + InFlightGuard 配平
+               （此前 0 覆盖；异常安全是整条路径的空白）
+    T137       connectAsync 抛异常后 CASGuard 复位、后续 connect 可用
+    T138       形状错误的响应是终态 SERVICE_FAILED，不被当可重试错误重试
+    T139       写路径内嵌 NUL NodeId 在进入 SDK 前被拒（G3/G4）
+    T140       STRING 请求遇到非 STRING 变体 → nullopt + TYPE_MISMATCH（G1）
+    T142       STRING 请求无值（hasValue=false）→ nullopt + TYPE_MISMATCH（G2）
+    T143       setGiveUpSignal() 在 shutdown 后 → ALREADY_TERMINATED（G14）
+  仍**未被任何用例断言**的分支（可后续按需补，不是硬伤）：
+    · writeTraits 的两个内嵌 NUL NodeId 分支（STRING 特化）与 STRING 声明/
+      非 STRING 变体（G4/G5）；
+    · UA_Variant_setScalarCopy 失败等 4 个写转换错误出口（G6，需要新的失败
+      注入接缝才能测）；
+    · ClientConfig::check() 的多错误聚合文案与若干单独谓词（G8/G9/G10）；
+    · applyDefaultIfInvalid 的「修复后仍非法」分支（G11，当前不可达）；
+    · 三个非 LOCAL profile 的具体字段值（G12）。
+  这些属于「锦上添花」，我**不建议**为它们再加一堆同类 gtest。
+
+5.3 为什么不建议再堆 gtest
+  再加同类用例只增加维护量而不增加信息量。真正有增量的「测试」是第 7 节的
+  耐久/网络证据——它们是可执行程序 + 可判定脚本，而不是 gtest。本轮补丁新增
+  了 8 个用例（因为异常安全确实是空白），但没有为了凑数去覆盖上面那 5 条
+  低价值分支。
+
+5.4 现有用例里值得顺手改的两处（本轮只改了注释，未改断言逻辑）
+  · tests/test22.cpp 的 helper `expectRecreating`：
+        if (!e) { ADD_FAILURE() << ...; return; }
+        EXPECT_EQ(e->code(), RichError::ErrorCode::RECREATING)
+    e==nullptr 时 EXPECT_EQ 不执行（但 ADD_FAILURE 会失败，所以用例仍能红，
+    不算空过）。
+  · tests/test23.cpp 的 T81/B2 是「成功分支 / 失败分支各断言一部分」的写法，
+    两个分支都能触发失败，属于可接受的双向断言；如果追求更清晰，可以把
+    两分支都写成无条件断言 + SCOPED_TRACE。
+
+
+================================================================================
+6. 本轮补丁
+================================================================================
+补丁文件：patches/class_s7_client_review.patch（16 文件，+404 / -27）
+
+  [新增，异常安全与覆盖缺口]
+    tests/test38.cpp                8 个用例（T135~T143）
+    tests/CMakeLists.txt            把 test38.cpp 加入 SOURCES
+
+  [修改，真 bug]
+    tests/util/ClientTestFixture.cpp   run_iterate 忙等 → 事件驱动（+注释）
+    scripts/run_bench.sh               RSS 判据真正生效：--min-hours + 归档 +
+                                       非零退出
+    scripts/run_netem_matrix.sh        halfopen 要求真失败；jitter 要求 n>=1；
+                                       修文档命令；RECOVERY_PORT 真正使用；
+                                       summary 归档；+x
+    scripts/sanitizers.sh              不再硬编码/覆盖路径；grep 匹配 gtest
+    bench/bench_common.h               新增 bench::initLogging()（spdlog→stderr）
+    bench/bench_latency.cpp            调 initLogging；argv 缺值保护
+    bench/bench_recovery.cpp           同上
+    bench/bench_rss.cpp                同上
+    bench/bench_server.cpp             同上
+
+  [修改，注释/文档一致性]
+    src/OPCUAPacking/ua.cpp            applyConfiguration 的注释与代码对齐
+    tests/test31.cpp                   T25「无断言」的过时注释
+    docs/limitations.md                STRING 读写 NUL 不对称；异常约定不统一；
+                                       soak 必须脱离终端；bench stdout 噪声
+    README.md                          38 文件/143 用例；fixture 事件驱动；
+                                       test38 说明；CI 四 job；setsid 长跑命令；
+                                       LSan→ASan+LSan；netem 脚本 +x
+    .gitignore                         build-bench/ conan_bench_build/
+                                       bench-results/ sanitizer-logs/
+
+  应用 / 回退命令见本报告开头。
+
+验证状态（本会话，工作区可写副本，Clang 17 + libc++ + v1.4.14 本机源码）：
+  · git apply --check（先 git stash -u 清掉新文件）  → APPLY_CHECK_OK
+  · cmake 配置 + 构建 tests / only_ua_h / 四个 bench  → BUILD_OK
+  · 全集                                             → 143 tests，142 PASS /
+                                                       1 SKIP（T1 需
+                                                       OPCUA_RUN_INTEGRATION=1）/
+                                                       0 FAIL，64.4s
+                                                       （evidence/full_suite.txt）
+  · 新增 ClientExceptionSafety.* 8 个用例             → 8 PASS
+                                                       （evidence/new_tests.txt）
+  · bench_server + bench_rss（独立进程，6s 冒烟）     → CSV 首行即表头，
+                                                       check_rss PASS
+                                                       （evidence/rss_csv_purity.txt）
+
+诚实交底（未验证项）：
+  · netem 矩阵需要 root 且会改系统 tc/iptables 状态，本会话未执行；只做了
+    脚本语法检查（bash -n OK）与静态判定逻辑修正。
+  · 24h soak 未在本会话重跑（时间与资源不允许）；只跑了 6s 冒烟验证 CSV 纯度。
+  · run_bench.sh 的 min-hours 自动值与「判据失败非零退出」逻辑未做端到端
+    失败注入测试，只做了语法与代码路径核对。
+
+
+================================================================================
+7. 待你补跑的两项（逐条命令，跑完把 bench-results/ 归档）
+================================================================================
+
+7.0 先做（比补跑更重要）
+      cd /root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main
+      git add README.md docs bench scripts .github tests src include CMakeLists.txt .gitignore
+      git status --short            # 确认没有 build-* / bench-results / conan_* 被加入
+      git commit -m "docs+bench: track README, thread model, benchmarks and gates"
+
+7.1 24h soak（脱离终端，独立 server，客户端单独计量）
+      cd /root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main
+      BIN=./build-bench/bench-build        # 若没构建：SKIP_LONG=1 OPEN62541_ROOT=... ./scripts/run_bench.sh
+      mkdir -p bench-results
+      setsid nohup "$BIN/bench_server" --port 4892 \
+          > bench-results/rss_server.log 2>&1 < /dev/null &
+      setsid nohup "$BIN/bench_rss" --endpoint opc.tcp://127.0.0.1:4892 \
+          --hours 24 --interval 60 --hz 1 \
+          > bench-results/rss_curve.csv 2> bench-results/rss.err < /dev/null &
+      # 起床后确认还活着：
+      cat bench-results/rss_client.pid 2>/dev/null; ps -ef | grep bench_rss | grep -v grep
+      # 24h 后：
+      python3 scripts/check_rss.py bench-results/rss_curve.csv --min-hours 23.5 \
+          | tee bench-results/rss_check.txt
+      判读：errors 必须 0；hours >= 23.5；delta 与稳态斜率越小越好。若曲线单调
+      上升，先跑 LSan 定位 UA_Read/WriteResponse 出口或回调上下文。
+      提示：run_bench.sh 现在也会自动做同样的判据并归档；但它的 soak 段仍是
+      前台，长跑请用上面这条。
+
+7.2 netem 矩阵（需要 root）
+      sudo OPEN62541_ROOT=/root/open62541-v1.4.14-noSanitizer \
+           SKIP_LONG=1 ./scripts/run_bench.sh          # 先有二进制
+      sudo ./scripts/run_netem_matrix.sh               # 本补丁已 chmod +x
+      # 产物：bench-results/netem/{latency_delay200,latency_loss5,
+      #        recovery_jitter200_50,halfopen_bounded,after_clear_latency}.txt
+      #        + summary.txt
+      注意：`tc netem` 作用于整个 lo，会同时影响本机其它回环流量；脚本用 trap
+      保证异常退出也会 clear。报告里务必写明这是「本机回环注入」，不等于工业
+      现场多跳网络。
+
+7.3 简历一行模板（数字替换成 median 实测值）
+  「open62541 v1.4.14 多线程封装；8 线程共享实例 batchRead P50=0.39ms /
+   P99=67ms（batch=16，0 error，3 次中位数）；吞吐随线程数不增反降，定位为
+   m_sdkMutex + SDK clientMutex 双层串行；服务端宕机自愈 P50=452ms /
+   P99=866ms；24h soak RSS 波动 <__KiB、稳态斜率≈0（ASan/LSan 0 泄漏）；
+   netem 200ms RTT / 5% 丢包 / iptables 半开下恢复验证通过；143 用例 +
+   ASan/UBSan/LSan/TSan + 50 次 shuffle 抖动全绿。」
+
+
+================================================================================
+8. 以「优秀求职作品」为标杆
+================================================================================
+
+8.1 主动讲（加分项）
+  · pImpl + 前向声明，公共头零 SDK 泄漏，且有 only_ua_h 编译期探针证明；
+  · ISdk 抽象接缝 + MockSdk 虚拟时钟，让并发/预算/错误路径可确定性测试；
+  · Result<T,E> + RichError，不抛异常、不返回 -1；
+  · ApiLease + InFlightGuard + RecreateGuard 多层生命周期算术；
+  · 新增异常安全用例：证明「接缝抛异常时守卫也配平」，这是大多数候选人
+    想不到的测试维度；
+  · 能用官方源码解释 noReconnect/noNewSession/isFullyConnected/waitInternal
+    的差别（第 3 节 A~F）；
+  · 能把 benchmark 从「跑个数字」讲到「方法学」：忙等 server、单次采样噪声、
+    in-process server 污染 RSS、--repeats 中位数、独立进程 soak、netem 矩阵、
+    以及「前台长跑会被会话退出截断」这种只有真跑过才知道的坑。
+
+8.2 会被追问（先想好答案）
+  · 「为什么 8 线程吞吐还不如单线程？」
+    → 引路径图 A：m_sdkMutex 覆盖整次 service；open62541 自身 clientMutex
+      也串行；SDK 无后台线程。多线程在这里是并发安全，不是并行吞吐。承认
+      边界，给出「多连接/连接池」的演进方向。
+  · 「p99 67ms 怎么回事？」
+    → 先说单次不可复现，再说已用线程扫描把「随线程数上升」钉死，根因是排队；
+      并指出不可以在简历里只写 max=160ms 的恐怖数字。
+  · 「soak 只跑了 43 分钟就说无泄漏？」
+    → 不要说谎。承认被会话退出截断、当前未在跑；说清楚「已用 setsid 重跑，
+      并用 check_rss --min-hours 拒绝截断曲线」。
+  · 「noReconnect=true 还能恢复吗？」→ 能，引 [D]：isFullyConnected 看 noSession。
+  · 「noNewSession=true 会怎样？」→ 会话失效即主动断开（引 [E]）。
+  · 「MockSdk 与真实 SDK 差异？」→ 见 limitations 第 3 节，主动承认哪些结论
+    必须由真实 server 用例（T110/T116/T117）与 netem 保证。
+  · 「异常安全测过吗？」→ 现在能答：T135~T137 用抛异常的钩子证明守卫配平、
+    CAS 复位；并主动指出公开 API 的 no-throw 约定目前不统一（limitations 已写）。
+
+8.3 可执行清单（按投入产出排序）
+  1. 先 git add/commit 把 bench/docs/README/scripts 纳入版本控制（4.1）；
+  2. 应用本补丁，重跑 ctest + ASan + LSan + TSan，日志存档；
+  3. 用 7.1 的 setsid 命令重跑 24h soak，归档 rss_curve.csv + rss_check.txt；
+  4. 跑 7.2 的 netem 矩阵，把 bench-results/netem/ 归档；
+  5. 把 8.1/8.2 整理成一页「性能与恢复」面试材料，数字一律用中位数；
+  6. （可选）按路径图 A 给 callRunIterate 加 timeout 形参，用 --repeats 复测
+     p99，验证「看门狗不再抢锁 50ms」的假设；
+  7. （可选）把 giveUpThresholdMs / watchdogIntervalMs 做成「最坏恢复时间」
+     表格，和 restart_recovery 实测对照。
+
+
+================================================================================
+9. 面试官视角：我认为能考验候选人的 25 个问题
+================================================================================
+（以资深面试官口吻。每题后面给出「及格线」和「加分项」，你可以拿来自测。）
+
+一、C++ 语言与对象生命周期
+ 1. 这个类为什么把拷贝和移动全部 delete？如果某个 API 需要返回它，你怎么设计？
+    及格：知道 pImpl + shared_ptr、unique_ptr 工厂返回。
+    加分：能说清「删除移动是为了避免 ApiLease/看门狗线程持有的 this 被搬走」。
+ 2. pImpl 的析构为什么必须定义在 .cpp 里（本类为什么能编译过）？
+    及格：不完整类型的 unique_ptr/shared_ptr 析构需要在实现可见处实例化。
+ 3. 你的五个 RAII 守卫（Read/Write Request/Response、InFlight）各自负责哪一段
+    所有权？如果 serviceRead 抛异常，谁的析构保证不泄漏？
+    及格：说出两两对应；加分：能引 T135/T136。
+ 4. std::variant + std::get_if 在这里怎么避免 type-erasure 运行期错误？
+ 5. 为什么 ErrorCode 用 enum class : uint8_t？what() 为什么不能用于分支？
+ 6. 你用了 std::shared_ptr<Impl> + weak_ptr 回调，为什么不是裸 this？
+
+二、并发与内存模型
+ 7. 同一实例多线程调用，你的串行化点在哪几层？为什么是两层而不是一层？
+    及格：m_sdkMutex + open62541 clientMutex；加分：引路径图 A。
+ 8. m_lifeState 的三态转换为什么用 compare_exchange 而不是 load/store？
+    及格：避免看门狗覆盖业务刚写的 GIVEN_UP。
+ 9. m_taskCounter 为什么用 size_t 而非 atomic？条件变量的 notify 为什么在
+    持锁/不持锁两种写法都出现？
+ 10. shutdown() 的第二个调用者为什么「立即返回 success 而不等待 drain」？
+    这个契约对你的调用方意味着什么？
+ 11. 看门狗线程在 ~Impl 里怎么保证一定退出？如果 delayFunction 正在长退避呢？
+ 12. TSan 下你用的是 m_sdkMutex；为什么不能把锁去掉、靠 UA 自身的锁？
+ 13. 如果要把 8 线程吞吐提上去，你会怎么改？代价是什么？
+    及格：多连接/连接池；加分：承认会牺牲「同一会话的顺序性」。
+
+三、open62541 / OPC UA 协议
+ 14. 为什么必须周期调用 UA_Client_run_iterate？SDK 有没有后台线程？
+ 15. noReconnect 和 noNewSession 的语义差别？只设 true 还能自动恢复吗？
+ 16. 同步 Service 调用在未连接时会做什么？阻塞上界怎么算？
+ 17. UA_ReadResponse 的 results 和 diagnosticInfos 为什么必须分别中和空指针？
+ 18. 你怎么判断一个 UA_StatusCode 是「坏」？为什么不能 == UA_STATUSCODE_BAD？
+ 19. 安全策略 None / 用户认证 / 证书轮换在生产环境怎么考虑？（本题是压力题：
+     如果你的封装只支持 None，要主动说这是限制。）
+
+四、工程质量与测试
+ 20. 你的测试如何做到确定性？哪些结论只能由真实 server 保证？
+ 21. 畸形响应的用例覆盖了哪些形状？为什么 results==nullptr 且 size>0 会 crash？
+ 22. 单次 p99 不可复现，你怎么让性能数字可信？（中位数、线程扫描、独立进程）
+ 23. 你的 24h soak 用什么判据？为什么看斜率而不是绝对值？
+ 24. 如果让你删掉现有测试的 30%，你删哪些？为什么？
+ 25. CI 里四个 sanitizer job 各抓什么？为什么 TSan 单独一个 job？
+
+五、行为/工程习惯（社招必问）
+ 26. 这个项目你做过最难的 bug 是什么？怎么定位的？（建议讲：看门狗不报
+     RUNNING 的 T131/T132，或 RSS 被 in-process server 污染。）
+ 27. 你和别人怎么 review 代码？你接受过哪些批评？
+ 28. 机械背景为什么转码？你打算怎么补计算机基础？
+
+
+================================================================================
+10. 你需要补的专业知识（面向机械转码社招）
+================================================================================
+定位：你的 C++ 工程能力已经不弱（这份作品能证明），短板在「计算机基础 +
+系统编程 + 网络协议」的理论系统性，以及「面试表达」。建议 6~8 周，按下面顺序。
+
+第一优先级（决定你能不能过一面）
+ 1. C++ 语言与对象模型：
+    · 《Effective Modern C++》第 1~4 章（智能指针、move/forward、lambda）
+    · 手动实现一次 shared_ptr/unique_ptr/string，理解控制块与异常安全
+    · 重点：Rule of Five、RAII、异常安全等级、SFINAE/模板特化（你代码里
+      TypeTraits 就是模板特化，把它讲清楚）
+ 2. 操作系统：
+    · 进程/线程/协程、虚拟内存、页表、malloc 与 arena
+    · 同步原语：mutex/CV/atomic/内存序（至少要能解释 acquire/release）
+    · 文件描述符、epoll、信号；你项目里的 watchdog/condition_variable 就是素材
+ 3. 网络：
+    · TCP 三次握手/四次挥手、TIME_WAIT、拥塞控制、Nagle、keepalive
+    · 为什么半开连接（half-open）需要应用层心跳
+    · 把 netem 的 delay/loss/jitter 和 TCP 行为对应起来
+第二优先级（决定你能不能过二面/谈薪）
+ 4. OPC UA 协议：
+    · 读 OPC UA Part 1/2/4/6 概览；理解 SecureChannel vs Session、Service、
+      NodeId、Attribute、Subscription/MonitoredItem
+    · open62541 官方 docs 的 client/server tutorial
+ 5. 工程化：
+    · CMake 现代写法（target-based、PUBLIC/PRIVATE）
+    · Sanitizer 原理（ASan 红区、TSan happens-before、LSan 根集）
+    · CI/Conan/vcpkg 依赖管理
+ 6. 数据结构与算法：
+    · 面试常考的数组/链表/树/图/DP；每天 2 题，用 C++ 写、讲清复杂度
+第三优先级（长期）
+ 7. 数据库、Linux 性能分析（perf、strace、flamegraph）、分布式基础
+ 8. 计算机组成/编译原理的常识性章节
+
+面试表达训练（立刻可做）
+ · 用本报告第 8 节的「主动讲/被追问」写一页讲稿，录音自听；
+ · 把项目讲成 3 分钟版本（问题→方案→证据→取舍），数字全部用本报告第 2 节；
+ · 准备「我不知道」的标准回答：给出你的推理路径 + 你会在哪里查证，而不是硬编。
+
+
+================================================================================
+11. 最终评级
+================================================================================
+
+  总体（现状证据）        B+
+  总体（补丁 + 补齐数据 + git 追踪） A-
+    架构设计              A-
+    资源与生命周期        A
+    并发落地              B+  → A-（问题已量化，根因与修复方向明确）
+    公开 API 封装         A-
+    Rule of Five          A
+    测试工程（单测）      A  （143 用例 + 异常安全）
+    测试工程（耐久/网络） C+  → B+（工具与判据就位，数据待补跑）
+    文档一致性            B+  → A-（本轮修正 4 处错误/失实）
+    作品可交付性          D   → A-（bench/docs/scripts 进 git 后）
+
+  一句话总结：
+    库本体已经是一份经得起追问的作品；本轮没有再「造」库内缺陷，而是把
+    「异常安全」从零补成确定性断言、把耐久脚本从「看起来能跑」修成「判据真的
+    会红」，并指出「作品未被 git 追踪」这个对求职最致命的交付问题。先做第 7.0
+    节的提交，再补 24h soak 与 netem 矩阵，这份作品在社招 C++/工业软件岗位里
+    就完整了。
+================================================================================

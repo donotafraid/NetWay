@@ -3,9 +3,9 @@
 #include <memory>
 #include <vector>
 #include "OPCUAPacking/ua.h"
-#include "tests/MockSdk.h"
+#include "tests/include/MockSdk.h"
 
-#include "OPCUAPacking/internal/ClientTestHooks.h"
+#include "tests/include/ClientTestHooks.h"
 
 #if defined(__has_feature)
 #  if __has_feature(address_sanitizer)
@@ -26,7 +26,7 @@ TEST(Client, T28_MalformedReadResponse_NoLeak) {
     cfg.applyProfile(ClientConfig::PROFILE_LOCAL);
     ASSERT_FALSE(cfg.check().has_value()) << *cfg.check();
 
-    auto r = ClientTestHooks::createWithSdk(sdk, "opc.tcp://192.0.2.1:4840", cfg);
+    auto r = OPCUAPacking::test::ClientTestHooks::createWithSdk(sdk, "opc.tcp://192.0.2.1:4840", cfg);
     ASSERT_TRUE(r.has_value()) << r.get_error()->what();
     auto c = std::move(*r.get());
 
@@ -83,7 +83,7 @@ TEST(Client, T29_PerItemBadAndTypeMismatch_MapToNullopt) {
     cfg.applyProfile(ClientConfig::PROFILE_LOCAL);
     ASSERT_FALSE(cfg.check().has_value()) << *cfg.check();
 
-    auto r = ClientTestHooks::createWithSdk(sdk, "opc.tcp://192.0.2.1:4840", cfg);
+    auto r = OPCUAPacking::test::ClientTestHooks::createWithSdk(sdk, "opc.tcp://192.0.2.1:4840", cfg);
     ASSERT_TRUE(r.has_value()) << r.get_error()->what();
     auto c = std::move(*r.get());
 
@@ -144,7 +144,7 @@ TEST(Client, T30_MalformedWriteResponse_Rejected) {
     cfg.applyProfile(ClientConfig::PROFILE_LOCAL);
     ASSERT_FALSE(cfg.check().has_value()) << *cfg.check();
 
-    auto r = ClientTestHooks::createWithSdk(sdk, "opc.tcp://192.0.2.1:4840", cfg);
+    auto r = OPCUAPacking::test::ClientTestHooks::createWithSdk(sdk, "opc.tcp://192.0.2.1:4840", cfg);
     ASSERT_TRUE(r.has_value()) << r.get_error()->what();
     auto c = std::move(*r.get());
 

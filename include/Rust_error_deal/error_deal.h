@@ -13,6 +13,7 @@ public:
         // ---- 状态机非法 ----
         INVALID_STATE = 0,
         RECREATING,
+        GIVENUP_ING,
         NOT_GIVEN_UP,
         ALREADY_TERMINATED,
         NOT_INITIALIZED,
@@ -21,6 +22,7 @@ public:
         INVALID_ARGUMENT,
         INVALID_CONFIG,
         TYPE_MISMATCH,
+        TYPE_NOTSUPPORT,
         CONVERSION_FAILED,
 
         // ---- 连接 / 会话 ----
@@ -28,6 +30,8 @@ public:
         CONNECT_TIMEOUT,
         SESSION_NOT_ACTIVATED,
         CHANNEL_NOT_OPEN,
+        CHANNEL_NOT_CLOSED,
+        DISCONNECT_TIMEOUT,
 
         // ---- 并发 / 资源 ----
         THREAD_BUSY,
@@ -42,6 +46,7 @@ public:
         // ---- 内部 ----
         INTERNAL_ERROR,
         UNKNOWN,
+        OK
     };
 
     RichError() = default;
@@ -63,16 +68,20 @@ public:
             case ErrorCode::INVALID_STATE:          return "INVALID_STATE";
             case ErrorCode::RECREATING:             return "RECREATING";
             case ErrorCode::NOT_GIVEN_UP:           return "NOT_GIVEN_UP";
+            case ErrorCode::GIVENUP_ING:            return "GIVENUP_ING";
             case ErrorCode::ALREADY_TERMINATED:     return "ALREADY_TERMINATED";
             case ErrorCode::NOT_INITIALIZED:        return "NOT_INITIALIZED";
             case ErrorCode::INVALID_ARGUMENT:       return "INVALID_ARGUMENT";
             case ErrorCode::INVALID_CONFIG:         return "INVALID_CONFIG";
             case ErrorCode::TYPE_MISMATCH:          return "TYPE_MISMATCH";
+            case ErrorCode::TYPE_NOTSUPPORT:        return "TYPE_NOTSUPPORT";
             case ErrorCode::CONVERSION_FAILED:      return "CONVERSION_FAILED";
             case ErrorCode::NOT_CONNECTED:          return "NOT_CONNECTED";
             case ErrorCode::CONNECT_TIMEOUT:        return "CONNECT_TIMEOUT";
             case ErrorCode::SESSION_NOT_ACTIVATED:  return "SESSION_NOT_ACTIVATED";
             case ErrorCode::CHANNEL_NOT_OPEN:       return "CHANNEL_NOT_OPEN";
+            case ErrorCode::CHANNEL_NOT_CLOSED:     return "CHANNEL_NOT_CLOSED";
+            case ErrorCode::DISCONNECT_TIMEOUT:     return "DISCONNECT_TIMEOUT";
             case ErrorCode::THREAD_BUSY:            return "THREAD_BUSY";
             case ErrorCode::IN_FLIGHT_TIMEOUT:      return "IN_FLIGHT_TIMEOUT";
             case ErrorCode::BUDGET_EXCEEDED:        return "BUDGET_EXCEEDED";
@@ -81,6 +90,7 @@ public:
             case ErrorCode::SDK_ERROR:              return "SDK_ERROR";
             case ErrorCode::INTERNAL_ERROR:         return "INTERNAL_ERROR";
             case ErrorCode::UNKNOWN:                return "UNKNOWN";
+            case ErrorCode::OK:                     return "OK";
         }
         return "UNKNOWN";
     }

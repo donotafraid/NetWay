@@ -17,8 +17,7 @@ struct ClientConfig {
   uint32_t maxTotalWaitMs = 0;
   int64_t giveUpThresholdMs =
       60000; // 用于看门狗后台重连，超出该时间 LifeState 未恢复至 Running，则置为 GIVE-UP
-             // 约束：>= 2 * watchdogIntervalMs，建议 >= maxTotalWaitMs 且 <
-             // sessionTimeoutMs
+             // 约束：>= 2 * watchdogIntervalMs
 
   // ==================== 重试配置 ====================
   uint32_t maxRetries = 3;
@@ -277,8 +276,6 @@ struct ClientConfig {
     return Result<bool, RichError>::success(true);
   }
 };
-
-enum class ConnectionState:uint8_t { OBJECT_ONLY, CONNECTED };
 
 enum class LifeState : uint8_t {
   /// 三元组全部就绪：

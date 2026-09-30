@@ -1,0 +1,4 @@
+=== patched full suite (T1 excluded; needs OPCUA_RUN_INTEGRATION=1) ===
+[==========] Running 134 tests from 9 test suites.
+[==========] 134 tests from 9 test suites ran. (58701 ms total)
+[  PASSED  ] 134 tests.

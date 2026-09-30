@@ -1,6 +1,6 @@
 // tests/test17.cpp
 //
-// 资源生命周期补充（对应审查报告 §6.1 / G1、G2、G3、G7、G8）：
+// 资源生命周期补充：
 //   T34  batchRead  中途参数校验失败 → ReadRequestGuard 必须释放已分配 NodeId
 //   T35  batchWrite 中途参数校验失败 → WriteRequestGuard 必须释放已分配 NodeId/Variant
 //   T36  STRING 读取：ReadResult.value 必须是独立 std::string，不借用 UA_String
@@ -14,8 +14,8 @@
 #include <gtest/gtest.h>
 #include <string>
 #include <vector>
-#include "tests/MockSdk.h"
-#include "OPCUAPacking/internal/ClientTestHooks.h"
+#include "tests/include/MockSdk.h"
+#include "tests/include/ClientTestHooks.h"
 
 #if defined(__has_feature)
 #  if __has_feature(address_sanitizer)
@@ -34,7 +34,7 @@
 namespace {
 std::unique_ptr<OPC_UA_Client>
 makeClientNoWatchdog(const std::shared_ptr<MockSdk> &sdk, ClientConfig cfg) {
-  auto r = ClientTestHooks::createWithSdk(
+  auto r = OPCUAPacking::test::ClientTestHooks::createWithSdk(
       sdk, "opc.tcp://192.0.2.1:4840", cfg, /*usedefault=*/false,
       /*enableWatchDog=*/false);
   EXPECT_TRUE(r.has_value()) << (r.is_fail() ? r.get_error()->what() : "");
@@ -192,7 +192,7 @@ TEST(Client, T38_BatchRead_RetryableWithResults_NoLeakAcrossRetries) {
   // 若 ReadResponseGuard 只在最终出口清理，前几次的 results 会泄漏。
   sdk->setReadResponseShape(UA_STATUSCODE_BADCONNECTIONCLOSED, 1, true);
 
-  auto r0 = ClientTestHooks::createWithSdk(
+  auto r0 = OPCUAPacking::test::ClientTestHooks::createWithSdk(
       sdk, "opc.tcp://192.0.2.1:4840", cfg, /*usedefault=*/false,
       /*enableWatchDog=*/false);
   ASSERT_TRUE(r0.has_value()) << r0.get_error()->what();

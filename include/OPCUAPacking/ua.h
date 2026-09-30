@@ -4,18 +4,25 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
-#include <string>
 #include <vector>
 
 #include <string>
 #include "Rust_error_deal/error_deal.h"
-#include "PLC/WriteRequestAddres.h"
+#include "OPCUAPacking/WriteRequestAddres.h"
 
 #include "OPCUAPacking/Types.h"
 
 namespace OPCUAPacking { namespace internal { struct RecreateSync; } }
 
 class ISdk;
+
+#ifdef OPCUAPACKING_ENABLE_TEST_HOOKS
+namespace OPCUAPacking::test { struct ClientTestHooks; }
+#define OPCUAPACKING_FRIEND_TEST_HOOKS \
+    friend struct OPCUAPacking::test::ClientTestHooks;
+#else
+#define OPCUAPACKING_FRIEND_TEST_HOOKS
+#endif
 
 class OPC_UA_Client final  {
 public:
@@ -34,10 +41,12 @@ public:
   };
   struct ReadResult {
     uint32_t rawStatus; // 仅日志/调试用，业务层可忽略
+    RichError::ErrorCode errorCode{RichError::ErrorCode::OK};
     std::optional<ValueType> value;
   };
   struct WriteResult {
     enum class Status { Good, Bad } status;
+    RichError::ErrorCode errorCode{RichError::ErrorCode::OK};
     uint32_t rawStatus; // 仅日志/调试用，业务层可忽略
   };
 
@@ -50,10 +59,16 @@ public:
   OPC_UA_Client &operator=(OPC_UA_Client &&other) = delete;
 
   ~OPC_UA_Client() ;
-  // “调用期间禁止修改/析构入参 vector”
+  // 线程模型：同一实例可在多线程下调用；底层同步服务调用在内部串行化，
+  //   SDK 侧由 open62541 v1.4.14 的内部 clientMutex 保护（UA_MULTITHREADING>=100）。
+  // 阻塞上界：单次调用受 maxTotalWaitMs 约束（超出返回 BUDGET_EXCEEDED），
+  //   但单次尝试最坏 ≈ service + SDK 内部 connectSync ≤ 2×timeoutMs，
+  //   且断线时 SDK 会在同步服务调用前自动补连（noReconnect=true 只约束
+  //   被动状态机，不阻止服务调用前的补连）。
+  // 调用期间禁止修改/析构入参 vector；NodeId.id 不得包含内嵌 '\0'。
   Result<std::vector<OPC_UA_Client::ReadResult>, RichError>
   batchRead(const std::vector<ReadValue> &batchReadNodes);
-  // “调用期间禁止修改/析构入参 vector”
+  // 同 batchRead 的线程/阻塞约定；写入非幂等，封装层不自动重试。
   Result<std::vector<OPC_UA_Client::WriteResult>, RichError>
   batchWrite(const std::vector<WriteValue> &batchWriteNodes);
 
@@ -61,8 +76,8 @@ public:
   // checkConnected 会主动驱动一次事件循环以刷新状态。
   // 代价：会与看门狗线程争抢 SDK eventLoop 锁。
   // 建议：仅在低频监控路径调用；高频健康检查请用 isHealthy()（只读缓存）。
-  Result<ConnectionState, RichError> checkConnected() ;
-  Result<ConnectionState,RichError> isHealthy();
+  Result<Unit, RichError> checkConnected() ;
+  Result<Unit,RichError> isHealthy();
   // 重建失败时旧 pImpl 保持不变，上层可再次调用重试
   // recreate/shutdown 替换前等 m_inFlight == 0
   // 契约：进入 API 后要么被明确拒绝，要么完整执行完
@@ -76,7 +91,7 @@ public:
   // 注意：本 API 走 ApiLease 入口，m_recreating / m_terminated 期间会返回错误。
   Result<LifeState, RichError> checkLifeState() ;
   //  业务主动设置Client状态为Give-Up
-  void setGiveUpSignal();
+  Result<Unit, RichError> setGiveUpSignal();
 
   // create() 返回后，客户端一定已连接，调用方可以立即使用
   Result<Unit, RichError> connect();
@@ -86,13 +101,13 @@ public:
   //   - 幂等：可随时调用；已关闭状态下调用返回 success。
   //   - 阻塞：本函数会等待任务计数器归零，超时上限为
   //           max(timeoutMs, 2×watchdogIntervalMs)。
-  //   - 超时后强制清理，并记录 warn 日志 + 计数器。
-  //   - 并发调用安全：两个线程同时调用，仅一个执行关闭，另一个返回 success。
+  // 超时后在途请求由各自出口守卫清理，shutdown 不强行释放。
+  // 并发调用安全：两个线程同时调用，仅一个执行关闭，另一个立即返回 success（不等待关闭完成）。
   Result<Unit,RichError> shutdown() ;
 
  
 private:
-  friend struct ClientTestHooks; // ← 只给钩子开一扇门
+  OPCUAPACKING_FRIEND_TEST_HOOKS
   // 仅测试使用
   void pumpWatchdogForTest();
   // 仅为了测试T8-C使用

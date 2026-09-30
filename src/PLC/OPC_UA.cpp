@@ -1,7 +1,7 @@
 #include "PLC/OPC_UA.h"
 #include <spdlog/spdlog.h>
 #include <regex>
-#include "PLC/ConversionDispatcher.h"
+#include "src/OPCUAPacking/detail/ConversionDispatcher.h"
 
 
 //  EndianConverter----------------------------------------------------------------------------

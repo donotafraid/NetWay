@@ -1,8 +1,7 @@
 #include "OPCUAPacking/ua.h"
 #include <gtest/gtest.h>
-#include "tests/MockSdk.h"
-#include "tests/util/wait_for.h"
-#include "tests/util/ClientTestFixture.h"
+#include "tests/include/util/wait_for.h"
+#include "tests/include/util/ClientTestFixture.h"
 
 TEST_F(ClientTest, T4_RecreateAfterGiveUpSignal) {
   using namespace std::chrono_literals;
@@ -18,8 +17,6 @@ TEST_F(ClientTest, T4_RecreateAfterGiveUpSignal) {
   {
     auto r = c->checkConnected();
     ASSERT_TRUE(r.has_value());
-    EXPECT_EQ(r.value_or(ConnectionState::OBJECT_ONLY),
-              ConnectionState::CONNECTED);
   }
 
   c->setGiveUpSignal();

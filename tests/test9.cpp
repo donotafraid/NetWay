@@ -2,9 +2,9 @@
 #include <type_traits>
 #include <gtest/gtest.h>
 
-// 报告 §3.13 CT-1：原注释"只 include ua.h，不含 open62541 头"与事实相反。
-// ua.h 自身会用 UA_Client（shared_ptr 包装），必然牵入 SDK 头；
-// 因此本测试只断言 Rule of Five 与封装约束，不再声称"不含 SDK 头"。
+// 本用例只验证 OPC_UA_Client 的 Rule-of-Five 与签名，
+// 封装完整性由 tests/compile/EncapsulationProbe.cpp 单独锁定：
+// 该目标故意不带 open62541 include 路径，只要 ua.h 间接拖入 SDK 就编译失败。
 // 真正的"头文件自洽"应由 tests/compile/OnlyUaH.cpp 编译期探针验证（§6.4）。
 TEST(Client, CompileTime_RuleOfFive) {
     static_assert(!std::is_copy_constructible_v<OPC_UA_Client>);

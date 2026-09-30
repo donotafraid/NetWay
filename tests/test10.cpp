@@ -1,6 +1,6 @@
 // tests/test10_lifecycle_contracts.cpp
 //
-// 报告 §6.2：补齐"代码自己写下的契约"——在途读写 × shutdown / recreate、
+// §6.2：补齐"代码自己写下的契约"——在途读写 × shutdown / recreate、
 // giveUpThresholdMs 的阈值路径。全部基于 MockSdk 的 4 个接缝，确定性可复现。
 //
 // T16: shutdown 与在途读的排空契约（正常路径）
@@ -12,14 +12,13 @@
 #include <gtest/gtest.h>
 #include <atomic>
 #include <chrono>
-#include <string>
 #include <thread>
 #include <vector>
-#include "tests/MockSdk.h"
-#include "tests/util/Cxx17Compat.h"
-#include "tests/util/wait_for.h"
+#include "tests/include/MockSdk.h"
+#include "tests/include/util/Cxx17Compat.h"
+#include "tests/include/util/wait_for.h"
 
-#include "OPCUAPacking/internal/ClientTestHooks.h"
+#include "tests/include/ClientTestHooks.h"
 using namespace std::chrono_literals;
 
 // ============================================================
@@ -33,7 +32,7 @@ TEST(Client, T16_ShutdownWaitsForInFlightRead_NoUAF) {
 
   ClientConfig cfg;
   cfg.applyProfile(ClientConfig::PROFILE_LOCAL);
-  auto r = ClientTestHooks::createWithSdk(sdk, "opc.tcp://192.0.2.1:4840", cfg);
+  auto r = OPCUAPacking::test::ClientTestHooks::createWithSdk(sdk, "opc.tcp://192.0.2.1:4840", cfg);
   ASSERT_TRUE(r.has_value()) << r.get_error()->what();
   auto c = std::move(*r.get());
 
@@ -71,7 +70,7 @@ TEST(Client, T17_ShutdownTimeout_ForceCleanup_NoUAF) {
   cfg.retryBackoffBaseMs = 50;
   cfg.retryMaxBackoffMs = 100; // < timeoutMs
 
-  auto r = ClientTestHooks::createWithSdk(sdk, "opc.tcp://192.0.2.1:4840", cfg);
+  auto r = OPCUAPacking::test::ClientTestHooks::createWithSdk(sdk, "opc.tcp://192.0.2.1:4840", cfg);
   ASSERT_TRUE(r.has_value()) << r.get_error()->what();
   auto c = std::move(*r.get());
 
@@ -112,7 +111,7 @@ TEST(Client, T18_RecreateVsInFlightRead_OldFailsNewUsable) {
 
   ClientConfig cfg;
   cfg.applyProfile(ClientConfig::PROFILE_LOCAL);
-  auto r = ClientTestHooks::createWithSdk(sdk, "opc.tcp://192.0.2.1:4840", cfg);
+  auto r = OPCUAPacking::test::ClientTestHooks::createWithSdk(sdk, "opc.tcp://192.0.2.1:4840", cfg);
   ASSERT_TRUE(r.has_value()) << r.get_error()->what();
   auto c = std::move(*r.get());
 
@@ -195,7 +194,7 @@ TEST(Client, T19_GiveUp_ThresholdBoundary_VirtualClock) {
   ASSERT_FALSE(cfg.check().has_value()) << *cfg.check();
 
   sdk->setMode(MockSdk::Mode::Connected);
-  auto r = ClientTestHooks::createWithSdk(sdk, "opc.tcp://192.0.2.1:4840", cfg);
+  auto r = OPCUAPacking::test::ClientTestHooks::createWithSdk(sdk, "opc.tcp://192.0.2.1:4840", cfg);
   ASSERT_TRUE(r.has_value()) << r.get_error()->what();
   auto c = std::move(*r.get());
 

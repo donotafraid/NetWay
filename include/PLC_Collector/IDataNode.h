@@ -6,8 +6,8 @@
 #include <string>
 #include <QVariant>
 #include "Rust_error_deal/error_deal.h"
-#include "PLC/S7TypeStruct.h"
-#include "PLC/WriteRequestAddres.h"
+#include "OPCUAPacking/S7TypeStruct.h"
+#include "OPCUAPacking/WriteRequestAddres.h"
 
 #include <QtCore/qthreadpool.h>
 #include <QtCore/qobjectdefs.h>

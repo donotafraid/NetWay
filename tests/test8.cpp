@@ -1,5 +1,5 @@
 
-#include "tests/util/ClientTestFixture.h"
+#include "tests/include/util/ClientTestFixture.h"
 #include "OPCUAPacking/ua.h"
 #include <open62541/server.h>
 

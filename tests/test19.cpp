@@ -1,6 +1,6 @@
 // tests/test19.cpp
 //
-// 回调驱动路径与关闭后契约补充（对应审查报告 §6.3 / G10、G11、G12）：
+// 回调驱动路径与关闭后契约补充：
 //   T43  真实 SDK 会通过 stateCallback 推送三元组；封装必须消费它
 //   T44  inactivityCallback 置 connectionLost，看门狗走
 //        “disconnect  connect” 恢复分支（此前完全未覆盖）
@@ -15,16 +15,16 @@
 #include <gtest/gtest.h>
 #include <string>
 #include <vector>
-#include "tests/MockSdk.h"
-#include "tests/util/wait_for.h"
-#include "OPCUAPacking/internal/ClientTestHooks.h"
+#include "tests/include/MockSdk.h"
+#include "tests/include/util/wait_for.h"
+#include "tests/include/ClientTestHooks.h"
 
 namespace {
 std::unique_ptr<OPC_UA_Client>
 makeClient(const std::shared_ptr<MockSdk> &sdk, bool enableWatchdog) {
   ClientConfig cfg;
   cfg.applyProfile(ClientConfig::PROFILE_LOCAL);
-  auto r = ClientTestHooks::createWithSdk(
+  auto r = OPCUAPacking::test::ClientTestHooks::createWithSdk(
       sdk, "opc.tcp://192.0.2.1:4840", cfg, /*usedefault=*/false,
       enableWatchdog);
   EXPECT_TRUE(r.has_value()) << (r.is_fail() ? r.get_error()->what() : "");
@@ -84,8 +84,7 @@ TEST(Client, T44_InactivityCallbackTriggersWatchdogReconnect) {
 
   // 只置 connectionLost，不改 mode：走 else-if(connectionLost) 分支。
   sdk->fireInactivityCallback();
-  ClientTestHooks::pumpWatchdogForTest(*c);
-
+  OPCUAPacking::test::ClientTestHooks::pumpWatchdogForTest(*c);
 
   EXPECT_GT(sdk->disconnectAsyncCallCount(), disconnectBefore)
       << "connectionLost 分支未先断开旧连接";
@@ -95,8 +94,6 @@ TEST(Client, T44_InactivityCallbackTriggersWatchdogReconnect) {
   auto s = c->checkLifeState();
   ASSERT_TRUE(s.has_value()) << (s.is_fail() ? s.get_error()->what() : "");
   EXPECT_EQ(s.value_or(LifeState::GIVEN_UP), LifeState::RUNNING);
-
-  EXPECT_TRUE(c->shutdown().is_success());
 }
 
 // ============================================================

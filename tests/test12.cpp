@@ -4,9 +4,9 @@
 #include <chrono>
 #include <thread>
 #include <vector>
-#include "tests/MockSdk.h"
+#include "tests/include/MockSdk.h"
 
-#include "OPCUAPacking/internal/ClientTestHooks.h"
+#include "tests/include/ClientTestHooks.h"
 
 TEST(Client, T25_ConcurrentLifecycle_TSan) {
   auto sdk = std::make_shared<MockSdk>();
@@ -14,7 +14,7 @@ TEST(Client, T25_ConcurrentLifecycle_TSan) {
 
   ClientConfig cfg;
   cfg.applyProfile(ClientConfig::PROFILE_LOCAL);
-  auto r = ClientTestHooks::createWithSdk(sdk, "opc.tcp://192.0.2.1:4840", cfg);
+  auto r = OPCUAPacking::test::ClientTestHooks::createWithSdk(sdk, "opc.tcp://192.0.2.1:4840", cfg);
   ASSERT_TRUE(r.has_value()) << r.get_error()->what();
   auto c = std::move(*r.get());
 
@@ -49,5 +49,20 @@ TEST(Client, T25_ConcurrentLifecycle_TSan) {
   stop = true;
   for (auto& t : ts) t.join();
 
-  // 只依赖 TSan 报告，不做功能断言（功能正确性由其它用例负责）
+  // TSan 只证明“没有数据竞争”，不证明“功能仍然正确”。这里补一条确定性断言：
+  // 2 秒并发 churn 之后对象必须仍然可用；并且 shutdown() 之后 SDK 的
+  // clientNew/clientDelete 必须配平（否则 TSan 干净但资源仍在泄漏）。
+  // MockSdk 默认的 serviceRead 返回 BADNOTCONNECTED，所以显式给一个成功形状。
+  sdk->setReadResponseShape(UA_STATUSCODE_GOOD, /*resultsSize=*/1,
+                            /*allocResults=*/true);
+  std::vector<OPC_UA_Client::ReadValue> one{{{1, "TestInt", S7DataType::INT}}};
+  auto after = c->batchRead(one);
+  sdk->resetResponseShape();
+  EXPECT_TRUE(after.is_success())
+      << "并发 churn 之后 batchRead 失败："
+      << (after.is_fail() ? after.get_error()->codeName() : "");
+
+  EXPECT_TRUE(c->shutdown().is_success());
+  EXPECT_EQ(sdk->clientNewCallCount(), sdk->clientDeleteCallCount())
+      << "shutdown() 之后 SDK client 的 new/delete 未配平";
 }

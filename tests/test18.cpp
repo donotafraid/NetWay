@@ -1,6 +1,6 @@
 // tests/test18.cpp
 //
-// 生命周期 / 配置快照 / CAS 并发补充（对应审查报告 §6.2 / G4、G5、G6、G9）：
+// 生命周期 / 配置快照 / CAS 并发补充：
 //   T39  endpoint 是值快照：recreate 不读取调用方字符串
 //   T40  connect 与 disconnect 并发 → CAS 恰好一个赢，另一个 THREAD_BUSY
 //   T41  两个 disconnect 并发 → 恰好一个赢，另一个 THREAD_BUSY
@@ -15,11 +15,11 @@
 #include <string>
 #include <thread>
 #include <vector>
-#include "tests/MockSdk.h"
-#include "tests/util/Cxx17Compat.h"
-#include "tests/util/wait_for.h"
+#include "tests/include/MockSdk.h"
+#include "tests/include/util/Cxx17Compat.h"
+#include "tests/include/util/wait_for.h"
 
-#include "OPCUAPacking/internal/ClientTestHooks.h"
+#include "tests/include/ClientTestHooks.h"
 
 using namespace std::chrono_literals;
 
@@ -28,7 +28,7 @@ std::unique_ptr<OPC_UA_Client>
 makeClient(const std::shared_ptr<MockSdk> &sdk, bool enableWatchdog) {
   ClientConfig cfg;
   cfg.applyProfile(ClientConfig::PROFILE_LOCAL);
-  auto r = ClientTestHooks::createWithSdk(
+  auto r = OPCUAPacking::test::ClientTestHooks::createWithSdk(
       sdk, "opc.tcp://192.0.2.1:4840", cfg, /*usedefault=*/false,
       enableWatchdog);
   EXPECT_TRUE(r.has_value()) << (r.is_fail() ? r.get_error()->what() : "");
@@ -53,7 +53,7 @@ TEST(Client, T39_EndpointSnapshot_SurvivesCallerMutation) {
   std::string url = "opc.tcp://127.0.0.1:4840";
   const std::string original = url;
 
-  auto r = ClientTestHooks::createWithSdk(sdk, url, cfg);
+  auto r = OPCUAPacking::test::ClientTestHooks::createWithSdk(sdk, url, cfg);
   ASSERT_TRUE(r.has_value()) << r.get_error()->what();
   auto c = std::move(*r.get());
   ASSERT_NE(c, nullptr);
@@ -214,7 +214,7 @@ TEST(Client, T42_RecreateInFlightTimeout) {
   ASSERT_TRUE(rr.is_fail()) << "在途 API 未排空时 recreate 竟成功";
   EXPECT_EQ(rr.get_error()->code(), RichError::ErrorCode::IN_FLIGHT_TIMEOUT)
       << "context=" << rr.get_error()->what();
-  EXPECT_FALSE(ClientTestHooks::getRecreatingStatus(*c))
+  EXPECT_FALSE(OPCUAPacking::test::ClientTestHooks::getRecreatingStatus(*c))
       << "超时返回后 m_recreating 必须复位";
   EXPECT_GE(dt, 1900ms) << "未等到 2s 排空窗口就返回";
   EXPECT_LT(dt, 5s) << "排空超时后仍长时间阻塞";

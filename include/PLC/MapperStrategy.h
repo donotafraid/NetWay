@@ -4,7 +4,7 @@
 #include "PLC_Collector/IDataNode.h"
 #include "PLC/Struct.h"
 #include "PLC/IStringLengthProbe.h"
-#include "PLC/WriteRequestAddres.h"
+#include "OPCUAPacking/WriteRequestAddres.h"
 
 #include <vector>
 #include <string>

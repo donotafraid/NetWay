@@ -1,0 +1,19 @@
+=== patch diffstat (staged) ===
+ .gitignore                       |   4 +
+ README.md                        |  33 ++++-
+ bench/bench_common.h             |  12 ++
+ bench/bench_latency.cpp          |   7 +-
+ bench/bench_recovery.cpp         |   7 +-
+ bench/bench_rss.cpp              |   7 +-
+ bench/bench_server.cpp           |   7 +-
+ docs/limitations.md              |  19 ++-
+ scripts/run_bench.sh             |  15 ++-
+ scripts/run_netem_matrix.sh      |  16 ++-
+ scripts/sanitizers.sh            |   7 +-
+ src/OPCUAPacking/ua.cpp          |   4 +-
+ tests/CMakeLists.txt             |   1 +
+ tests/test31.cpp                 |   2 +-
+ tests/test38.cpp                 | 279 +++++++++++++++++++++++++++++++++++++++
+ tests/util/ClientTestFixture.cpp |  11 +-
+ 16 files changed, 404 insertions(+), 27 deletions(-)
+APPLY_CHECK_OK (pristine baseline, untracked removed)

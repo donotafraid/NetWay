@@ -8,5 +8,9 @@ bin/
 build-asan/
 build-lsan/
 build-tsan/
+build-bench/
+conan_bench_build/
+bench-results/
+sanitizer-logs/
 
 

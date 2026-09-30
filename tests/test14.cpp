@@ -1,13 +1,13 @@
 // tests/test13.cpp（同一文件）
 #include <atomic>
 #include <thread>
-#include "tests/util/Cxx17Compat.h"
-#include "tests/MockSdk.h"
+#include "tests/include/util/Cxx17Compat.h"
+#include "tests/include/MockSdk.h"
 #include "OPCUAPacking/ua.h"
 #include <gtest/gtest.h>
-#include "tests/util/wait_for.h"
+#include "tests/include/util/wait_for.h"
 
-#include "OPCUAPacking/internal/ClientTestHooks.h"
+#include "tests/include/ClientTestHooks.h"
 TEST(Client, T27_ApiRejectedWhileRecreating) {
   using namespace std::chrono_literals;
 
@@ -17,7 +17,7 @@ TEST(Client, T27_ApiRejectedWhileRecreating) {
 
   ClientConfig cfg;
   cfg.applyProfile(ClientConfig::PROFILE_LOCAL);
-  auto r = ClientTestHooks::createWithSdk(
+  auto r = OPCUAPacking::test::ClientTestHooks::createWithSdk(
       sdk, "opc.tcp://192.0.2.1:4840", cfg);
   ASSERT_TRUE(r.has_value());
   auto c = std::move(*r.get());
@@ -51,7 +51,7 @@ TEST(Client, T27_ApiRejectedWhileRecreating) {
       << "recreate 未进入 connectAsync hook，前置条件不成立";
 
   // 4) 此刻 m_recreating 必为 true
-  EXPECT_TRUE(ClientTestHooks::getRecreatingStatus(*c))
+  EXPECT_TRUE(OPCUAPacking::test::ClientTestHooks::getRecreatingStatus(*c))
       << "进入 connectAsync 后 m_recreating 仍为 false，ApiLease 契约不成立";
 
   // 5) 契约断言：public API 必须快速失败
@@ -75,6 +75,6 @@ TEST(Client, T27_ApiRejectedWhileRecreating) {
   recreator.join();
 
   EXPECT_TRUE(recreateOk.load()) << "recreate 本身应该成功";
-  EXPECT_FALSE(ClientTestHooks::getRecreatingStatus(*c))
+  EXPECT_FALSE(OPCUAPacking::test::ClientTestHooks::getRecreatingStatus(*c))
       << "recreate 完成后 m_recreating 未复位";
 }

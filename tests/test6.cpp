@@ -1,14 +1,13 @@
-#include "tests/util/ClientTestFixture.h"
-#include "OPCUAPacking/ua.h"
+#include "tests/include/util/ClientTestFixture.h"
 #include <open62541/client.h>
 #include <gtest/gtest.h>
 #include <atomic>
 #include <string>
-#include "tests/MockSdk.h"
-#include "tests/util/Cxx17Compat.h"   
-#include "tests/util/wait_for.h"
+#include "tests/include/MockSdk.h"
+#include "tests/include/util/Cxx17Compat.h"   
+#include "tests/include/util/wait_for.h"
 
-#include "OPCUAPacking/internal/ClientTestHooks.h"
+#include "tests/include/ClientTestHooks.h"
 
 // T8-B: 验证"非 GIVEN_UP 状态下 recreate 必须返回错误"
 TEST(Client, T8B_RecreateRequiresGivenUpState_Mock) {
@@ -17,7 +16,7 @@ TEST(Client, T8B_RecreateRequiresGivenUpState_Mock) {
   ClientConfig cfg;
   cfg.applyProfile(ClientConfig::PROFILE_LOCAL);
   std::string endpointUrl = "opc.tcp://192.0.2.1:4841";
-  auto createResult = ClientTestHooks::createWithSdk(sdk, endpointUrl, cfg);
+  auto createResult = OPCUAPacking::test::ClientTestHooks::createWithSdk(sdk, endpointUrl, cfg);
   ASSERT_TRUE(createResult.has_value());
   auto c = std::move(*createResult.get());
 
@@ -46,11 +45,14 @@ TEST(Client, T8C1_ShutdownRejectedWhileRecreating) {
   ASSERT_FALSE(cfg.check().has_value()) << *cfg.check();
 
   auto createResult =
-      ClientTestHooks::createWithSdk(sdk, "opc.tcp://192.0.2.1:4840", cfg);
+      OPCUAPacking::test::ClientTestHooks::createWithSdk(sdk, "opc.tcp://192.0.2.1:4840", cfg);
   ASSERT_TRUE(createResult.has_value())
       << "create failed: " << createResult.get_error()->what();
   auto client = std::move(*createResult.get());
   ASSERT_NE(client, nullptr);
+
+  //先进入断开状态
+  sdk->setMode(MockSdk::Mode::Unreachable);
 
   // 1) 进入 GIVEN_UP
   client->setGiveUpSignal();
@@ -78,7 +80,7 @@ TEST(Client, T8C1_ShutdownRejectedWhileRecreating) {
 
   ASSERT_TRUE(waitFor([&] { return inRecreate.try_wait(); }, 2s))
       << "recreator 未在 2s 内进入 connectAsync 钩子，前置条件不成立";
-  EXPECT_TRUE(ClientTestHooks::getRecreatingStatus(*client))
+  EXPECT_TRUE(OPCUAPacking::test::ClientTestHooks::getRecreatingStatus(*client))
       << "进入 connectAsync 后 m_recreating 仍为 false";
 
   // 3) 核心契约：recreate 期间 shutdown() 必须返回错误
@@ -89,7 +91,7 @@ TEST(Client, T8C1_ShutdownRejectedWhileRecreating) {
 
   // 4) 关键前提：shutdown 被拒绝后，不应该置 m_terminated
   //    否则 recreate 会被迫失败
-  EXPECT_TRUE(ClientTestHooks::getRecreatingStatus(*client))
+  EXPECT_TRUE(OPCUAPacking::test::ClientTestHooks::getRecreatingStatus(*client))
       << "shutdown 被拒绝后 m_recreating 被误复位，违反拒绝语义";
 
   // 5) 放行 recreate，验证它仍能成功
@@ -101,7 +103,7 @@ TEST(Client, T8C1_ShutdownRejectedWhileRecreating) {
 
   EXPECT_TRUE(recreateSucceeded.load(std::memory_order_acquire))
       << "recreate 在 shutdown 被拒后应仍成功，方案 B 契约不成立";
-  EXPECT_FALSE(ClientTestHooks::getRecreatingStatus(*client))
+  EXPECT_FALSE(OPCUAPacking::test::ClientTestHooks::getRecreatingStatus(*client))
       << "recreate 完成后 m_recreating 未复位";
 
   // 6) recreate 完成后 shutdown 应成功（幂等）
@@ -121,7 +123,7 @@ TEST(Client, T8C2_DestructorAfterRecreate_CompletesPromptly) {
   ASSERT_FALSE(cfg.check().has_value()) << *cfg.check();
 
   auto createResult =
-      ClientTestHooks::createWithSdk(sdk, "opc.tcp://192.0.2.1:4840", cfg);
+      OPCUAPacking::test::ClientTestHooks::createWithSdk(sdk, "opc.tcp://192.0.2.1:4840", cfg);
   ASSERT_TRUE(createResult.has_value())
       << "create failed: " << createResult.get_error()->what();
   auto client = std::move(*createResult.get());
@@ -143,7 +145,7 @@ TEST(Client, T8C2_DestructorAfterRecreate_CompletesPromptly) {
   ASSERT_TRUE(rr.is_success()) << "recreate 失败: " << rr.get_error()->what();
 
   // 3) 关键前置：recreate 完成后 m_recreating 必须已复位
-  EXPECT_FALSE(ClientTestHooks::getRecreatingStatus(*client))
+  EXPECT_FALSE(OPCUAPacking::test::ClientTestHooks::getRecreatingStatus(*client))
       << "recreate 完成后 m_recreating 未复位，析构会卡到 10s 超时";
 
   // 4) 契约断言：析构必须迅速完成

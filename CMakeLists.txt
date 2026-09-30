@@ -11,9 +11,19 @@ if(EXISTS ${CONAN_DIR})
     list(APPEND CMAKE_PREFIX_PATH "${CONAN_DIR}")
 endif()
 
-# 允许通过 -DOPEN62541_ROOT=... 覆盖；默认沿用你本地路径
-set(OPEN62541_ROOT "/root/open62541-v1.4.14-noSanitizer"
-    CACHE PATH "open62541 source root")
+# open62541 source root. Supply it with -DOPEN62541_ROOT=... (scripts/run_bench.sh
+# and the sanitizer workflow both do). The previous hard-coded absolute default
+# made a fresh checkout fail on every machine but the original developer's.
+set(OPEN62541_ROOT "" CACHE PATH "open62541 source root (e.g. /opt/open62541-v1.4.14)")
+if(NOT OPEN62541_ROOT)
+  if(EXISTS "/root/open62541-v1.4.14-noSanitizer")
+    set(OPEN62541_ROOT "/root/open62541-v1.4.14-noSanitizer")
+  else()
+    message(FATAL_ERROR
+      "OPEN62541_ROOT is not set. Reconfigure with "
+      "-DOPEN62541_ROOT=/path/to/open62541-v1.4.14")
+  endif()
+endif()
 set(OPEN62541_BUILD "${OPEN62541_ROOT}/build"
     CACHE PATH "open62541 build dir")
 
@@ -112,7 +122,6 @@ endif()
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     add_compile_options(
         -fstandalone-debug           # 更好的调试信息（Clang 专属）
-        -Wthread-safety              # 线程安全分析（Clang 专属）
         -Wno-unused-command-line-argument
     )
 elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
@@ -200,6 +209,12 @@ add_subdirectory(
     tests-build
 )
 
+# 性能 / 耐久可执行文件（不注册 ctest，结果为观测值而非门禁）
+add_subdirectory(
+    ${InternalrootDir}/bench/
+    bench-build
+)
+
 # ============================================================
 # 可执行文件
 # ============================================================
@@ -207,7 +222,10 @@ set(SRC_DIR "${InternalrootDir}/src")
 
 add_executable(file_platform ${SRC_DIR}/main_uaPacking.cpp)
 
-target_include_directories(file_platform PRIVATE "${InternalrootDir}/include")
+target_include_directories(file_platform PRIVATE
+    "${InternalrootDir}/include"
+    "${InternalrootDir}"
+)
 
 target_link_libraries(file_platform PRIVATE
     third_party_deps

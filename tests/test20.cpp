@@ -8,12 +8,11 @@
 
 #include "OPCUAPacking/ua.h"
 #include <gtest/gtest.h>
-#include <cstdlib>
 #include <string>
 #include <type_traits>
 #include <vector>
-#include "tests/MockSdk.h"
-#include "OPCUAPacking/internal/ClientTestHooks.h"
+#include "tests/include/MockSdk.h"
+#include "tests/include/ClientTestHooks.h"
 
 // ---------------------------------------------------------------------------
 // 编译期封装签名锁：公共方法只能使用领域类型。
@@ -61,7 +60,7 @@ TEST(Client, T46_CreateWithSdkFailurePropagatesConnectErrorCode) {
   cfg.maxTotalWaitMs = 5000;
   ASSERT_FALSE(cfg.check().has_value()) << *cfg.check();
 
-  auto r = ClientTestHooks::createWithSdk(sdk, "opc.tcp://192.0.2.1:4840", cfg);
+  auto r = OPCUAPacking::test::ClientTestHooks::createWithSdk(sdk, "opc.tcp://192.0.2.1:4840", cfg);
   ASSERT_TRUE(r.is_fail());
 
   EXPECT_EQ(r.get_error()->code(), RichError::ErrorCode::CONNECT_TIMEOUT)

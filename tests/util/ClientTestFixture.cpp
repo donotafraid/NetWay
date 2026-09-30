@@ -1,4 +1,4 @@
-#include "tests/util/ClientTestFixture.h"
+#include "tests/include/util/ClientTestFixture.h"
 
 // open62541 server 头文件只在这里出现
 #include <open62541/server.h>
@@ -24,6 +24,9 @@ void ClientTest::SetUp() {
     UA_ServerConfig* config = UA_Server_getConfig(server_);
     UA_ServerConfig_setDefault(config);
 
+    // 显式等待一小段时间，确保 server 内部初始化（含 Timer 注册）完全稳定
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
     configureServerPort(port_);   // ← startup 之前
 
     addTestNodes();
@@ -36,6 +39,7 @@ void ClientTest::SetUp() {
     }
 
     running_.store(true, std::memory_order_release);
+    serverStarted_ = true;
     serverThread_ = std::thread([this] {
         while (running_.load(std::memory_order_acquire)) {
             UA_Server_run_iterate(server_, true);
@@ -49,10 +53,44 @@ void ClientTest::TearDown() {
         serverThread_.join();
     }
     if (server_) {
-        UA_Server_run_shutdown(server_);
+        if (serverStarted_) {
+            UA_Server_run_shutdown(server_);
+            serverStarted_ = false;
+        }
         UA_Server_delete(server_);
         server_ = nullptr;
     }
+}
+
+void ClientTest::stopServerAndJoin() {
+    if (!server_ || !serverStarted_)
+        return;
+    // 迭代线程用 run_iterate(server_, true)（事件驱动阻塞，housekeeping 每
+    // 1s 兜底唤醒），所以先置停止标志并 join，再 run_shutdown：避免
+    // run_shutdown 与仍在 run_iterate 的线程并发访问同一个 server_。
+    // 顺序与 TearDown() 保持一致。
+    running_.store(false, std::memory_order_release);
+    if (serverThread_.joinable()) {
+        serverThread_.join();
+    }
+    UA_Server_run_shutdown(server_);
+    serverStarted_ = false;
+}
+
+void ClientTest::startServerThread() {
+    if (!server_ || serverStarted_)
+        return;
+    UA_StatusCode rc = UA_Server_run_startup(server_);
+    if (rc != UA_STATUSCODE_GOOD) {
+        throw std::runtime_error("UA_Server_run_startup (restart) failed");
+    }
+    serverStarted_ = true;
+    running_.store(true, std::memory_order_release);
+    serverThread_ = std::thread([this] {
+        while (running_.load(std::memory_order_acquire)) {
+            UA_Server_run_iterate(server_, true);
+        }
+    });
 }
 
 void ClientTest::configureServerPort(uint16_t port) {
@@ -66,11 +104,16 @@ void ClientTest::configureServerPort(uint16_t port) {
 
     std::string urlStr = "opc.tcp://127.0.0.1:" + std::to_string(port);
     UA_String url = UA_STRING_ALLOC(urlStr.c_str());
+    if (!url.data) {
+      throw std::runtime_error("Failed to allocate server URL string");
+    }
 
     UA_StatusCode retval = UA_Array_copy(&url, 1, (void**)&config->serverUrls, &UA_TYPES[UA_TYPES_STRING]);
     UA_String_clear(&url);
     if (retval != UA_STATUSCODE_GOOD) {
-        throw std::runtime_error("Failed to set server URLs");
+      config->serverUrls = nullptr; // 防御：无论 UA_Array_copy 是否改了 *dst
+      config->serverUrlsSize = 0;
+      throw std::runtime_error("Failed to set server URLs");
     }
     config->serverUrlsSize = 1;
 }
@@ -134,15 +177,25 @@ std::unique_ptr<OPC_UA_Client> ClientTest::connectTo() {
   return up; // 再返回，r 析构时内部是 nullptr，安全
 }
 
-void ClientTest::stopServer() { UA_Server_run_shutdown(server_); } // 停服务器
-
-void ClientTest::restartServer() { UA_Server_run_startup(server_); }
+std::unique_ptr<OPC_UA_Client> ClientTest::connectTo(const ClientConfig &cfg) {
+  std::string url = "opc.tcp://127.0.0.1:" + std::to_string(port_);
+  // useDefault=false：调用方已经显式给了配置，非法配置应当立即被拒，
+  // 而不是被 applyDefaultIfInvalid() 静默修复。
+  auto r = OPC_UA_Client::create(url, cfg, false);
+  if (!r.has_value()) {
+    throw std::runtime_error("OPC_UA_Client::create(cfg) failed: " +
+                             std::string(r.get_error()->what()));
+  }
+  auto up = std::move(*r.get());
+  return up;
+}
 
 UA_StatusCode ClientTest::serverIsAccepting() {
     // 每次调用建一个临时连接，探测完立即关闭
     UA_Client *probe = UA_Client_new();
     UA_StatusCode rc = UA_ClientConfig_setDefault(UA_Client_getConfig(probe));
     if (rc != UA_STATUSCODE_GOOD) {
+        UA_Client_delete(probe);
       return UA_STATUSCODE_BAD; // 
     }
 
@@ -151,5 +204,5 @@ UA_StatusCode ClientTest::serverIsAccepting() {
     UA_StatusCode retval = UA_Client_connect(probe, url.c_str());
 
     UA_Client_delete(probe);
-    return retval == UA_STATUSCODE_GOOD;
+    return retval;
 }

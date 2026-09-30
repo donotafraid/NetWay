@@ -4,8 +4,8 @@
 #include <algorithm>
 #include <cstdlib>
 #include <cstring>
-#include "PLC/S7TypeStruct.h"
-#include "PLC/WriteRequestAddres.h"
+#include "OPCUAPacking/S7TypeStruct.h"
+#include "OPCUAPacking/WriteRequestAddres.h"
 
 #include <open62541/nodeids.h>
 #include <open62541/client.h>
