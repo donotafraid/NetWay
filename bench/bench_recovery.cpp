@@ -99,6 +99,7 @@ int main(int argc, char **argv) {
 
   ClientConfig cfg;
   cfg.applyProfile(ClientConfig::PROFILE_LOCAL);
+  cfg.logLevel = ClientConfig::LOG_ERROR; // keep the measured stream quiet
   cfg.watchdogIntervalMs = 1000; // fastest the config validation allows
   cfg.giveUpThresholdMs = 60000;
 

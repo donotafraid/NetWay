@@ -4,6 +4,7 @@
 //
 //   ./bench_latency --threads 8 --ops 8000 --batch 16
 //   ./bench_latency --endpoint opc.tcp://127.0.0.1:4840 --write
+//   ./bench_latency --endpoint ... --rate 2688 --per-thread-client
 //
 // Prints one machine-readable summary line and one latency line (P50/P90/P99/
 // P99.9/max/mean, milliseconds) to stdout. Exit status is non-zero if any call
@@ -13,6 +14,8 @@
 #include "OPCUAPacking/ua.h"
 
 #include <atomic>
+#include <chrono>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -31,20 +34,24 @@ struct Args {
   uint16_t port = 4890;
   std::string endpoint;
   bool write = false;
+  double rate = 0.0;             // 0 = unlimited; else global calls/s
+  bool perThreadClient = false;  // one OPC_UA_Client per worker thread
+  uint32_t logLevel = ClientConfig::LOG_ERROR; // 100=TRACE .. 600=FATAL
 };
 
 Args parse(int argc, char **argv) {
   Args a;
   for (int i = 1; i < argc; ++i) {
     const std::string k = argv[i];
-    // --help must be handled before the parser's final "unknown argument"
-    // else-branch. It used to sit after that branch, so `--help` printed
-    // "unknown argument: --help" and exited 2 instead of the usage text.
     if (k == "--help" || k == "-h") {
       std::printf(
           "usage: bench_latency [--threads N] [--ops N] [--batch N]\n"
           "                     [--repeats N] [--port N] [--endpoint URL]\n"
-          "                     [--write]\n");
+          "                     [--write] [--rate R] [--per-thread-client]\n"
+          "\n"
+          "  --rate R             global target rate (calls/s); 0 = unlimited\n"
+          "  --per-thread-client  one OPC_UA_Client per worker thread\n"
+          "  --log-level N        SDK log threshold 100..600 (default 500)\n");
       std::exit(0);
     }
     auto next = [&]() -> const char * {
@@ -68,19 +75,22 @@ Args parse(int argc, char **argv) {
       a.repeats = std::strtoul(next(), nullptr, 10);
     } else if (k == "--write") {
       a.write = true;
+    } else if (k == "--rate") {
+      a.rate = std::strtod(next(), nullptr);
+      if (a.rate < 0) a.rate = 0;
+    } else if (k == "--per-thread-client") {
+      a.perThreadClient = true;
+    } else if (k == "--log-level") {
+      a.logLevel = static_cast<uint32_t>(std::strtoul(next(), nullptr, 10));
     } else {
       std::fprintf(stderr, "unknown argument: %s\n", k.c_str());
       std::exit(2);
     }
   }
-  if (a.threads == 0)
-    a.threads = 1;
-  if (a.ops == 0)
-    a.ops = 1;
-  if (a.batch == 0)
-    a.batch = 1;
-  if (a.repeats == 0)
-    a.repeats = 1;
+  if (a.threads == 0) a.threads = 1;
+  if (a.ops == 0) a.ops = 1;
+  if (a.batch == 0) a.batch = 1;
+  if (a.repeats == 0) a.repeats = 1;
   return a;
 }
 
@@ -100,6 +110,7 @@ int main(int argc, char **argv) {
 
   ClientConfig cfg;
   cfg.applyProfile(ClientConfig::PROFILE_LOCAL);
+  cfg.logLevel = args.logLevel; // 500 keeps the measured stream quiet
   cfg.watchdogIntervalMs = 1000;
   cfg.giveUpThresholdMs = 60000;
 
@@ -130,13 +141,31 @@ int main(int argc, char **argv) {
   std::vector<Run> runs;
   runs.reserve(args.repeats);
   uint64_t totalErrors = 0;
+  std::atomic<uint64_t> setup_errors{0};
+
+  // --rate is a global target; split it across all worker threads. A worker's
+  // schedule is open-loop: call i is planned at rateStart + (i+1)*interval, and
+  // the latency is measured from that planned instant. When the system keeps
+  // up, the sleep burns the gap; when it falls behind, the measured tail grows
+  // instead of being hidden by a closed-loop "send when ready" model.
+  const double perThreadRate =
+      (args.rate > 0 && args.threads > 0)
+          ? args.rate / static_cast<double>(args.threads)
+          : 0.0;
+  const int64_t intervalNs =
+      perThreadRate > 0 ? static_cast<int64_t>(1e9 / perThreadRate) : 0;
 
   for (size_t rep = 0; rep < args.repeats; ++rep) {
-    for (int i = 0; i < 3; ++i) { // warmup per run
-      if (args.write)
-        (void)client->batchWrite(writes);
-      else
-        (void)client->batchRead(reads);
+    // Shared-client mode warms up the shared instance once per repeat.
+    // Per-thread mode warms up inside each worker after its own client is
+    // created, so the first measured call has already negotiated a session.
+    if (!args.perThreadClient) {
+      for (int i = 0; i < 3; ++i) {
+        if (args.write)
+          (void)client->batchWrite(writes);
+        else
+          (void)client->batchRead(reads);
+      }
     }
 
     std::vector<std::vector<double>> latencies(args.threads);
@@ -147,17 +176,50 @@ int main(int argc, char **argv) {
 
     for (size_t t = 0; t < args.threads; ++t) {
       pool.emplace_back([&, t] {
+        OPC_UA_Client *cli = client.get();
+        std::unique_ptr<OPC_UA_Client> own;
+        if (args.perThreadClient) {
+          auto c = OPC_UA_Client::create(url, cfg, /*useDefault=*/false);
+          if (c.is_fail()) {
+            setup_errors.fetch_add(1, std::memory_order_relaxed);
+            return;
+          }
+          own = std::move(*c.get());
+          cli = own.get();
+          for (int w = 0; w < 3; ++w) {
+            if (args.write)
+              (void)cli->batchWrite(writes);
+            else
+              (void)cli->batchRead(reads);
+          }
+        }
+
         latencies[t].reserve(perThread);
         while (!go.load(std::memory_order_acquire))
           std::this_thread::yield();
+
+        const auto rateStart = bench::Clock::now();
         for (size_t i = 0; i < perThread; ++i) {
-          const auto t0 = bench::Clock::now();
-          const bool ok = args.write ? client->batchWrite(writes).is_success()
-                                     : client->batchRead(reads).is_success();
+          auto t0 = bench::Clock::now();
+          if (perThreadRate > 0) {
+            const auto target =
+                rateStart +
+                std::chrono::nanoseconds(intervalNs *
+                                         static_cast<int64_t>(i + 1));
+            const auto now = bench::Clock::now();
+            if (now < target)
+              std::this_thread::sleep_for(target - now);
+            t0 = target;  // measure from the planned instant
+          }
+          const bool ok = args.write ? cli->batchWrite(writes).is_success()
+                                     : cli->batchRead(reads).is_success();
           latencies[t].push_back(bench::msSince(t0));
           if (!ok)
             errors.fetch_add(1, std::memory_order_relaxed);
         }
+
+        if (own)
+          (void)own->shutdown();
       });
     }
 
@@ -166,6 +228,13 @@ int main(int argc, char **argv) {
     for (auto &th : pool)
       th.join();
     const double wallMs = bench::msSince(wall0);
+
+    if (setup_errors.load() > 0) {
+      std::fprintf(stderr,
+                   "ERROR: %llu thread(s) failed to create per-thread client\n",
+                   static_cast<unsigned long long>(setup_errors.load()));
+      return 2;
+    }
 
     std::vector<double> all;
     for (const auto &v : latencies)
@@ -226,6 +295,7 @@ int main(int argc, char **argv) {
                 static_cast<unsigned long long>(totalErrors));
   }
 
-  (void)client->shutdown();
+  if (!args.perThreadClient)
+    (void)client->shutdown();
   return totalErrors == 0 ? 0 : 1;
 }

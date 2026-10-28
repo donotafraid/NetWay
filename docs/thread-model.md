@@ -52,6 +52,7 @@ RUNNING ◀──────────────── RECOVERING ───
 | `Impl::m_BadStatusMsMx` | `std::mutex` | `m_lastBadStatusMs` | 看门狗、`isConnected()` |
 | `Impl::m_stateEpoch` | `std::atomic<uint64_t>` | `stateCallback` 与 `getState` 快照的代际；防止旧快照覆盖新回调 | `stateCallback`、`isConnected()` |
 | `Impl::m_stateWriteMx` | `std::mutex` | 三元组的写者串行化（`stateCallback` 与 `isConnected` 的发布段） | 两者；读者不拿 |
+| `Impl::m_logLevel` | `std::atomic<uint32_t>` | SDK logger 的最小级别；地址交给 `UA_Logger.context`，`customLog()` 只读 | `applyConfiguration` 写，SDK 日志回调读 |
 | `RecreateSync::m_recreateLock` | `std::mutex` | `m_recreating`、`m_shutdownInFlight`、`m_inFlight`、`m_recreateCv` | API 租约、recreate、shutdown、析构 |
 | `RecreateSync::m_shutdownInFlight` | `int`（受 `m_recreateLock`） | 已赢得 `shutdown()` 的调用者仍在 `shutdownInternal()` 内 | shutdown、析构 |
 | `RecreateSync::m_lock` | `std::mutex` | `pImpl` shared_ptr 快照 | 公开 API 入口 |
@@ -186,6 +187,7 @@ recreate 尾巴——`m_recreating` 必须在 `old->shutdown()` 之后才复位�
 | M | `UA_Client_Service_read` → `__UA_Client_Service` 在 clientMutex 内调用 `__Client_Service`；未连接时还会在内层 `connectSync()` | `include/open62541/client.h:612-616`、`src/client/ua_client.c:554-578`、`:668-673` |
 | N | Good 包含 `GOOD_CLAMPED` 等信息位；`== UA_STATUSCODE_GOOD` 只匹配 0，会丢掉 GoodInfo 的值 | `include/open62541/types.h:163-176`、`statuscodes.h:190` |
 | O | `UA_ClientConfig_setDefault` 用 `UA_Log_Stdout_new` **堆分配** logger；`UA_Client_newWithConfig` 浅拷贝；`UA_Client_delete` → `Config_clear` 调 `logging->clear` 释放 | `plugins/ua_config_default.c:1120-1121`、`plugins/ua_log_stdout.c:96-117`、`src/client/ua_client.c:107-125`、`:128-175`、`:236-242` |
+| P | `UA_LogLevel` 为 TRACE=100…FATAL=600；`UA_LOGLEVEL` 是编译期门槛（本机构建为 100），logger 仍会收到全部级别，需由 logger 自己过滤 | `include/open62541/plugin/log.h:34-41`；`build/src_generated/open62541/config.h` 的 `UA_LOGLEVEL` |
 
 K/L/M 是尾延迟修复的依据：包装层在 `run_iterate` 外面持有
 `m_sdkMutex`，所以即使 SDK 在 `el->run()` 期间不持 clientMutex，空闲轮询

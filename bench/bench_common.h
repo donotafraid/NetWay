@@ -48,15 +48,25 @@ inline void initLogging() {
 
 // open62541's default server logger writes to stdout, which is the benchmark's
 // machine-readable result stream. Keep the logger object (and its clear
-// callback) but redirect only the log function to stderr.
-inline void benchLog(void *, UA_LogLevel, UA_LogCategory, const char *msg,
-                     va_list args) {
+// callback) but redirect only the log function to stderr. The SDK is built
+// with UA_LOGLEVEL=100, so filter here as well: a 2k-op smoke run otherwise
+// wrote ~5 MB of trace frames.
+inline std::atomic<uint32_t> benchServerLogLevel{UA_LOGLEVEL_WARNING};
+
+inline void benchLog(void * /*context*/, UA_LogLevel level, UA_LogCategory,
+                     const char *msg, va_list args) {
+  if (static_cast<uint32_t>(level) <
+      benchServerLogLevel.load(std::memory_order_relaxed)) {
+    return;
+  }
+  if (!msg) {
+    return;
+  }
   std::vfprintf(stderr, msg, args);
   std::fputc('\n', stderr);
 }
 
-// Static logger with clear == nullptr: the config and server may hold this
-// pointer, but must never free it.
+// Static logger with clear == nullptr: used as a fallback only.
 inline UA_Logger benchLogger{benchLog, nullptr, nullptr};
 
 using Clock = std::chrono::steady_clock;
@@ -137,6 +147,12 @@ public:
       std::exit(2);
     }
     UA_ServerConfig *config = UA_Server_getConfig(server_);
+    if (config && config->logging) {
+      // The global level is used because some SDK code paths keep a second
+      // logger pointer (PKI/session); a per-object context would not reach all
+      // of them.
+      config->logging->log = benchLog;
+    }
     configurePort(port_);
     addInt16Node();
     startServing();

@@ -10,6 +10,18 @@
 #include "Rust_error_deal/error_deal.h"
 
 struct ClientConfig {
+  // open62541 UA_LogLevel values. Messages below logLevel are dropped before
+  // formatting (the SDK is built with UA_LOGLEVEL=100, so without this filter
+  // every trace/debug line reaches stderr).
+  enum LogLevel : uint32_t {
+    LOG_TRACE = 100,
+    LOG_DEBUG = 200,
+    LOG_INFO = 300,
+    LOG_WARNING = 400,
+    LOG_ERROR = 500,
+    LOG_FATAL = 600,
+  };
+
   // ==================== 超时配置 ====================
   uint32_t timeoutMs = 10000;
   uint32_t sessionTimeoutMs = 600000;
@@ -23,6 +35,11 @@ struct ClientConfig {
   uint32_t maxRetries = 3;
   uint32_t retryBackoffBaseMs = 1000;
   uint32_t retryMaxBackoffMs = 8000;
+
+  // ==================== 日志 ====================
+  // 生产默认只保留 WARNING 及以上，避免 SDK trace/debug 把 stderr 打满；
+  // 排查时显式调到 LOG_INFO/LOG_DEBUG/LOG_TRACE。
+  uint32_t logLevel = LOG_WARNING;
 
   // ==================== 心跳 & 保活配置 ====================
   uint32_t connectivityCheckIntervalMs = 10000;
@@ -190,6 +207,10 @@ struct ClientConfig {
     if (retryMaxBackoffMs >= timeoutMs && timeoutMs > 0) {
       add_error("retryMaxBackoffMs (" + std::to_string(retryMaxBackoffMs) +
                 ") must be < timeoutMs (" + std::to_string(timeoutMs) + ")");
+    }
+    if (logLevel < LOG_TRACE || logLevel > LOG_FATAL) {
+      add_error("logLevel (" + std::to_string(logLevel) +
+                ") must be in [100, 600] (open62541 UA_LogLevel)");
     }
 
     // ==================== giveUpThresholdMs 校验 ====================

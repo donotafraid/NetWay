@@ -81,16 +81,35 @@
   8 线程吞吐并不随线程数线性扩展：`m_sdkMutex` 与 open62541 内部 clientMutex
   把同步服务调用串行化，线程越多 p99 越大。2026-10-24 的 clean 归档（修复前）
   为 t=1 p99=0.869ms、t=8 p99=147.505ms、p99.9=412.307ms。把空闲轮询与健康
-  探针改为 `timeout=0` 后，2026-10-27 复跑（WSL2、8 vCPU、RelWithDebInfo、
-  batch=16、10 万样本、5 次中位数）为：
-  t=1 calls_s=6707.1、p99=0.326ms、p99.9=0.514ms；
-  t=4 calls_s=3428.5、p99=9.832ms、p99.9=182.783ms；
-  t=8 calls_s=3361.5、p99=20.956ms、p99.9=436.297ms。
-  1 线程 p99.9 正好落在 50ms 附近，是旧实现“每 100ms 抢锁 50ms”的确定性证据；
-  修复后 1T p99.9 降到 0.514ms。**但 8T 严格判据（p99 ≤ 3×1T p99 + RTT、
-  吞吐不低于 1T）没有通过**：8T 是单 client 饱和 + server/看门狗未绑核的排队
-  尾部，不是线性扩展承诺。完整分析、PASS/FAIL 表和下一步实验见
-  [docs/benchmark.md](benchmark.md)。
+  探针改为 `timeout=0` 后，2026-10-28 复跑（WSL2、8 vCPU、独立 server 绑
+  CPU7、RelWithDebInfo、batch=16、10 万样本、5 次中位数）为：
+  t=1 calls_s=6724.2、p99=0.262ms、p99.9=0.506ms；
+  t=4 calls_s=5330.4、p99=18.360ms、p99.9=66.018ms；
+  t=8 calls_s=5146.1、p99=44.846ms、p99.9=149.195ms。
+  这组归档数据有 1.6GB 的 SDK trace 日志污染（见下一条），只能作对照。
+  去日志后同一台机器 5 次中位数（Debug 构建；不能与归档 RelWithDebInfo
+  直接比绝对值）：t=1 8770.4 calls/s、p99=0.241ms、p99.9=0.503ms；
+  t=8 共享 7032.4 calls/s、p99=3.104ms、p99.9=8.616ms；
+  t=8 per-thread client 21599.6 calls/s、p99=0.786ms、p99.9=1.055ms。
+  同构建 log=100/500 的 A/B：8T p99 7.416→3.204ms、calls/s 4657→7060，
+  stderr 28.3MB→65B。
+  **共享实例容量下限 PASS、严格线性 FAIL；per-thread client 的严格判据
+  PASS。** 共享 8T 的 0.80×1T 是单 session 串行化的结构结果；per-thread
+  client 的 3.07× 共享吞吐说明会话级并行有效，但代价是 8 条 session、
+  8 个看门狗和“单 session 写顺序”语义丢失。完整分析、PASS/FAIL 表与
+  per-thread client 判读见 [docs/benchmark.md](benchmark.md)。
+- **日志默认门槛是 WARNING，而不是“全量 trace”。** SDK 以
+  `UA_LOGLEVEL=100` 编译；如果 `customLog()` 不按 `UA_LogLevel` 过滤，
+  一次 10 万次批量读会写出约 55MB stderr。2026-10-28 的 30 个 SLO run
+  因此产生约 1.6GB 日志，并且把日志 I/O 混进 8T 尾延迟。现在
+  `ClientConfig::logLevel` 默认 `LOG_WARNING`，`bench/` 用 `LOG_ERROR`；
+  排查时显式调到 `LOG_INFO`/`LOG_DEBUG`，不要在产线默认打开。
+- **per-thread client 没有每线程绑核，也不需要把它当成代码优化项。**
+  当前 `8t_ptc` 只用了 `taskset -c 0-7` 允许迁移，去日志后 p99=0.786ms、
+  21599.6 calls/s，严格判据已经通过。8 个 client + 8 个看门狗 + server
+  在 8 vCPU 上无法一对一绑定；要降低线程成本，优先做“所有 client 共享
+  一个 watchdog”或固定 client 池，而不是绑核。绑核属于 benchmark 控制
+  变量；详见 [docs/benchmark.md](benchmark.md) 第 6 节。
 - **RSS soak 必须让 server 跑在独立进程。** `bench_rss` 读的是自身
   `/proc/self/statm`；若用默认的 in-process server，server 的分配会混进
   “客户端”曲线。`scripts/run_bench.sh` 现在用 `bench_server` 把 server 放到

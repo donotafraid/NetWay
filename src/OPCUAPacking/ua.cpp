@@ -8,11 +8,27 @@
 #include "src/OPCUAPacking/detail/ErrorMapping.h"
 #include <sstream>
 #include <cstdio>
+#include <atomic>
+#include <cstdint>
 
 namespace {
 // 自定义 Log：直接写 stderr，不取时间戳，因此不触碰 localtime/mktime/tzset。
-void customLog(void * /*context*/, UA_LogLevel /*level*/,
-               UA_LogCategory /*category*/, const char *msg, va_list args) {
+// context 指向 Impl::m_logLevel（UA_LogLevel 数值）。SDK 以 UA_LOGLEVEL=100
+// 编译时 trace/debug 也会回调到这里；没有这个过滤，一次 10 万次批量读会写出
+// 数十 MB 的 stderr，既污染 benchmark 也拖慢现场业务。
+void customLog(void *context, UA_LogLevel level, UA_LogCategory /*category*/,
+               const char *msg, va_list args) {
+  if (context) {
+    const auto *minLevel =
+        static_cast<const std::atomic<uint32_t> *>(context);
+    if (static_cast<uint32_t>(level) <
+        minLevel->load(std::memory_order_relaxed)) {
+      return;
+    }
+  }
+  if (!msg) {
+    return;
+  }
   vfprintf(stderr, msg, args);
   fputc('\n', stderr);
 }
@@ -429,6 +445,9 @@ struct OPC_UA_Client::Impl
   std::string endpointUrl;
   std::shared_ptr<CallbackContext> m_callbackContext;
   ClientConfig m_config; // configure 后只读，不能再修改
+  // 当前 client 的日志门槛；地址交给 UA_Logger.context，Impl 必须比 client
+  // 活得久（doCleanup 在 ~Impl 尾部才 delete client）。
+  std::atomic<uint32_t> m_logLevel{ClientConfig::LOG_WARNING};
   std::atomic<ConnState> m_connState{
       ConnState::
           IDLE}; // CAS状态机，描述此时是否存在线程进行连接/断连操作，connect()进行状态设置
@@ -445,22 +464,14 @@ struct OPC_UA_Client::Impl
       UA_SECURECHANNELSTATE_CLOSED}; // sdk内部重连是否继续标志，回调函数里设置，看门狗中使用
   std::atomic<UA_SessionState> sdkSessionState{
       UA_SESSIONSTATE_CLOSED}; // sdk内部重连是否继续标志，回调函数里设置，看门狗中使用
-  // Incremented by stateCallback before it publishes a new triplet. isConnected
-  // captures this before getState and refuses to overwrite the triplet if a
-  // newer callback landed while the (possibly stale) getState snapshot was in
-  // flight. Atomics alone prevent a data race but not this lost update.
   std::atomic<uint64_t> m_stateEpoch{0};
-  // Serializes writers of the triplet. Epoch alone has a window where a
-  // callback has already incremented but has not stored yet; the mutex closes
-  // it without putting a lock in the hot read path (isHealthyCached stays
-  // lock-free).
   std::mutex m_stateWriteMx;
   std::atomic<bool> m_stop{
       false}; // shutdown()保护变量，避免其他因素导致shutdown()未被调用
   std::mutex m_taskCvMx; // 专门保护任务计数和条件变量
   std::condition_variable m_taskCv;
   size_t m_taskCounter = 0 ; // 由 m_taskCvMx
-         // 保护,当前未完成的读写任务总量，在读写任务开始和结束时修改，用于shutdown()判断是否可以析构当前对象
+  // 保护,当前未完成的读写任务总量，在读写任务开始和结束时修改，用于shutdown()判断是否可以析构当前对象
   // 非递归互斥：stateCallback / inactivityCallback 只碰原子量，不回调任何
   // 会再次获取 m_sdkMutex 的 Impl 方法；若未来回调需要访问加锁方法，必须
   // 改回 recursive_mutex 并在这里说明真实的递归调用链。
@@ -483,7 +494,9 @@ struct OPC_UA_Client::Impl
        std::shared_ptr<CallbackContext> callbackContext_,
        std::shared_ptr<OPCUAPacking::internal::ISdk> sdk)
       : m_config(cfg), endpointUrl(std::move(Url)), m_impl(std::move(client)),
-        m_callbackContext(callbackContext_), m_sdk(sdk) {}
+        m_callbackContext(callbackContext_), m_sdk(sdk) {
+    m_logLevel.store(m_config.logLevel, std::memory_order_relaxed);
+  }
 
   //   销毁前必须 join：任何直接或间接导致 Impl 析构的路径（如
   //   shutdown()、recreateGiveUpClient() 中的 shutdown()、OPC_UA_Client
@@ -616,7 +629,7 @@ struct OPC_UA_Client::Impl
   bool getEffectiveStopSignal(); 
 
   // 辅助函数:返回健康状态
-  // 判据：三元组全就绪（connectStatus==GOOD && channel==OPEN &&
+  // 判据：四元组全就绪（connectStatus==GOOD && channel==OPEN &&
   // session==ACTIVATED）&& (!connectionLost)  RUNNING 的充要条件即本函数返回 true。
   bool isHealthyCached() const; 
   // 辅助函数:判断Channel,ConnectStatus,SessionStatus状态是否处于CLOSED，用于判断connect是否合适进行
@@ -1088,11 +1101,6 @@ OPC_UA_Client::Impl::isConnected(UA_UInt32 iterateTimeoutMs) {
   UA_SessionState sessionState{UA_SESSIONSTATE_CLOSED};
   // 2. 获取实际状态
   callRunIterate(client, iterateTimeoutMs);
-  // Capture a stable (even) generation after the event-loop poll. A callback
-  // that is mid-publish leaves the generation odd; spin until it completes so
-  // getState observes the post-callback state. If a callback lands during
-  // getState, the generation changes and the snapshot below is discarded
-  // (T159).
   uint64_t stateEpoch = 0;
   for (;;) {
     stateEpoch = m_stateEpoch.load(std::memory_order_acquire);
@@ -1106,9 +1114,6 @@ OPC_UA_Client::Impl::isConnected(UA_UInt32 iterateTimeoutMs) {
                     &statusCode);
   }
   {
-    // Serialize with stateCallback. The epoch check alone has a window where
-    // the callback has incremented but not stored yet; the mutex + odd/even
-    // generation makes "publish this snapshot" atomic against a newer callback.
     std::lock_guard<std::mutex> stateLock(m_stateWriteMx);
     if (m_stateEpoch.load(std::memory_order_acquire) == stateEpoch) {
       sdkConnectStatus.store(statusCode, std::memory_order_release);
@@ -1532,9 +1537,17 @@ OPC_UA_Client::Impl::applyConfiguration(bool useDefault) {
   m_callbackContext->implWeak = weak_from_this();
   config->clientContext = m_callbackContext.get();
 
+  // 日志门槛：默认 WARNING。config->logging 是 setDefault 为本 client 分配的
+  // 独立 logger，把 context 指向本 Impl 的 atomic 不会串到其它 client。
+  m_logLevel.store(m_config.logLevel, std::memory_order_relaxed);
+  if (config->logging) {
+    config->logging->log = customLog;
+    config->logging->context = &m_logLevel;
+  }
+
   // 6. 注册回调函数
   // 回调在调用 run_iterate / 同步服务调用的线程内联执行，且可能持有 SDK clientMutex
-  // 回调内只允许原子操作；禁止加 m_lock；禁止调用任何 Impl 方法（除纯原子 getter）。
+  // 禁止调用任何 Impl 方法（除纯原子 getter）。
   config->inactivityCallback = [](UA_Client *client) {
     OPC_UA_Client::CallbackContext *self = static_cast<
         OPC_UA_Client::CallbackContext *>(
@@ -1563,10 +1576,6 @@ OPC_UA_Client::Impl::applyConfiguration(bool useDefault) {
     // 只有在确实需要访问 Impl 时才 lock：
     if (auto impl = self->implWeak.lock()) {
       std::lock_guard<std::mutex> stateLock(impl->m_stateWriteMx);
-      // Odd while publishing, even when stable. isConnected() waits for an
-      // even generation before getState, and compares after; a writer that
-      // starts before its capture but has not stored yet is therefore visible
-      // as odd, and a writer that starts later changes the generation.
       impl->m_stateEpoch.fetch_add(1, std::memory_order_acq_rel);
       impl->sdkConnectStatus.store(connectStatus, std::memory_order_release);
       impl->sdkChannelState.store(channelState, std::memory_order_release);
@@ -2753,10 +2762,8 @@ bool OPC_UA_Client::Impl::getEffectiveStopSignal() {
 }
 
 // 辅助函数:返回健康状态
-// 判据：三元组全就绪（connectStatus==GOOD && channel==OPEN &&
-// session==ACTIVATED） RUNNING 的充要条件即本函数返回 true。
+// 判据：四元组全就绪,RUNNING 的充要条件即本函数返回 true。
 bool OPC_UA_Client::Impl::isHealthyCached() const {
-  // 使用原子三元组（这些值由 stateCallback 和 run_iterate 持续更新）
   return sdkConnectStatus.load(std::memory_order_acquire) ==
              UA_STATUSCODE_GOOD &&
          sdkChannelState.load(std::memory_order_acquire) ==
@@ -2764,6 +2771,8 @@ bool OPC_UA_Client::Impl::isHealthyCached() const {
          sdkSessionState.load(std::memory_order_acquire) ==
              UA_SESSIONSTATE_ACTIVATED &&
          !(connectionLost.load(std::memory_order_acquire));
+  // uint64_t packed = (status << 17) | (channel << 9) | (session << 1) | lost;
+  // atomic_store_release(&state_packed, packed);
 }
 
 bool OPC_UA_Client::Impl::isChannelClosed() const {
