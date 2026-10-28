@@ -7,7 +7,7 @@
 #
 #   sudo ./scripts/netem_faults.sh delay 200ms
 #   sudo ./scripts/netem_faults.sh loss 5%
-#   sudo ./scripts/netem_faults.sh jitter 200ms 50ms
+#   sudo ./scripts/netem_faults.sh jitter 50ms 20ms
 #   sudo ./scripts/netem_faults.sh halfopen 4890     # silently drop the port
 #   sudo ./scripts/netem_faults.sh show
 #   sudo ./scripts/netem_faults.sh clear

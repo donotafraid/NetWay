@@ -1,6 +1,6 @@
 // tests/test24.cpp
 //
-// 第六轮补测：把 ua.cpp 中仍未覆盖的出口与“公开 connect 成功后的 lifeState”
+// 补充 ua.cpp 中尚未覆盖的出口与“公开 connect 成功后的 lifeState”
 // 契约钉死。T73/T80 为缺陷复现（修复前应失败），其余修复前应通过。
 //
 //   T73  ClientBug    公开 connect() 成功必须把 lifeState 复位为 RUNNING

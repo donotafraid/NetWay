@@ -227,3 +227,49 @@ TEST(ClientStringShape, T113_NullStringVariant_MapsToDeterministicErrorCode) {
   sdk->resetResponseShape();
   EXPECT_TRUE(c->shutdown().is_success());
 }
+
+// ============================================================
+// T148: 读路径必须区分“空 STRING”（length==0 且 data!=NULL）与“null STRING”
+//       （data==NULL）。T113 只钉死了后者 → TYPE_MISMATCH；前者是合法值，
+//       必须成功返回 std::string("")。
+//
+// 依据：open62541 v1.4.14 src/ua_types.c:170 String_copy → UA_Array_copy
+//   （src==NULL → dst=NULL；src!=NULL 且 size==0 → dst=UA_EMPTY_ARRAY_SENTINEL），
+//   所以 null 与 empty 在 SDK 内是两种表示，封装层不能把 empty 也判成错。
+// 若未来把两者合并成“统一错误”，本用例会红，从而逼一次显式的契约决策。
+// ============================================================
+TEST(ClientStringShape, T148_EmptyStringScalar_IsAValidEmptyValue) {
+  auto sdk = std::make_shared<MockSdk>();
+  sdk->setMode(MockSdk::Mode::Connected);
+
+  ClientConfig cfg;
+  cfg.applyProfile(ClientConfig::PROFILE_LOCAL);
+  auto r = OPCUAPacking::test::ClientTestHooks::createWithSdk(
+      sdk, "opc.tcp://192.0.2.1:4840", cfg, /*usedefault=*/false,
+      /*enableWatchDog=*/false);
+  ASSERT_TRUE(r.has_value()) << (r.is_fail() ? r.get_error()->what() : "");
+  auto c = std::move(*r.get());
+  ASSERT_NE(c, nullptr);
+
+  // data != nullptr、length == 0：SDK 里表示“空串”，不是“缺值”。
+  UA_String empty = UA_STRING_ALLOC("");
+  ASSERT_NE(empty.data, nullptr);
+  sdk->setReadItemScalar(0, &empty, &UA_TYPES[UA_TYPES_STRING]);
+  UA_String_clear(&empty); // holder 已拷贝成哨兵形式，源串可释放
+  sdk->setReadResponseShape(UA_STATUSCODE_GOOD, /*resultsSize=*/1,
+                            /*allocResults=*/true);
+
+  auto rr = c->batchRead({{1, "A", S7DataType::STRING}});
+  ASSERT_TRUE(rr.is_success()) << rr.get_error()->what();
+  const auto &out = rr.value_or({});
+  ASSERT_EQ(out.size(), 1u);
+  EXPECT_EQ(out[0].rawStatus, UA_STATUSCODE_GOOD);
+  ASSERT_TRUE(out[0].value.has_value())
+      << "空 STRING 是合法值，不是 TYPE_MISMATCH";
+  EXPECT_EQ(std::get<std::string>(*out[0].value), "");
+  EXPECT_EQ(out[0].errorCode, RichError::ErrorCode::OK);
+
+  OPCUA_LSAN_CHECK();
+  sdk->resetResponseShape();
+  EXPECT_TRUE(c->shutdown().is_success());
+}

@@ -12,5 +12,7 @@ build-bench/
 conan_bench_build/
 bench-results/
 sanitizer-logs/
-
+code_review/
+test-simultaneously/
+clang编译文件backup/
 

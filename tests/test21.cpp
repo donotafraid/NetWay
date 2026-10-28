@@ -1,6 +1,6 @@
 // tests/test21.cpp
 //
-// 第四轮补充：把 ua.cpp 里“只写在注释/文档里的契约”变成可证伪用例。
+// 把 ua.cpp 里“只写在注释/文档里的契约”变成可证伪用例。
 //   T48 batchWrite 对可重试 serviceResult 不做内部重试（写非幂等保护）
 //   T49 batchWrite 值类型不匹配 → 失败且不下发 SDK，请求内存被释放
 //   T50 batchRead 重试码集合表驱动（9 个可重试  1 个不可重试）
@@ -437,6 +437,6 @@ static_assert(
 static_assert(
     std::is_same_v<decltype(&OPCUAPacking::test::ClientTestHooks::createWithSdk),
                    Result<std::unique_ptr<OPC_UA_Client>, RichError> (*)(
-                       std::shared_ptr<ISdk>, const std::string &, ClientConfig,
+                       std::shared_ptr<OPCUAPacking::internal::ISdk>, const std::string &, ClientConfig,
                        bool, bool)>,
     "createWithSdk 公共签名不得暴露 UA_* 类型");

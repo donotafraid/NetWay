@@ -4,7 +4,7 @@
 #include <cstring> 
 #include <chrono>
 
-class RealSdk : public ISdk {
+class RealSdk : public OPCUAPacking::internal::ISdk {
 public:
   UA_Client *clientNew(const UA_ClientConfig *cfg) override {
     UA_Client *client;
@@ -14,7 +14,7 @@ public:
     } else {
       // ownership transfers to client, do NOT clear cfg_
       UA_ClientConfig cfg_;
-      std::memset(&cfg_, 0, sizeof(cfg_)); // ★ 先清零，杜绝栈垃圾
+      std::memset(&cfg_, 0, sizeof(cfg_)); // 先清零，杜绝栈垃圾
       UA_StatusCode rc = UA_ClientConfig_setDefault(&cfg_);
       if (rc != UA_STATUSCODE_GOOD) {
         // setDefault 可能已分配 logger / eventLoop / securityPolicies，
@@ -26,11 +26,11 @@ public:
       if (!cfg_.logging) {
         // setDefault 没给 logger（ABI 不匹配 / 日志被禁用 / 其他）
         // 直接落到静态 logger，clear = nullptr，不需要释放
-        cfg_.logging = &g_customLogger;
+        cfg_.logging = &customLogger();
       } else {
         // 就地复用默认 logger，保留 clear，避免泄漏
-        cfg_.logging->log = g_customLogger.log;
-        cfg_.logging->context = g_customLogger.context;
+        cfg_.logging->log = customLogger().log;
+        cfg_.logging->context = customLogger().context;
       }
 
       client = UA_Client_newWithConfig(&cfg_);

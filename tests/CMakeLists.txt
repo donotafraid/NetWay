@@ -41,6 +41,9 @@ set(
     ${CMAKE_CURRENT_SOURCE_DIR}/test36.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/test37.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/test38.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/test39.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/test40.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/test41.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/util/ClientTestFixture.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/compile/RuleOfFiveAsserts.cpp
 )
@@ -114,3 +117,26 @@ target_compile_features(only_ua_h PRIVATE cxx_std_17)
 # ★ ALL：让 only_ua_h 在默认 make 时被编；
 #   DEPENDS：保证依赖关系正确，且失败时整体构建失败。
 add_custom_target(check_encapsulation ALL DEPENDS only_ua_h)
+
+# ============================================================
+# 目的：把“公共头声明的符号真的由 OPCUAPacking 提供”做成链接期探针。
+# EncapsulationProbe 只编译，不链接；default_value_for 曾经声明在
+# S7TypeStruct.h、定义却在 PLC 库，纯 OPCUAPacking 消费者会在链接期失败。
+# 本目标只链接 OPCUAPacking（不再链接 PLC），调用 default_value_for。
+# ============================================================
+add_executable(public_header_link_probe
+    ${CMAKE_CURRENT_SOURCE_DIR}/compile/PublicHeaderLinkProbe.cpp
+)
+target_include_directories(public_header_link_probe PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_link_libraries(public_header_link_probe
+    PRIVATE
+    third_party_deps
+    OPCUAPacking::OPCUAPacking
+)
+set_target_properties(public_header_link_probe PROPERTIES
+    BUILD_RPATH "${OPEN62541_BUILD}/bin"
+    INSTALL_RPATH "${OPEN62541_BUILD}/bin")
+add_test(NAME PublicHeader_DefaultValueFor_Link
+         COMMAND public_header_link_probe)

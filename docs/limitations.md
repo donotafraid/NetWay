@@ -22,8 +22,9 @@
 - **写不自动重试。** OPC UA 写入非幂等；`batchWrite` 只尝试一次，逐项状态
   原样返回，由业务决定是否重试。读在可重试码上有 `maxRetries` 次指数退避。
 - **`disconnect()` 不是“保持断开”开关。** 断开后 `lifeState` 进入
-  `RECOVERING`，看门狗仍是恢复权威，会在下一个 `watchdogIntervalMs` 尝试
-  重连，这正是“自愈”的设计意图。若要长期停用，请调用 `shutdown()` 或
+  `RECOVERING`，看门狗会在下一个 `watchdogIntervalMs` 尝试重连；业务线程的
+  同步服务调用也可能触发 SDK 的 `connectSync()`，最终状态由看门狗收敛。
+  这正是“自愈”的设计意图。若要长期停用，请调用 `shutdown()` 或
   `setGiveUpSignal()`。
 - **`GIVEN_UP` 也计入 stop signal。** 一旦进入 `GIVEN_UP`，读写与 `connect()`
   都快速失败，必须 `recreateGiveUpClient()`。
@@ -32,13 +33,26 @@
 
 - **单实例串行化。** 所有 `UA_Client_*` 调用经 `m_sdkMutex` 串行；并发读写在
   排队，吞吐不随线程数扩展。这是“多线程共享同一实例”的代价，而非缺陷。
-- **单次调用阻塞上界。** 一次 `batchRead` 最坏 ≈ `maxTotalWaitMs`；其中单次
-  尝试还包含 SDK 内部的 `connectSync`，可能接近 `2 × timeoutMs`。
+- **看门狗空闲轮询不得阻塞。** `UA_Client_run_iterate(client, timeout)` 在
+  `timeout>0` 时会阻塞到有事件或超时；封装在它外面还持有 `m_sdkMutex`，因此
+  空闲轮询用 `timeout>0` 会把每个服务调用挡在锁外最长 `timeout` 毫秒。
+  当前实现把空闲轮询和健康探针改为 `timeout=0`，只处理已到达事件；
+  `disconnect()`/`connect()` 的恢复分支仍然允许阻塞，但只发生在看门狗
+  判定不健康时，而不是每 100ms 一次。
+- **单次调用阻塞上界。** 预算只在每次尝试**开始前**检查：一次 `batchRead`
+  最坏 ≈ `maxTotalWaitMs + 一次在途调用`，而单次在途调用还包含 SDK 内部的
+  `connectSync`，可能接近 `2 × timeoutMs`。因此 `maxTotalWaitMs` 是软预算，
+  不会抢占已经在 SDK 内的同步调用；最后一个重试点返回后也不再补一次预算检查。
   高频健康检查请用 `isHealthy()`（只读缓存），不要用 `checkConnected()`
   （会争抢 eventLoop 锁）。
 - **`shutdown()` 的第二个调用者立即返回 success，不等待第一个调用者 drain 完成**
-  （契约如此，测试 T77 钉死）。因此“调用 `shutdown()` 返回后即可销毁对象”
-  只在单调用者场景成立。
+  （契约如此，测试 T77 钉死）。但析构会等待已赢得 shutdown 的调用者退出
+  `shutdownInternal()`（T150），所以“第二个调用者返回后销毁对象”不会与 drain
+  竞争；不要据此认为关闭已经完成。
+- **`recreateGiveUpClient()` 在旧 Impl 收尾完成前保持 `m_recreating=true`。**
+  旧实现先把 `m_recreating` 复位、再 `old->shutdown()`，析构可能在这条尾巴
+  运行期间释放对象（T153 红）。现在析构会等到旧 Impl 的 `shutdown()` 返回；
+  代价是 recreate 期间所有业务 API 都返回 `RECREATING`，直到收尾结束。
 - **看门狗线程 join 无独立超时。** 依赖 `connect()` / `disconnect()` 自身的
   墙钟兜底（`2 × timeoutMs + 500ms`）与 `delayFunction()` 的分段可唤醒。
 - **公开 API 的异常约定不统一。** `create` / `createWithSdk` / `batchRead` /
@@ -63,10 +77,20 @@
   `scripts/check_rss.py` 与 `scripts/run_netem_matrix.sh` 提供可复现的
   PASS/FAIL 判据，但仍需人工在有 root / 长时间窗口的机器上触发。
 - **单次延迟 p99 不可复现。** 同一份代码、同一台机器，单次 8 线程 p99 可以在
-  30ms~62ms 之间波动；`bench_latency --repeats N` 的中位数才是可引用值。
+  0.9ms~28.6ms 之间波动；`bench_latency --repeats N` 的中位数才是可引用值。
   8 线程吞吐并不随线程数线性扩展：`m_sdkMutex` 与 open62541 内部 clientMutex
-  把同步服务调用串行化，线程越多 p99 越大（本机实测 t=1 p99≈0.2ms，
-  t=8 p99≈31ms）。
+  把同步服务调用串行化，线程越多 p99 越大。2026-10-24 的 clean 归档（修复前）
+  为 t=1 p99=0.869ms、t=8 p99=147.505ms、p99.9=412.307ms。把空闲轮询与健康
+  探针改为 `timeout=0` 后，2026-10-27 复跑（WSL2、8 vCPU、RelWithDebInfo、
+  batch=16、10 万样本、5 次中位数）为：
+  t=1 calls_s=6707.1、p99=0.326ms、p99.9=0.514ms；
+  t=4 calls_s=3428.5、p99=9.832ms、p99.9=182.783ms；
+  t=8 calls_s=3361.5、p99=20.956ms、p99.9=436.297ms。
+  1 线程 p99.9 正好落在 50ms 附近，是旧实现“每 100ms 抢锁 50ms”的确定性证据；
+  修复后 1T p99.9 降到 0.514ms。**但 8T 严格判据（p99 ≤ 3×1T p99 + RTT、
+  吞吐不低于 1T）没有通过**：8T 是单 client 饱和 + server/看门狗未绑核的排队
+  尾部，不是线性扩展承诺。完整分析、PASS/FAIL 表和下一步实验见
+  [docs/benchmark.md](benchmark.md)。
 - **RSS soak 必须让 server 跑在独立进程。** `bench_rss` 读的是自身
   `/proc/self/statm`；若用默认的 in-process server，server 的分配会混进
   “客户端”曲线。`scripts/run_bench.sh` 现在用 `bench_server` 把 server 放到
@@ -82,13 +106,32 @@
   `setsid nohup ... < /dev/null &` 脱离终端，跑完再执行
   `check_rss.py --min-hours 23.5`；`run_bench.sh` 现已自动传入该阈值并归档
   `rss_check.txt`，失败时脚本非零退出。
-- **`bench_latency` / `bench_recovery` 的 stdout 仍混有 open62541 内建 logger
-  的启动日志**（内建 server 与客户端同进程）。这两支的产物靠 `grep '^median '`
-  解析，不受影响；`bench_rss` 的客户端 spdlog 已改到 stderr，CSV 首行即表头。
+- **benchmark 的 stdout / 历史产物。** 当前 `bench/bench_common.h` 已把
+  open62541 内建 server 的 logger 重定向到 stderr；新跑出的
+  `bench_latency` / `bench_recovery` stdout 只含 `run=` / `median` /
+  `*_ms` 行。已归档的旧文件（例如 2026-10 之前生成的
+  `bench-results/latency_8thread_*.txt`）仍混有 server 日志，解析时继续用
+  `grep '^median '`；不要把旧文件的首行当作机器可读格式。
 
+## 4. 高延迟链路上的连接预算
 
+`tc netem delay 200ms`（回环上单程 200ms，RTT ≈ 400ms）时，`create()` 在约
+5s 后返回 `CONNECT_TIMEOUT`：已归档的 `bench-results/netem_200ms/`
+`latency_delay200.txt` 末尾即为 `create failed: CONNECT_TIMEOUT`。
 
-## 4. 错误码约定
+根因是**预算，不是竞态**：`bench_latency` 固定用 `PROFILE_LOCAL`
+（`timeoutMs = 5000`），而 `Impl::connect()` 把这个 `timeoutMs` 当作整条连接
+握手（TCP + OPN + CreateSession + ActivateSession，若干次往返）的总预算；
+400ms RTT 下握手所需的往返数超过 5s。同一份代码在 50ms 单程（RTT ≈ 100ms）
+下稳定 PASS（见 `bench-results/netem/summary.txt`）。
+
+应对：高 RTT 链路用 `PROFILE_REMOTE`（`timeoutMs = 15000`）或显式调大
+`timeoutMs`；`bench_latency` 目前只支持默认 `PROFILE_LOCAL`，需要在注入
+高延迟时加一个 `--profile` 开关。该结论来自本机回环注入，不代表真实多跳
+网络，现场需复核。`bench-results/netem_200ms/` 是这次失败样本，已被 50ms 的
+`bench-results/netem/` 取代，建议删除或改名归档，避免把失败样本当成当前能力。
+
+## 5. 错误码约定
 
 - `NOT_CONNECTED`：只读查询在 stop / 不健康时的统一错误；读写则用
   `ALREADY_TERMINATED`（语义不同，见 `ua.cpp` 注释）。

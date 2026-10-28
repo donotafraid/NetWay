@@ -13,7 +13,27 @@
 #include <stdexcept>
 #include "OPCUAPacking/ua.h"
 
-std::atomic<uint16_t> ClientTest::g_nextPort{4841};
+#if defined(_WIN32)
+#include <process.h>
+#else
+#include <unistd.h>
+#endif
+
+namespace {
+unsigned processId() {
+#if defined(_WIN32)
+  return static_cast<unsigned>(_getpid());
+#else
+  return static_cast<unsigned>(getpid());
+#endif
+}
+} // namespace
+
+// gtest_discover_tests 让每个用例在独立进程里运行；固定从 4841 起会让
+// `ctest -j` 的多个进程撞同一端口。按 PID 选一个 20000..39999 的基址，
+// 同一进程内再顺序递增，串行与并行都稳定。
+std::atomic<uint16_t> ClientTest::g_nextPort{
+    static_cast<uint16_t>(20000 + (processId() % 20000))};
 
 void ClientTest::SetUp() {
     port_ = g_nextPort.fetch_add(1, std::memory_order_relaxed);

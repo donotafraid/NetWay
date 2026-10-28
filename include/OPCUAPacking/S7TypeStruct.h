@@ -4,7 +4,10 @@
 #include <string>
 #include <cstdlib>
 #include <cstring>
+#include <cstdint>
 #include <map>
+#include <stdexcept>
+#include <variant>
 
 // 通用数据值类型 - 支持所有PLC数据类型
 using NormalDataType = std::variant<
@@ -42,8 +45,47 @@ enum class S7DataType
     UNKNOWN 
 };
 
-NormalDataType default_value_for(S7DataType type); 
-
+// Returns the zero value for every scalar PLC type supported by
+// OPC_UA_Client. ARRAY / STRUCT / UNKNOWN have no representation in
+// NormalDataType and throw std::invalid_argument; callers must handle those
+// before asking for a default. Defined inline so a consumer of this public
+// header does not have to link the PLC library (the previous out-of-line
+// definition lived in src/PLC/TransformS7AndOPCUA.cpp).
+inline NormalDataType default_value_for(S7DataType type) {
+  switch (type) {
+  case S7DataType::BOOL:
+    return false;
+  case S7DataType::SINT:
+    return int8_t{0};
+  case S7DataType::BYTE:
+    return uint8_t{0};
+  case S7DataType::INT:
+    return int16_t{0};
+  case S7DataType::WORD:
+    return uint16_t{0};
+  case S7DataType::DINT:
+    return int32_t{0};
+  case S7DataType::UDINT:
+  case S7DataType::DWORD:
+    return uint32_t{0};
+  case S7DataType::LINT:
+    return int64_t{0};
+  case S7DataType::ULINT:
+    return uint64_t{0};
+  case S7DataType::REAL:
+    return 0.0f;
+  case S7DataType::LREAL:
+    return 0.0;
+  case S7DataType::STRING:
+    return std::string{};
+  case S7DataType::ARRAY:
+  case S7DataType::STRUCT:
+  case S7DataType::UNKNOWN:
+    throw std::invalid_argument(
+        "default_value_for: ARRAY/STRUCT/UNKNOWN have no scalar default");
+  }
+  throw std::invalid_argument("default_value_for: unhandled S7DataType");
+}
 
 
 inline const std::map<S7DataType, std::string> S7DataTypeToString = {

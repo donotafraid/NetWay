@@ -12,9 +12,12 @@
 
 #include "OPCUAPacking/Types.h"
 
-namespace OPCUAPacking { namespace internal { struct RecreateSync; } }
-
+namespace OPCUAPacking {
+namespace internal {
+struct RecreateSync;
 class ISdk;
+} // namespace internal
+} // namespace OPCUAPacking
 
 #ifdef OPCUAPACKING_ENABLE_TEST_HOOKS
 namespace OPCUAPacking::test { struct ClientTestHooks; }
@@ -61,10 +64,10 @@ public:
   ~OPC_UA_Client() ;
   // 线程模型：同一实例可在多线程下调用；底层同步服务调用在内部串行化，
   //   SDK 侧由 open62541 v1.4.14 的内部 clientMutex 保护（UA_MULTITHREADING>=100）。
-  // 阻塞上界：单次调用受 maxTotalWaitMs 约束（超出返回 BUDGET_EXCEEDED），
-  //   但单次尝试最坏 ≈ service + SDK 内部 connectSync ≤ 2×timeoutMs，
-  //   且断线时 SDK 会在同步服务调用前自动补连（noReconnect=true 只约束
-  //   被动状态机，不阻止服务调用前的补连）。
+  // 阻塞预算：maxTotalWaitMs 是软预算，只在每次尝试开始前检查；超出后返回
+  //   BUDGET_EXCEEDED。单次在途尝试最坏 ≈ service + SDK 内部 connectSync
+  //   ≤ 2×timeoutMs，不会被预算抢占。断线时 SDK 会在同步服务调用前自动补连
+  //   （noReconnect=true 只约束被动状态机，不阻止服务调用前的补连）。
   // 调用期间禁止修改/析构入参 vector；NodeId.id 不得包含内嵌 '\0'。
   Result<std::vector<OPC_UA_Client::ReadResult>, RichError>
   batchRead(const std::vector<ReadValue> &batchReadNodes);
@@ -114,7 +117,7 @@ private:
   bool getRecreatingStatus();
   // 仅为测试使用
   static Result<std::unique_ptr<OPC_UA_Client>, RichError>
-  createWithSdk(std::shared_ptr<ISdk> sdk, const std::string &endpointUrl,
+  createWithSdk(std::shared_ptr<OPCUAPacking::internal::ISdk> sdk, const std::string &endpointUrl,
                 ClientConfig config, bool usedefault = false,
                 bool enableWatchDog = true);
   /*
@@ -123,7 +126,7 @@ private:
   Result<Unit,RichError> shutdownInternal();
 
   explicit OPC_UA_Client(const std::string endpointUrl, ClientConfig config,
-                         std::shared_ptr<ISdk> sdk);
+                         std::shared_ptr<OPCUAPacking::internal::ISdk> sdk);
 
   // 关键：前向声明 + 不透明指针
   struct Impl;

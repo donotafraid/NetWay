@@ -58,9 +58,26 @@ client->shutdown(); // 幂等；析构也会兜底
 
 - 同一实例可被多线程调用；`m_sdkMutex` 把 `UA_Client_*` 同步调用串行化。
 - SDK 本身没有后台线程，必须周期调用 `UA_Client_run_iterate`；封装用看门狗线程承担。
-- 默认 `noReconnect = true, noNewSession = true`：看门狗是唯一的恢复权威。
-- 单次阻塞上界受 `maxTotalWaitMs` 约束；单次尝试最坏 ≈ `service + connectSync`。
-- `shutdown()` / `recreateGiveUpClient()` 通过 `ApiLease` + 在途计数与业务 API 互斥。
+- 默认 `noReconnect = true, noNewSession = true`：看门狗负责恢复裁决；但
+  open62541 的同步服务调用在发现未连接时会先 `connectSync()` 补连，因此重连
+  也可能由业务线程触发，最终状态仍由看门狗收敛（见 `docs/limitations.md`）。
+- `maxTotalWaitMs` 是“下一次尝试前”的预算：单次在途调用最坏 ≈ `service +
+  connectSync ≈ 2×timeoutMs`，超出剩余预算要到下一个重试点才返回
+  `BUDGET_EXCEEDED`；它不会抢占已经在 SDK 内的同步调用。
+- `shutdown()` / `recreateGiveUpClient()` 通过 `ApiLease` + 在途计数与业务 API 互斥；
+  第二个 `shutdown()` 立即返回，但析构会等待正在执行的 shutdown 完成（T150），
+  以及 recreate 对旧 Impl 的收尾（T153）。
+- 看门狗的空闲轮询与健康探针使用 `UA_Client_run_iterate(client, 0)`；恢复分支
+  （`disconnect()`/`connect()`）才会阻塞驱动握手。这样空闲期不再每 100ms 持有
+  `m_sdkMutex` 最长 50ms。2026-10-27 复跑（WSL2 8 vCPU、batch=16、10 万样本、
+  5 次中位数）：1T p99.9 从修复前的 50.191ms 降到 0.514ms，1T 吞吐
+  1326.9→6707.1 calls/s（旧归档 8000 ops/3 次，新数据 100000 ops/5 次，
+  不同样本量与构建批次，只作台阶量级对照）。**但这不等于 8T SLO 通过**：8T p99=20.956ms、
+  calls_s=3361.5（约为 1T 的 0.50）。共享同一实例的同步服务调用本来就被
+  `m_sdkMutex` 与 open62541 的 clientMutex 串行化；8 线程饱和 + 主机过订阅，
+  不能拿 8T p99 当线性扩展承诺。完整数据与 PASS/FAIL 判据见
+  [docs/benchmark.md](docs/benchmark.md)。
+
 
 ## 错误模型
 
@@ -90,12 +107,21 @@ ctest --test-dir build-asan
 ./scripts/run_tsan.sh    # TSan + 并发过滤器完整性自查
 ```
 
-- `tests/`：38 个文件、143 个用例；`MockSdk` 提供虚拟时钟、状态脚本、响应形状注入。
-- `ClientTestFixture`：每个用例起一个真实 open62541 server（独立端口），迭代线程用
+- `tests/`：41 个文件、159 个用例；`MockSdk` 提供虚拟时钟、状态脚本、响应形状注入，
+  以及空数组哨兵（`UA_EMPTY_ARRAY_SENTINEL`）、空 STRING（`length==0 && data!=NULL`）
+  与 `hasValue==true` 但 `variant.type==nullptr` 三种边界注入。
+- `ClientTestFixture`：每个用例起一个真实 open62541 server（端口基址按 PID 偏移，
+  `ctest -j` 并行不撞端口），迭代线程用
   `UA_Server_run_iterate(server_, true)`（事件驱动，`UA_MAXTIMEOUT=500ms` 与 1s
   housekeeping 兜底唤醒），不再忙等一个 CPU 核。
-- `tests/compile/EncapsulationProbe.cpp`：只带 `include/` 编译，证明 `ua.h` 不泄漏 SDK。
+- `tests/compile/EncapsulationProbe.cpp`：只带 `include/` 编译，逐个包含公共头，
+  证明 `ua.h` 及其依赖不泄漏 SDK，且每个公共头自包含。
+- `tests/compile/PublicHeaderLinkProbe.cpp`：只链接 `OPCUAPacking` 并调用
+  `default_value_for()`，把“公共头声明的符号由本库提供”变成链接期门禁。
 - `tests/compile/RuleOfFiveAsserts.cpp`：编译期钉死不可拷贝/不可移动。
+- `tests/test41.cpp`：补 `default_value_for` 全类型、S7 名称表往返、
+  `GOOD_CLAMPED` 严重级（读/写）、以及 `getState` 旧快照覆盖新 `stateCallback`
+  的并发回归（T155~T159）。
 - `tests/test38.cpp`：异常安全用例（SDK 接缝抛异常时守卫配平、写路径内嵌 NUL NodeId
   在进入 SDK 前被拒等）。
 - CI（`.github/workflows/sanitizers.yml`）：`build-open62541` 预热缓存后并行跑
@@ -134,6 +160,27 @@ LATENCY_REPEATS=5 ./scripts/run_bench.sh    # 延迟跑 5 次并输出中位数
 - `bench_rss`：长跑时按间隔输出 `elapsed_s,rss_kb,calls,errors` CSV，用于画 RSS 曲线。
 - `bench_server`：独立进程的 server，供 soak 使用，避免 server 内存混入客户端曲线。
 
+当前参考机（WSL2 8 vCPU、batch=16、10 万样本、5 次中位数）的判据：
+
+| 判据 | 结果 | 判定 |
+| --- | ---: | --- |
+| 1T p99.9 ≤ 1ms（50ms 台阶回归） | 0.514ms | PASS |
+| 8T p99 ≤ 3×1T p99 + RTT（≈1ms） | 20.956ms | **FAIL** |
+| 8T calls/s ≥ 1T calls/s | 0.50× | **FAIL** |
+| 所有线程 errors = 0 | 0 | PASS |
+
+结论：**50ms 台阶修复已被证明；8T 严格 SLO 没有通过。** 8T 数字是共享
+client 饱和 + server/看门狗未绑核的排队尾部；要测 8T SLO，必须固定到达率、
+把 server 放到独立进程并绑核。方法与建议阈值见
+[docs/benchmark.md](docs/benchmark.md)。
+
+```sh
+# 对 tmp/result.txt 直接判：strict 会 FAIL（这是正确的结果），
+# capacity 是按现场容量定的下限，不是线性扩展承诺。
+python3 scripts/check_bench_slo.py tmp/result.txt --profile strict
+python3 scripts/check_bench_slo.py tmp/result.txt --profile capacity
+```
+
 RSS 曲线用脚本判读（errors / 时长 / 增量 / 稳态斜率四项阈值）：
 
 ```sh
@@ -163,7 +210,7 @@ python3 scripts/check_rss.py bench-results/rss_curve.csv --min-hours 23.5
 ```sh
 sudo ./scripts/netem_faults.sh delay 200ms          # 200ms 延迟
 sudo ./scripts/netem_faults.sh loss 5%              # 5% 丢包
-sudo ./scripts/netem_faults.sh jitter 200ms 50ms    # 延迟 + 抖动
+sudo ./scripts/netem_faults.sh jitter 50ms 20ms    # 延迟 + 抖动
 sudo ./scripts/netem_faults.sh halfopen 4890        # iptables 黑洞，制造半开
 sudo ./scripts/netem_faults.sh clear                # 清除（含 halfopen 注入的端口）
 
@@ -175,6 +222,12 @@ sudo ./scripts/netem_faults.sh with loss 5% -- \
      ./build-bench/bench-build/bench_latency --threads 8
 ```
 
+矩阵把逐项 PASS/FAIL 归档到 `bench-results/netem/summary.txt`（已归档的一份是
+50ms 延迟 / 5% 丢包 / 50ms±20ms 抖动 / 半开，全部 PASS）。200ms 单程需要把
+`timeoutMs` 从 `PROFILE_LOCAL` 的 5s 调大，否则 `create()` 会以
+`CONNECT_TIMEOUT` 失败；原因与应对见
+[docs/limitations.md](docs/limitations.md) 第 4 节。
+
 ## 目录
 
 ```
@@ -185,7 +238,7 @@ src/OPCUAPacking/detail/         ISdk / RealSdk / 状态 / 类型转换（内部
 tests/                           GoogleTest 用例与 MockSdk
 bench/                           延迟 / 恢复 / RSS benchmark（不注册 ctest）
 scripts/                         sanitizer、benchmark、网络故障注入脚本
-docs/                            线程模型、已知限制
+docs/                            线程模型、已知限制、benchmark 判据
 ```
 
 ## 已知限制

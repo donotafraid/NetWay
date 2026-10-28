@@ -9,7 +9,7 @@
 TEST(Client, T3_TransientDisconnectRecoversWithoutGiveUp_Mock) {
     auto sdk = std::make_shared<MockSdk>();
     sdk->setMode(MockSdk::Mode::Connected);
-     sdk->setAutoAdvancePerIterateMs(50);   // ★ 关键：让虚拟时钟每次驱动 +50ms
+     sdk->setAutoAdvancePerIterateMs(50);   // 关键：让虚拟时钟每次驱动 +50ms
 
     ClientConfig cfg;
     cfg.applyProfile(ClientConfig::PROFILE_LOCAL);

@@ -18,6 +18,10 @@ struct RecreateSync {
   std::condition_variable m_recreateCv;
   int m_inFlight = 0;
   std::condition_variable m_inFlightCv;
+  // shutdown() that won the m_terminated race is still running shutdownInternal.
+  // The destructor must wait for it, otherwise the object can be freed while
+  // the winner still touches m_recreateSync/pImpl.
+  int m_shutdownInFlight = 0;
   std::string m_endpointUrl;
   std::shared_ptr<ISdk> m_sdkForRecreate;
 };

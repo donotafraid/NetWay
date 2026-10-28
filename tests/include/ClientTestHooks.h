@@ -13,7 +13,7 @@ struct ClientTestHooks {
     return c.getRecreatingStatus();
   }
   static Result<std::unique_ptr<OPC_UA_Client>, RichError>
-  createWithSdk(std::shared_ptr<ISdk> sdk, const std::string &endpointUrl,
+  createWithSdk(std::shared_ptr<OPCUAPacking::internal::ISdk> sdk, const std::string &endpointUrl,
                 ClientConfig config, bool usedefault = false,
                 bool enableWatchDog = true) {
     return OPC_UA_Client::createWithSdk( // ← 加类名限定

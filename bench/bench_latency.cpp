@@ -37,6 +37,16 @@ Args parse(int argc, char **argv) {
   Args a;
   for (int i = 1; i < argc; ++i) {
     const std::string k = argv[i];
+    // --help must be handled before the parser's final "unknown argument"
+    // else-branch. It used to sit after that branch, so `--help` printed
+    // "unknown argument: --help" and exited 2 instead of the usage text.
+    if (k == "--help" || k == "-h") {
+      std::printf(
+          "usage: bench_latency [--threads N] [--ops N] [--batch N]\n"
+          "                     [--repeats N] [--port N] [--endpoint URL]\n"
+          "                     [--write]\n");
+      std::exit(0);
+    }
     auto next = [&]() -> const char * {
       if (i + 1 >= argc) {
         std::fprintf(stderr, "missing value for %s\n", k.c_str());

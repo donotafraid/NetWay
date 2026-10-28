@@ -29,7 +29,7 @@ TEST_F(ClientTest, T4_RecreateAfterGiveUpSignal) {
   EXPECT_TRUE(r.is_success())
       << "recreate failed: " << (r.is_fail() ? r.get_error()->what() : "");
 
-  // ★ 强判据：recreate 后不仅检查 RUNNING，还做一次真实读写证明恢复
+  // 强判据：recreate 后不仅检查 RUNNING，还做一次真实读写证明恢复
   EXPECT_TRUE(lifeStateIs(LifeState::RUNNING));
 
   OPC_UA_Client::NodeId node{1, "TestInt", S7DataType::INT};

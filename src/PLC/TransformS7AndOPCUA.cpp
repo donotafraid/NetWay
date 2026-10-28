@@ -1,20 +1,5 @@
 #include "PLC/TransformS7AndOPCUA.h"
 
-NormalDataType default_value_for(S7DataType type) {
-    switch (type) {
-        case S7DataType::BOOL:   return false;
-        case S7DataType::BYTE:   return uint8_t{0};
-        case S7DataType::INT:    return int16_t{0};
-        case S7DataType::WORD:   return uint16_t{0};
-        case S7DataType::DINT:   return int32_t{0};
-        case S7DataType::UDINT:
-        case S7DataType::DWORD:  return uint32_t{0};
-        case S7DataType::REAL:   return 0.0f;
-        case S7DataType::STRING: return std::string{};
-        default: throw std::invalid_argument("Unsupported type");
-    }
-}
-
 Result<std::string,RichError> SCL_Parser::read_file_content(const std::string& file_path)
 {
     std::ifstream file(file_path);

@@ -124,7 +124,7 @@ TEST_F(ClientTest, T9_NoLeakOnRepeatedLifecycle) {
         << "heap delta=" << delta << " bytes over " << kIters << " iterations";
 }
 
-// 线程趋势拆成独立测试，避免 GTEST_SKIP 互相遮蔽（P3-3）
+// 线程趋势拆成独立测试，避免 GTEST_SKIP 互相遮蔽
 TEST_F(ClientTest, T9_ThreadTrend) {
 #if !HAS_PROC_TASK
   GTEST_SKIP() << "/proc/self/task 不可用；线程趋势判据跳过。";

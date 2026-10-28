@@ -158,7 +158,7 @@ TEST(ClientExtra, T104_GiveUp_FastFailsAllEntrypoints_WithoutSdkCalls) {
 TEST(ClientExtra, T105_Recovering_FastFailsReadWrite_WithoutServiceCalls) {
   auto sdk = std::make_shared<MockSdk>();
   sdk->setMode(MockSdk::Mode::Connected);
-  sdk->setAutoAdvancePerIterateMs(1000); // ★ 加这一行
+  sdk->setAutoAdvancePerIterateMs(1000); // 加这一行
   auto c = makeClientNoWatchdog(sdk);
   ASSERT_NE(c, nullptr);
   ASSERT_TRUE(c->isHealthy().is_success());

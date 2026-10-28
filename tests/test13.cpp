@@ -13,7 +13,7 @@ TEST(Client, T26_RecreateFailureKeepsOldImpl) {
   sdk->setMode(MockSdk::Mode::Connected);
   sdk->setAutoAdvancePerIterateMs(50);
 
-  // ★ 新增：记录 connectAsync 被调用的次数
+  // 新增：记录 connectAsync 被调用的次数
   std::atomic<int> connectAsyncCalls{0};
   sdk->setConnectAsyncHook([&] { ++connectAsyncCalls; });
 
@@ -50,7 +50,7 @@ TEST(Client, T26_RecreateFailureKeepsOldImpl) {
   auto rr = c->recreateGiveUpClient();
   ASSERT_TRUE(rr.is_fail()) << "重建 connect 应失败，但 recreate 返回了 success";
 
-  // ★ 新增断言 0：recreate 必须真的走到了新 Impl 的 connect
+  // 新增断言 0：recreate 必须真的走到了新 Impl 的 connect
   const int after = connectAsyncCalls.load();
   EXPECT_GT(after, baseline)
       << "recreate 没有调用 connectAsync（baseline=" << baseline

@@ -45,18 +45,31 @@ RUNNING ◀──────────────── RECOVERING ───
 | 成员 | 类型 | 保护对象 | 持有者 |
 | --- | --- | --- | --- |
 | `Impl::m_lock` | `std::mutex` | `m_impl` 快照、`getEffectiveStopSignal()` | 所有 API |
-| `Impl::m_sdkMutex` | `std::recursive_mutex` | 全部 `UA_Client_*` 调用 | SDK 调用点 |
+| `Impl::m_sdkMutex` | `std::mutex` | 全部 `UA_Client_*` 调用（含 `run_iterate`；空闲轮询用 `timeout=0`） | SDK 调用点 |
 | `Impl::m_taskCvMx` + `m_taskCv` + `m_taskCounter` | `mutex`/`cv`/`size_t` | 在途读写计数（`InFlightGuard`），供 `shutdown()` drain | 读写、shutdown |
 | `Impl::m_watchDogMx` + `m_watchdogCv` | `mutex`/`cv` | 看门狗等待与唤醒 | 看门狗、shutdown |
 | `Impl::m_retryCvMx` + `m_retryCv` | `mutex`/`cv` | `delayFunction()` 退避，可被 shutdown 唤醒 | 读写、看门狗 |
 | `Impl::m_BadStatusMsMx` | `std::mutex` | `m_lastBadStatusMs` | 看门狗、`isConnected()` |
-| `RecreateSync::m_recreateLock` | `std::mutex` | `m_recreating`、`m_inFlight`、`m_recreateCv` | API 租约、recreate、析构 |
+| `Impl::m_stateEpoch` | `std::atomic<uint64_t>` | `stateCallback` 与 `getState` 快照的代际；防止旧快照覆盖新回调 | `stateCallback`、`isConnected()` |
+| `Impl::m_stateWriteMx` | `std::mutex` | 三元组的写者串行化（`stateCallback` 与 `isConnected` 的发布段） | 两者；读者不拿 |
+| `RecreateSync::m_recreateLock` | `std::mutex` | `m_recreating`、`m_shutdownInFlight`、`m_inFlight`、`m_recreateCv` | API 租约、recreate、shutdown、析构 |
+| `RecreateSync::m_shutdownInFlight` | `int`（受 `m_recreateLock`） | 已赢得 `shutdown()` 的调用者仍在 `shutdownInternal()` 内 | shutdown、析构 |
 | `RecreateSync::m_lock` | `std::mutex` | `pImpl` shared_ptr 快照 | 公开 API 入口 |
 | `Impl::m_watchdogThread` 的 join | — | `shutdown()`/`~Impl()` 先 join 再清理 | teardown |
 
 锁序：任何时候都是 **`m_recreateLock` → `m_lock` → `m_sdkMutex`**；
 `m_recreateLock` 的 `wait` 会在等待期间释放，因此 `ApiLease` 析构可以递减计数。
-回调（`stateCallback` / `inactivityCallback`）**只做原子写，不加任何锁**。
+回调（`stateCallback` / `inactivityCallback`）不拿 `m_lock` / `m_sdkMutex`；
+`stateCallback` 只拿 `m_stateWriteMx`（与 `isConnected` 的发布段互斥），
+`inactivityCallback` 只碰 `connectionLost` 原子量。
+`stateCallback` 在 `m_stateWriteMx` 下把 `m_stateEpoch` 先加 1（奇数，
+发布中）再发布三元组，最后再加 1（偶数，稳定）。`isConnected()` 在
+`getState()` 前等待偶数代际，取得快照后在 `m_stateWriteMx` 下比较代际；
+若期间有过回调则丢弃这次 `getState` 快照（T159）。奇数/偶数让“回调已
+递增但尚未写入”的窗口可见；写者互斥让“比较 + 发布”原子。读者
+`isHealthyCached()` 仍不加锁。三元组本身仍是三个独立原子量，极端情况下
+读者可能看到过渡组合；要彻底消除需把三元组打包成单个 64 位快照（后续项，
+不在当前补丁内）。
 
 ## 3. 运行时序
 
@@ -73,6 +86,13 @@ OPC_UA_Client::create
  ├─ connect()                           // 急切连接：返回时对象即可用
  └─ startWatchdog()
 ```
+
+连接预算是 `ConnectErrorState` 的来源：`Impl::connect()` 用 `m_config.timeoutMs`
+作为“整条握手”（TCP + OPN + CreateSession + ActivateSession）的总预算，
+`connectAsync` 失败映射 `CONNECT_FAILED`，握手在预算内未就绪映射
+`TIMEOUT_NOTCONNECT`（`RichError` 层为 `CONNECT_TIMEOUT`）。高 RTT 链路必须
+调大 `timeoutMs`：`PROFILE_LOCAL` 的 5s 在 200ms 单程（RTT≈400ms）下不够，
+见 `docs/limitations.md` 第 4 节。
 
 ### 3.2 batchRead（`Impl::batchRead`，`src/OPCUAPacking/ua.cpp`）
 
@@ -119,18 +139,33 @@ isConnected()（内部 callRunIterate + getState，刷新三元组）
 ### 3.4 shutdown / recreate
 
 ```
-shutdown():                       recreateGiveUpClient():
- ├─ CAS m_terminated               ├─ CAS m_recreating
- ├─ drain m_taskCounter == 0       ├─ 等 m_inFlight == 0（2s 上限）
- └─ shutdownInternal()             ├─ 要求 lifeState == GIVEN_UP
-     ├─ pImpl → doomed            ├─ new Impl + configure + connect + startWatchdog
-     ├─ doomed->shutdown()        └─ 换入 pImpl，旧 Impl shutdown
-     └─ doomed.reset()
+shutdown() 赢家:                    shutdown() 输家 / 析构:
+ ├─ m_recreateLock 下               ├─ 输家看到 m_terminated → 立即 success
+ │  置 m_terminated                 └─ ~OPC_UA_Client：
+ │  ++m_shutdownInFlight              置 m_terminated
+ ├─ shutdownInternal()                 等 m_recreating == false
+ │   ├─ pImpl → doomed                且 m_shutdownInFlight == 0
+ │   ├─ doomed->shutdown()          └─ shutdownInternal()（pImpl 已空则直接返回）
+ │   └─ doomed.reset()
+ └─ ShutdownCallGuard 递减/notify
+
+recreateGiveUpClient():
+ ├─ m_recreateLock 下 CAS m_recreating
+ ├─ 等 m_inFlight == 0（2s 上限）
+ ├─ 要求 lifeState == GIVEN_UP
+ ├─ new Impl + configure + connect + startWatchdog
+ ├─ 换入 pImpl
+ ├─ old->shutdown(); old.reset()      // 旧 Impl 完整收尾
+ └─ RecreateGuard 复位 m_recreating    // 最后才发布“recreate 完成”
 ```
 
-`~OPC_UA_Client` 先置 `m_terminated` 并等待 `m_recreating == false`（recreate
-是唯一还会解引用 `this` 的路径），再 `shutdownInternal()`。`ApiLease` 保证
-`m_terminated` 之后普通 API 不再进入。
+`~OPC_UA_Client` 先置 `m_terminated`，并等待 `m_recreating == false` 与
+`m_shutdownInFlight == 0`：recreate 和“已赢得 shutdown 的调用者”是仅有的
+两条在对象析构后仍可能访问 `this->pImpl` / `m_recreateSync` 的路径。
+`ApiLease` 保证 `m_terminated` 之后普通 API 不再进入。T150 用
+`ISdk::clientDelete` 阻塞钩子钉死 shutdown 赢家；T153 用同一个钩子钉死
+recreate 尾巴——`m_recreating` 必须在 `old->shutdown()` 之后才复位，否则
+析构会在旧 Impl 仍阻塞于 `clientDelete` 时返回。
 
 ## 4. open62541 v1.4.14 事实清单
 
@@ -146,6 +181,19 @@ shutdown():                       recreateGiveUpClient():
 | H | `disconnectAsync` 必须被 `run_iterate` 驱动到 CLOSED | `include/open62541/client.h:468-470` |
 | I | `UA_ReadResponse_clear` 走 `UA_clear`；`clearStructure` 对非可选数组**无条件**调用 `UA_Array_delete(ptr, length, type)` | `types_generated_handling.h:9293`、`src/ua_types.c:1393` |
 | J | `UA_TYPES_DIAGNOSTICINFO::pointerFree == false`，因此空指针 + 长度 > 0 会在 `UA_Array_delete` 内解引用空指针 | `types_generated.c` 的 DiagnosticInfo 类型项 |
+| K | `UA_Client_run_iterate` 在 `el->run(timeout)` 前释放 clientMutex；SDK 允许它与服务调用并发 | `src/client/ua_client.c:1043-1060` |
+| L | `UA_EventLoop::run(timeout)`：`timeout==0` 只处理已到达事件，不阻塞 | `include/open62541/plugin/eventloop.h:111-114` |
+| M | `UA_Client_Service_read` → `__UA_Client_Service` 在 clientMutex 内调用 `__Client_Service`；未连接时还会在内层 `connectSync()` | `include/open62541/client.h:612-616`、`src/client/ua_client.c:554-578`、`:668-673` |
+| N | Good 包含 `GOOD_CLAMPED` 等信息位；`== UA_STATUSCODE_GOOD` 只匹配 0，会丢掉 GoodInfo 的值 | `include/open62541/types.h:163-176`、`statuscodes.h:190` |
+| O | `UA_ClientConfig_setDefault` 用 `UA_Log_Stdout_new` **堆分配** logger；`UA_Client_newWithConfig` 浅拷贝；`UA_Client_delete` → `Config_clear` 调 `logging->clear` 释放 | `plugins/ua_config_default.c:1120-1121`、`plugins/ua_log_stdout.c:96-117`、`src/client/ua_client.c:107-125`、`:128-175`、`:236-242` |
+
+K/L/M 是尾延迟修复的依据：包装层在 `run_iterate` 外面持有
+`m_sdkMutex`，所以即使 SDK 在 `el->run()` 期间不持 clientMutex，空闲轮询
+`timeout=50ms` 仍会把所有服务调用挡在包装层锁外。把空闲轮询和看门狗健康
+探针改为 `timeout=0` 后，阻塞只保留在真正需要握手推进的
+`connect()/disconnect()` 分支。
 
 I/J 是 T130 的依据：出口守卫既然拦截 `results == nullptr && resultsSize > 0`，
 就必须同样拦截 `diagnosticInfos == nullptr && diagnosticInfosSize > 0`。
+N 是 T157/T158 的依据：读/写逐项状态必须用 `UA_StatusCode_isGood()`，不能
+与 0 做等值比较。

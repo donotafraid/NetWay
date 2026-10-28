@@ -1,8 +1,8 @@
 // tests/test38.cpp
 //
-// 异常安全补充用例（第 7 轮）。
+// 异常安全补充用例。
 //
-// 现有 135 个用例只让 ISdk 返回错误码，没有任何用例让 SDK 接缝**抛异常**。
+// 现有 159 个用例只让 ISdk 返回错误码，没有任何用例让 SDK 接缝**抛异常**。
 // 公共 batchRead/batchWrite/create/createWithSdk 声明为返回 Result（不抛），
 // 因此异常必须由 RAII 守卫清干净：
 //   · UA_ReadRequest / UA_WriteRequest 不能泄漏；
@@ -134,7 +134,7 @@ TEST(ClientExceptionSafety,
 // T137: connectAsync 抛异常 —— CASGuard 必须复位，后续 connect() 仍可用
 //
 // 说明：公共 connect() 目前不捕获异常（与 create/batchRead/batchWrite 的
-// no-throw 约定不一致，见审查报告"发现 7.x"）。本用例不评价该约定，只钉死
+// no-throw 约定不一致）。本用例不评价该约定，只钉死
 // "即使异常逃出，状态机不能卡在 CONNECTING"。
 // ============================================================
 TEST(ClientExceptionSafety,
@@ -285,4 +285,32 @@ TEST(ClientExceptionSafety,
   ASSERT_TRUE(r.is_fail());
   EXPECT_EQ(r.get_error()->code(), RichError::ErrorCode::ALREADY_TERMINATED)
       << r.get_error()->codeName();
+}
+
+// ============================================================
+// T147: 写值类型与声明的 S7DataType 不匹配 —— 错误码必须是 TYPE_MISMATCH，
+//       而不是 RichError(string) 兜底的 UNKNOWN。
+//
+// T49 只断言 is_fail()，没有钉死 code。读路径同种错误给出 TYPE_MISMATCH
+// （T29/T140），写路径却给 UNKNOWN：调用方无法用 code() 区分
+// “值类型写错了”和“内部未知错误”，与 README“ErrorCode 是稳定枚举、
+// what() 不参与分支判断”的契约相矛盾。
+// ============================================================
+TEST(ClientExceptionSafety,
+     T147_BatchWrite_TypeMismatch_ReportsTypeMismatch) {
+  auto sdk = std::make_shared<MockSdk>();
+  sdk->setMode(MockSdk::Mode::Connected);
+  auto c = makeClient(sdk);
+  ASSERT_NE(c, nullptr);
+
+  OPC_UA_Client::WriteValue w{{1, "TestInt", S7DataType::INT},
+                              std::string("not-an-int")};
+  std::vector<OPC_UA_Client::WriteValue> v{w};
+  auto wr = c->batchWrite(v);
+  ASSERT_TRUE(wr.is_fail()) << "类型不匹配竟然写成功";
+  EXPECT_EQ(wr.get_error()->code(), RichError::ErrorCode::TYPE_MISMATCH)
+      << "actual=" << wr.get_error()->codeName();
+  EXPECT_EQ(sdk->serviceWriteCallCount(), 0u);
+
+  EXPECT_TRUE(c->shutdown().is_success());
 }

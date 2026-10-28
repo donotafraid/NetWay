@@ -20,11 +20,37 @@ namespace opcua::readTraits {
 template <typename T, int TYPE_ENUM> struct UATypeTraitsBase {
   static const UA_DataType *uaType() { return &UA_TYPES[TYPE_ENUM]; }
   static Result<T, RichError> convert(const UA_Variant &var) {
-    // UA_Variant 用 arrayLength 区分标量与数组（open62541 v1.4.14
-    if (!var.data || var.type != uaType() || var.arrayLength > 0) {
+    // open62541 v1.4.14 include/open62541/types.h:715-721 defines a scalar as
+    //   arrayLength == 0 && data > UA_EMPTY_ARRAY_SENTINEL
+    // An empty array is arrayLength == 0 && data == UA_EMPTY_ARRAY_SENTINEL
+    // (0x01). Testing !data || arrayLength > 0 accepts the sentinel and then
+    // dereferences address 0x01, so use the SDK predicate UA_Variant_isScalar
+    // (types.h:762-765) which encodes the whole invariant.
+    if (var.type != uaType() || !UA_Variant_isScalar(&var)) {
       return Result<T, RichError>::error(RichError{RichError::ErrorCode::TYPE_MISMATCH,"type mismatch"});
     }
     return Result<T, RichError>::success(*static_cast<const T *>(var.data));
+  }
+};
+
+template <> struct UATypeTraitsBase<std::string,UA_TYPES_STRING> {
+  static const UA_DataType *uaType() { return &UA_TYPES[UA_TYPES_STRING]; }
+  static Result<std::string, RichError> convert(const UA_Variant &var) {
+    // Same scalar invariant as UATypeTraitsBase: an empty STRING array is
+    // arrayLength == 0 with data == UA_EMPTY_ARRAY_SENTINEL (types.h:715-721).
+    if (var.type != uaType() || !UA_Variant_isScalar(&var)) {
+      return Result<std::string, RichError>::error(RichError{RichError::ErrorCode::TYPE_MISMATCH,"type mismatch"});
+    } else {
+      const UA_String *src = static_cast<const UA_String *>(var.data);
+      if (!src->data) {
+        // 空 / 缺失的 STRING：给出确定错误码，避免落到 RichError 的 UNKNOWN
+        // 兜底（同一输入每次都必须映射到同一 ErrorCode）。
+        return Result<std::string, RichError>::error(
+            RichError{RichError::ErrorCode::TYPE_MISMATCH, "src->data is nullptr"});
+      }
+      return Result<std::string, RichError>::success(
+          std::string(reinterpret_cast<const char *>(src->data), src->length));
+    }
   }
 };
 
@@ -43,25 +69,7 @@ template<> struct UATypeTraits<int64_t> : UATypeTraitsBase<int64_t, UA_TYPES_INT
 template<> struct UATypeTraits<uint64_t> : UATypeTraitsBase<uint64_t, UA_TYPES_UINT64> {};  // 8 ← 新增
 template<> struct UATypeTraits<float> : UATypeTraitsBase<float, UA_TYPES_FLOAT> {};         // 9
 template<> struct UATypeTraits<double> : UATypeTraitsBase<double, UA_TYPES_DOUBLE> {};      // 10 ← 新增
-
-template <> struct UATypeTraits<std::string> {
-  static const UA_DataType *uaType() { return &UA_TYPES[UA_TYPES_STRING]; }
-  static Result<std::string, RichError> convert(const UA_Variant &var) {
-    if (!var.data || var.type != uaType() || var.arrayLength > 0) {
-      return Result<std::string, RichError>::error(RichError{RichError::ErrorCode::TYPE_MISMATCH,"type mismatch"});
-    } else {
-      const UA_String *src = static_cast<const UA_String *>(var.data);
-      if (!src->data) {
-        // 空 / 缺失的 STRING：给出确定错误码，避免落到 RichError 的 UNKNOWN
-        // 兜底（同一输入每次都必须映射到同一 ErrorCode）。
-        return Result<std::string, RichError>::error(
-            RichError{RichError::ErrorCode::TYPE_MISMATCH, "src->data is nullptr"});
-      }
-      return Result<std::string, RichError>::success(
-          std::string(reinterpret_cast<const char *>(src->data), src->length));
-    }
-  }
-};
+template<> struct UATypeTraits<std::string> : UATypeTraitsBase<std::string, UA_TYPES_STRING> {};      // 10 ← 新增
 
 template <S7DataType> struct S7TypeToUATraits;
 
@@ -108,6 +116,7 @@ template <> struct S7TypeToUATraits<S7DataType::STRING> {
 };
 
 namespace opcua::writeTraits {
+
 template <typename T, int TYPE_ENUM> struct UATypeTraitsBase {
   static const UA_DataType *uaType() { return &UA_TYPES[TYPE_ENUM]; }
   static Result<Unit, RichError> convert(int nameSpace,const std::string &nodeID,
@@ -118,7 +127,10 @@ template <typename T, int TYPE_ENUM> struct UATypeTraitsBase {
     if (const T *pValue = std::get_if<T>(&VariableItem)) {
       value = *pValue;
     } else {
-      return Result<Unit, RichError>::error(RichError{"type not match "});
+      return Result<Unit, RichError>::error(RichError{
+          RichError::ErrorCode::TYPE_MISMATCH,
+          "writeTraits: declared S7DataType does not match the ValueType "
+          "alternative"});
     }
 
     //  INIT WRITE UA_VALUE
@@ -143,6 +155,63 @@ template <typename T, int TYPE_ENUM> struct UATypeTraitsBase {
           RichError("OPCUADataCovert : batchSet_UA_Scalar_StatusCode fail"));
     }
     destValue.value.hasValue = true;
+    if (!destValue.value.hasValue) {
+      return Result<Unit, RichError>::error(RichError{"hasValue false"});
+    }
+    if (!destValue.value.value.type) {
+      return Result<Unit, RichError>::error(RichError{"value.type null"});
+    }
+    if (!destValue.value.value.data) {
+      return Result<Unit, RichError>::error(RichError{"value.data null"});
+    }
+    return Result<Unit, RichError>::success(Unit{});
+  }
+};
+
+template <> struct UATypeTraitsBase<std::string, UA_TYPES_STRING> {
+  static const UA_DataType *uaType() { return &UA_TYPES[UA_TYPES_STRING]; }
+  static Result<Unit, RichError>
+  convert(int nameSpace, const std::string &nodeID, const S7DataType &dataType,
+          UA_WriteValue &destValue, const ValueType &VariableItem) {
+    std::string value{""};
+    if (const std::string *pValue = std::get_if<std::string>(&VariableItem)) {
+      value = *pValue;
+    } else {
+      return Result<Unit, RichError>::error(RichError{
+          RichError::ErrorCode::TYPE_MISMATCH,
+          "writeTraits: declared S7DataType does not match the ValueType "
+          "alternative"});
+    }
+
+    //  INIT WRITE UA_VALUE
+    if (destValue.attributeId != UA_ATTRIBUTEID_VALUE) {
+      {
+        if (TypeTraits::containsEmbeddedNul(nodeID)) {
+          return Result<Unit, RichError>::error(
+              RichError{RichError::ErrorCode::INVALID_ARGUMENT,
+                        "writeTraits: NodeId contains embedded NULL"});
+        }
+        destValue.nodeId = UA_NODEID_STRING_ALLOC(nameSpace, nodeID.data());
+      }
+      destValue.attributeId = UA_ATTRIBUTEID_VALUE;
+    }
+
+    if (value.find('\0') != std::string::npos) {
+      return Result<Unit, RichError>::error(
+          RichError{RichError::ErrorCode::INVALID_ARGUMENT,
+                    "writeTraits: STRING value contains embedded NULL"});
+    }
+    UA_String uaString = UA_STRING(const_cast<char *>(value.c_str()));
+
+    //  COPY RESOURCE TO UA_VARIANT OF UA_WriteValue
+    UA_StatusCode status =
+        UA_Variant_setScalarCopy(&destValue.value.value, &uaString, uaType());
+    if (status != UA_STATUSCODE_GOOD) {
+      return Result<Unit, RichError>::error(
+          RichError("OPCUADataCovert : batchSet_UA_Scalar_StatusCode fail"));
+    }
+    destValue.value.hasValue = true;
+
     if (!destValue.value.hasValue) {
       return Result<Unit, RichError>::error(RichError{"hasValue false"});
     }
@@ -190,61 +259,9 @@ struct UATypeTraits<float> : UATypeTraitsBase<float, UA_TYPES_FLOAT> {}; // 9
 template <>
 struct UATypeTraits<double> : UATypeTraitsBase<double, UA_TYPES_DOUBLE> {
 }; // 10 ← 新增
-
-template <> struct UATypeTraits<std::string> {
-  static const UA_DataType *uaType() { return &UA_TYPES[UA_TYPES_STRING]; }
-  static Result<Unit, RichError> convert(int nameSpace,const std::string &nodeID,
-                                        const S7DataType &dataType,
-                                        UA_WriteValue &destValue,
-                                        const ValueType &VariableItem) {
-    std::string value{""};
-    if (const std::string *pValue = std::get_if<std::string>(&VariableItem)) {
-      value = *pValue;
-    } else {
-      return Result<Unit, RichError>::error(RichError{"type not match "});
-    }
-
-    //  INIT WRITE UA_VALUE
-    if (destValue.attributeId != UA_ATTRIBUTEID_VALUE) {
-      {
-        if (TypeTraits::containsEmbeddedNul(nodeID)) {
-          return Result<Unit, RichError>::error(
-              RichError{RichError::ErrorCode::INVALID_ARGUMENT,
-                        "writeTraits: NodeId contains embedded NULL"});
-        }
-        destValue.nodeId = UA_NODEID_STRING_ALLOC(nameSpace, nodeID.data());
-      }
-      destValue.attributeId = UA_ATTRIBUTEID_VALUE;
-    }
-
-    if (value.find('\0') != std::string::npos) {
-      return Result<Unit, RichError>::error(
-          RichError{RichError::ErrorCode::INVALID_ARGUMENT,
-                    "writeTraits: STRING value contains embedded NULL"});
-    }
-    UA_String uaString = UA_STRING(const_cast<char *>(value.c_str()));
-
-    //  COPY RESOURCE TO UA_VARIANT OF UA_WriteValue
-    UA_StatusCode status =
-        UA_Variant_setScalarCopy(&destValue.value.value, &uaString, uaType());
-    if (status != UA_STATUSCODE_GOOD) {
-      return Result<Unit, RichError>::error(
-          RichError("OPCUADataCovert : batchSet_UA_Scalar_StatusCode fail"));
-    }
-    destValue.value.hasValue = true;
-   
-    if (!destValue.value.hasValue) {
-      return Result<Unit, RichError>::error(RichError{"hasValue false"});
-    }
-    if (!destValue.value.value.type) {
-      return Result<Unit, RichError>::error(RichError{"value.type null"});
-    }
-    if (!destValue.value.value.data) {
-      return Result<Unit, RichError>::error(RichError{"value.data null"});
-    }
-    return Result<Unit, RichError>::success(Unit{});
-  }
-};
+template <>
+struct UATypeTraits<std::string> : UATypeTraitsBase<std::string, UA_TYPES_STRING> {
+}; // 11 ← 新增
 
 template <S7DataType> struct S7TypeToUATraits;
 

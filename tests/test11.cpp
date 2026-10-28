@@ -117,7 +117,7 @@ TEST(Client, T22_BatchRead_BudgetExceeded_VirtualClock) {
   cfg.maxTotalWaitMs = 2 * cfg.timeoutMs * (cfg.maxRetries + 1);
   ASSERT_FALSE(cfg.check().has_value()) << *cfg.check();
 
-  // ★ 关键：每次 serviceRead / runIterate 推进 50ms 虚拟时间
+  // 关键：每次 serviceRead / runIterate 推进 50ms 虚拟时间
   //    预算 440ms ÷ 50ms ≈ 9 次调用后触发
   sdk->setAutoAdvancePerIterateMs(50);
 

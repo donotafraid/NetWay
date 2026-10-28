@@ -64,7 +64,7 @@ TEST_F(ClientTest, T5_ConcurrentReadWrite_BoundedFail) {
     const std::array<int16_t, 4> kWrittenValues = {1, 3, 5, 7};
 
 
-    // ★ 在并发开始前，先写一次，确保服务器上的值 ∈ kWrittenValues
+    // 在并发开始前，先写一次，确保服务器上的值 ∈ kWrittenValues
     {
       OPC_UA_Client::WriteValue var{node, int16_t(1)};
       std::vector<OPC_UA_Client::WriteValue> wv{var};
@@ -88,7 +88,7 @@ TEST_F(ClientTest, T5_ConcurrentReadWrite_BoundedFail) {
                     bool inWrittenSet = false;
                     if (allGood) {
                         const auto& v = results[0].value.value();
-                        // ★ 写的是 int16_t；先按类型检查再取，避免 bad_variant_access
+                        // 写的是 int16_t；先按类型检查再取，避免 bad_variant_access
                         if (std::holds_alternative<int16_t>(v)) {
                             const int16_t got = std::get<int16_t>(v);
                             inWrittenSet =

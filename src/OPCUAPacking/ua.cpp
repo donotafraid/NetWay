@@ -7,6 +7,24 @@
 #include "src/OPCUAPacking/detail/RecreateSync.h"
 #include "src/OPCUAPacking/detail/ErrorMapping.h"
 #include <sstream>
+#include <cstdio>
+
+namespace {
+// 自定义 Log：直接写 stderr，不取时间戳，因此不触碰 localtime/mktime/tzset。
+void customLog(void * /*context*/, UA_LogLevel /*level*/,
+               UA_LogCategory /*category*/, const char *msg, va_list args) {
+  vfprintf(stderr, msg, args);
+  fputc('\n', stderr);
+}
+} // namespace
+
+// 定义在本 TU：RealSdk/MockSdk 的内联 clientNew 通过该访问函数使用同一个
+// logger，避免匿名命名空间对象造成的 ODR 违规。函数内静态对象有静态存储期，
+// 满足 open62541 “config 只保存指针、logger 必须比 client 活得久”的要求。
+UA_Logger &customLogger() {
+  static UA_Logger logger{customLog, nullptr, nullptr};
+  return logger;
+}
 
 //=================OPC_UA_Client=======================
 namespace { // 匿名命名空间，实现内部链接
@@ -181,7 +199,7 @@ public:
       isReset = true;
       m_recreateSync->m_recreating.store(false, std::memory_order_release);
       m_recreateSync->m_recreateCv
-          .notify_all(); // ★ 持锁 notify，消除 CV 生命周期竞态
+          .notify_all(); // 持锁 notify，消除 CV 生命周期竞态
     }
   }
 
@@ -191,7 +209,7 @@ public:
       isReset = true;
       m_recreateSync->m_recreating.store(false, std::memory_order_release);
       m_recreateSync->m_recreateCv
-          .notify_all(); // ★ 持锁 notify，消除 CV 生命周期竞态
+          .notify_all(); // 持锁 notify，消除 CV 生命周期竞态
     }
   }
 
@@ -209,6 +227,34 @@ private:
   std::shared_ptr<OPCUAPacking::internal::RecreateSync> m_recreateSync;
 };
 
+// Marks the shutdown() call that won the m_terminated race. The destructor
+// waits for this counter: without it, a second shutdown() can return success
+// and the caller can destroy the object while the winner is still inside
+// shutdownInternal() (touching m_recreateSync / pImpl).
+class ShutdownCallGuard {
+public:
+  explicit ShutdownCallGuard(
+      std::shared_ptr<OPCUAPacking::internal::RecreateSync> recreateSync)
+      : m_recreateSync(std::move(recreateSync)) {}
+
+  ~ShutdownCallGuard() {
+    std::lock_guard<std::mutex> lock(m_recreateSync->m_recreateLock);
+    if (m_recreateSync->m_shutdownInFlight > 0) {
+      --m_recreateSync->m_shutdownInFlight;
+      if (m_recreateSync->m_shutdownInFlight == 0)
+        m_recreateSync->m_recreateCv.notify_all();
+    }
+  }
+
+  ShutdownCallGuard(const ShutdownCallGuard &) = delete;
+  ShutdownCallGuard &operator=(const ShutdownCallGuard &) = delete;
+  ShutdownCallGuard(ShutdownCallGuard &&) = delete;
+  ShutdownCallGuard &operator=(ShutdownCallGuard &&) = delete;
+
+private:
+  std::shared_ptr<OPCUAPacking::internal::RecreateSync> m_recreateSync;
+};
+
 class ThreadGuard {
 public:
   ThreadGuard(std::unique_ptr<std::thread> watchdogThread,
@@ -223,6 +269,11 @@ public:
       // 而析构函数中抛出异常即 std::terminate。
       if (m_watchdogThread->get_id() != std::this_thread::get_id()) {
         m_watchdogThread->join();
+      } else {
+        // Destructor is running on the watchdog thread. Skipping join leaves a
+        // joinable std::thread member, whose destructor calls std::terminate.
+        // The loop has already exited (we are in ~Impl), so detaching is safe.
+        m_watchdogThread->detach();
       }
     }
   }
@@ -373,7 +424,7 @@ struct OPC_UA_Client::Impl
 
   using UA_ClientPtr = std::shared_ptr<UA_Client>;
   UA_ClientPtr m_impl ;
-  std::shared_ptr<ISdk> m_sdk;
+  std::shared_ptr<OPCUAPacking::internal::ISdk> m_sdk;
   mutable std::mutex m_lock;
   std::string endpointUrl;
   std::shared_ptr<CallbackContext> m_callbackContext;
@@ -394,14 +445,26 @@ struct OPC_UA_Client::Impl
       UA_SECURECHANNELSTATE_CLOSED}; // sdk内部重连是否继续标志，回调函数里设置，看门狗中使用
   std::atomic<UA_SessionState> sdkSessionState{
       UA_SESSIONSTATE_CLOSED}; // sdk内部重连是否继续标志，回调函数里设置，看门狗中使用
+  // Incremented by stateCallback before it publishes a new triplet. isConnected
+  // captures this before getState and refuses to overwrite the triplet if a
+  // newer callback landed while the (possibly stale) getState snapshot was in
+  // flight. Atomics alone prevent a data race but not this lost update.
+  std::atomic<uint64_t> m_stateEpoch{0};
+  // Serializes writers of the triplet. Epoch alone has a window where a
+  // callback has already incremented but has not stored yet; the mutex closes
+  // it without putting a lock in the hot read path (isHealthyCached stays
+  // lock-free).
+  std::mutex m_stateWriteMx;
   std::atomic<bool> m_stop{
       false}; // shutdown()保护变量，避免其他因素导致shutdown()未被调用
   std::mutex m_taskCvMx; // 专门保护任务计数和条件变量
   std::condition_variable m_taskCv;
   size_t m_taskCounter = 0 ; // 由 m_taskCvMx
          // 保护,当前未完成的读写任务总量，在读写任务开始和结束时修改，用于shutdown()判断是否可以析构当前对象
-  std::recursive_mutex
-      m_sdkMutex; // 使得SDK 调用真正串行化，connect/disconnect 不再与读写交叠
+  // 非递归互斥：stateCallback / inactivityCallback 只碰原子量，不回调任何
+  // 会再次获取 m_sdkMutex 的 Impl 方法；若未来回调需要访问加锁方法，必须
+  // 改回 recursive_mutex 并在这里说明真实的递归调用链。
+  std::mutex m_sdkMutex; // 使得SDK 调用真正串行化，connect/disconnect 不再与读写交叠
   // 看门狗辅助
   std::unique_ptr<std::thread> m_watchdogThread;
   std::condition_variable m_watchdogCv;
@@ -418,7 +481,7 @@ struct OPC_UA_Client::Impl
   //  initialize function
   Impl(const ClientConfig &cfg, const std::string &Url, UA_ClientPtr client,
        std::shared_ptr<CallbackContext> callbackContext_,
-       std::shared_ptr<ISdk> sdk) // ★
+       std::shared_ptr<OPCUAPacking::internal::ISdk> sdk)
       : m_config(cfg), endpointUrl(std::move(Url)), m_impl(std::move(client)),
         m_callbackContext(callbackContext_), m_sdk(sdk) {}
 
@@ -490,7 +553,7 @@ struct OPC_UA_Client::Impl
   Result<std::vector<WriteResult>, RichError>
   batchWrite(const std::vector<WriteValue> &batchWriteNodes);
   // get client status safe-thread
-  Result<bool, ConnectErrorState> isConnected();
+  Result<bool, ConnectErrorState> isConnected(UA_UInt32 iterateTimeoutMs = 50);
   // create() 返回后，客户端一定已连接，调用方可以立即使用
   Result<Unit, ConnectErrorState> connect();
   // 等待连接就绪
@@ -568,13 +631,13 @@ struct OPC_UA_Client::Impl
   int64_t nowMsImpl() ;
 
   //  辅助函数:外部sdk锁内调用UA_Client_run_iterate
-  void callRunIterate(UA_ClientPtr &client); 
+  void callRunIterate(UA_ClientPtr &client, UA_UInt32 timeoutMs = 1);
 
 };
 
 struct OPC_UA_Client::UA_ClientDeleter {
-  std::shared_ptr<ISdk> sdk;            // ★ 持有 sdk
-  std::shared_ptr<CallbackContext> ctx; // ★ 关键：持有一份 shared_ptr
+  std::shared_ptr<OPCUAPacking::internal::ISdk> sdk;            // 持有 sdk
+  std::shared_ptr<CallbackContext> ctx; // 关键：持有一份 shared_ptr
 
   void operator()(UA_Client *c) const noexcept {
     if (c && sdk) {
@@ -719,8 +782,6 @@ OPC_UA_Client::Impl::batchRead(const std::vector<ReadValue> &batchReadNodes) {
       }
     }
 
-    
-   
     const auto elapsed = m_sdk->nowMs() - startTime;
     //  每次单次调用最坏花费时间=servcie+connectSync≈2*timeOutMs
     if (elapsed > (pImplQuote->m_config.maxTotalWaitMs)) {
@@ -751,8 +812,8 @@ OPC_UA_Client::Impl::batchRead(const std::vector<ReadValue> &batchReadNodes) {
     UA_ReadResponse_init(&response);
     ReadResponseGuard guard(&response); 
     {
-      std::lock_guard<std::recursive_mutex> sdkLock(m_sdkMutex);
-      response = m_sdk->serviceRead(client.get(), request); // ★
+      std::lock_guard<std::mutex> sdkLock(m_sdkMutex);
+      response = m_sdk->serviceRead(client.get(), request);
      
     }
     UA_StatusCode sr = response.responseHeader.serviceResult;
@@ -796,7 +857,10 @@ OPC_UA_Client::Impl::batchRead(const std::vector<ReadValue> &batchReadNodes) {
 
         ReadResult var;
         var.rawStatus = item.status;
-        if (item.status == UA_STATUSCODE_GOOD) {
+        // OPC UA has Good/Uncertain/Bad severity bits; GoodInfo codes such as
+        // GOOD_CLAMPED are still values a PLC user must see. Comparing against
+        // the exact code 0 drops them as if they were Bad (T157).
+        if (UA_StatusCode_isGood(item.status)) {
           auto result =
               opcua::readConversion::dispatch(dataType, item.value, var.value);
           if (result.has_error()) {
@@ -963,8 +1027,8 @@ OPC_UA_Client::Impl::batchWrite(
   UA_WriteResponse_init(&response);
   WriteResponseGuard write_response(&response);
   {
-    std::lock_guard<std::recursive_mutex> sdkLock(m_sdkMutex);
-    response = m_sdk->serviceWrite(client.get(), request); // ★
+    std::lock_guard<std::mutex> sdkLock(m_sdkMutex);
+    response = m_sdk->serviceWrite(client.get(), request);
 
   }
   if (response.responseHeader.serviceResult == UA_STATUSCODE_GOOD &&
@@ -974,7 +1038,9 @@ OPC_UA_Client::Impl::batchWrite(
     resultVec.reserve(batchWriteNodes.size());
     for (size_t i = 0; i < response.resultsSize; ++i) {
       WriteResult var;
-      if (response.results[i] == UA_STATUSCODE_GOOD) {
+      // Same severity rule as batchRead: GOOD_CLAMPED/GOOD_OVERFLOW and
+      // other GoodInfo codes are a successful write, not Bad (T158).
+      if (UA_StatusCode_isGood(response.results[i])) {
         var.status = OPC_UA_Client::WriteResult::Status::Good;
         var.errorCode =RichError::ErrorCode::OK;
       } else {
@@ -995,7 +1061,8 @@ OPC_UA_Client::Impl::batchWrite(
   }
 }
 
-Result<bool, ConnectErrorState> OPC_UA_Client::Impl::isConnected() {
+Result<bool, ConnectErrorState>
+OPC_UA_Client::Impl::isConnected(UA_UInt32 iterateTimeoutMs) {
   auto pImplQuote = shared_from_this();
   {
     std::lock_guard<std::mutex> lock(pImplQuote->m_lock);
@@ -1020,16 +1087,34 @@ Result<bool, ConnectErrorState> OPC_UA_Client::Impl::isConnected() {
   UA_StatusCode statusCode{UA_STATUSCODE_BADSECURECHANNELCLOSED};
   UA_SessionState sessionState{UA_SESSIONSTATE_CLOSED};
   // 2. 获取实际状态
-  callRunIterate(client);
-  {
-    std::lock_guard<std::recursive_mutex> lock(m_sdkMutex);
-    m_sdk->getState(client.get(), &channelState, &sessionState,
-                    &statusCode); // ★
+  callRunIterate(client, iterateTimeoutMs);
+  // Capture a stable (even) generation after the event-loop poll. A callback
+  // that is mid-publish leaves the generation odd; spin until it completes so
+  // getState observes the post-callback state. If a callback lands during
+  // getState, the generation changes and the snapshot below is discarded
+  // (T159).
+  uint64_t stateEpoch = 0;
+  for (;;) {
+    stateEpoch = m_stateEpoch.load(std::memory_order_acquire);
+    if ((stateEpoch & 1u) == 0)
+      break;
+    std::this_thread::yield();
   }
   {
-    sdkConnectStatus.store(statusCode, std::memory_order_release);
-    sdkChannelState.store(channelState, std::memory_order_release);
-    sdkSessionState.store(sessionState, std::memory_order_release);
+    std::lock_guard<std::mutex> lock(m_sdkMutex);
+    m_sdk->getState(client.get(), &channelState, &sessionState,
+                    &statusCode);
+  }
+  {
+    // Serialize with stateCallback. The epoch check alone has a window where
+    // the callback has incremented but not stored yet; the mutex + odd/even
+    // generation makes "publish this snapshot" atomic against a newer callback.
+    std::lock_guard<std::mutex> stateLock(m_stateWriteMx);
+    if (m_stateEpoch.load(std::memory_order_acquire) == stateEpoch) {
+      sdkConnectStatus.store(statusCode, std::memory_order_release);
+      sdkChannelState.store(channelState, std::memory_order_release);
+      sdkSessionState.store(sessionState, std::memory_order_release);
+    }
   }
 
   if (statusCode != UA_STATUSCODE_GOOD) {
@@ -1077,9 +1162,9 @@ OPC_UA_Client::Impl::connect() {
   CASGuard casGuard{pImplQuote->m_connState};
 
   {
-    std::lock_guard<std::recursive_mutex> sdkLock(m_sdkMutex);
+    std::lock_guard<std::mutex> sdkLock(m_sdkMutex);
     UA_StatusCode retval =
-        m_sdk->connectAsync(client.get(), endpointUrl.c_str()); // ★
+        m_sdk->connectAsync(client.get(), endpointUrl.c_str());
     if (retval != UA_STATUSCODE_GOOD) {
       // 与 disconnect() 的成功出口对称：连接未建立时，若缓存三元组已不健康，
       // lifeState 必须离开 RUNNING。否则 checkLifeState()==RUNNING 与
@@ -1090,7 +1175,7 @@ OPC_UA_Client::Impl::connect() {
     }
   }
 
-  // ★ 等待连接就绪（超时上限 = timeoutMs）
+  // 等待连接就绪（超时上限 = timeoutMs）
   auto start = pImplQuote->nowMsImpl();
   // 备用墙钟上界：pImplQuote->nowMsImpl() 走 ISdk 的虚拟时钟。若某个 ISdk
   // 实现的 runIterate 立即返回且不推进该时钟，仅凭 elapsed 的轮询会无界空转
@@ -1159,8 +1244,8 @@ OPC_UA_Client::Impl::connect() {
       }
 
       {
-        std::lock_guard<std::recursive_mutex> lock(m_sdkMutex);
-        m_sdk->disconnectAsync(client.get()); // ★
+        std::lock_guard<std::mutex> lock(m_sdkMutex);
+        m_sdk->disconnectAsync(client.get());
       }
       // 连接超时同样不得让生命状态停留在 RUNNING：见 connectAsync 失败分支。
       pImplQuote->TurnToRecovring();
@@ -1214,8 +1299,8 @@ Result<Unit, DisconnectErrorState> OPC_UA_Client::Impl::disconnect() {
   CASGuard casGuard{pImplQuote->m_connState};
 
   {
-    std::lock_guard<std::recursive_mutex> sdkLock(m_sdkMutex);
-    UA_StatusCode retval = m_sdk->disconnectAsync(client.get()); // ★
+    std::lock_guard<std::mutex> sdkLock(m_sdkMutex);
+    UA_StatusCode retval = m_sdk->disconnectAsync(client.get());
     if (retval != UA_STATUSCODE_GOOD) {
       pImplQuote->TurnToRecovring();
       return Result<Unit, DisconnectErrorState>::error(
@@ -1223,7 +1308,7 @@ Result<Unit, DisconnectErrorState> OPC_UA_Client::Impl::disconnect() {
     }
   }
 
-  // ★ 等待CLOSED就绪（超时上限 = timeoutMs）
+  // 等待CLOSED就绪（超时上限 = timeoutMs）
   auto start = pImplQuote->nowMsImpl();
   // 与 Impl::connect() 对称的墙钟兜底：elapsed 走 ISdk::nowMs() 虚拟时钟。
   // 若某个 ISdk 实现的 disconnectAsync 不推进该时钟（MockSdk 默认即如此）
@@ -1266,8 +1351,8 @@ Result<Unit, DisconnectErrorState> OPC_UA_Client::Impl::disconnect() {
       UA_SessionState ss;
       UA_StatusCode sc;
       {
-        std::lock_guard<std::recursive_mutex> lock(m_sdkMutex);
-        m_sdk->getState(client.get(), &cs, &ss, &sc); // ★
+        std::lock_guard<std::mutex> lock(m_sdkMutex);
+        m_sdk->getState(client.get(), &cs, &ss, &sc);
       }
       if (cs == UA_SECURECHANNELSTATE_CLOSED) {
         // 显式断开后三元组已不成立：lifeState 必须离开 RUNNING，
@@ -1277,8 +1362,8 @@ Result<Unit, DisconnectErrorState> OPC_UA_Client::Impl::disconnect() {
       }
 
       {
-        std::lock_guard<std::recursive_mutex> lock(m_sdkMutex);
-        m_sdk->disconnectAsync(client.get()); // ★
+        std::lock_guard<std::mutex> lock(m_sdkMutex);
+        m_sdk->disconnectAsync(client.get());
       }
       // 断开超时：通道既非 OPEN 也非 CLOSED 时缓存三元组可能已经不健康，
       // 必须与成功出口一致地离开 RUNNING。
@@ -1344,9 +1429,15 @@ void OPC_UA_Client::Impl::signalShutdown() {
 }
 
 void OPC_UA_Client::Impl::joinWatchdog() {
-  if (m_watchdogThread && m_watchdogThread->joinable() &&
-      m_watchdogThread->get_id() != std::this_thread::get_id()) {
-    m_watchdogThread->join();
+  if (m_watchdogThread && m_watchdogThread->joinable()) {
+    if (m_watchdogThread->get_id() != std::this_thread::get_id()) {
+      m_watchdogThread->join();
+    } else {
+      // 当前线程就是 watchdog：join 自己会抛 system_error。此时 shutdown
+      // 已由 watchdog 线程自己发起，循环已退出；detach 避免后续
+      // std::thread 析构时 terminate。
+      m_watchdogThread->detach();
+    }
   }
 }
 
@@ -1392,7 +1483,7 @@ Result<Unit, RichError> OPC_UA_Client::Impl::validateConfiguration(bool useDefau
     }
 
     // 4. 获取配置并验证
-    auto config = m_sdk->getConfig(m_impl.get());   // ★
+    auto config = m_sdk->getConfig(m_impl.get());
     if (!config) {
         return Result<Unit, RichError>::error(RichError{RichError::ErrorCode::SDK_ERROR,"get Config fail"});
     }
@@ -1413,7 +1504,7 @@ Result<Unit, RichError> OPC_UA_Client::Impl::validateConfiguration(bool useDefau
 Result<Unit, RichError>
 OPC_UA_Client::Impl::applyConfiguration(bool useDefault) {
   // 1. 获取配置
-  auto config = m_sdk->getConfig(m_impl.get()); // ★
+  auto config = m_sdk->getConfig(m_impl.get());
   if (!config) {
     return Result<Unit, RichError>::error(RichError{RichError::ErrorCode::SDK_ERROR,"get Config fail"});
   }
@@ -1462,20 +1553,25 @@ OPC_UA_Client::Impl::applyConfiguration(bool useDefault) {
                              UA_SecureChannelState channelState,
                              UA_SessionState sessionState,
                              UA_StatusCode connectStatus) {
-    // 获取上下文
+    // stateCallback 没有 userdata 参数，只能经 UA_Client_getContext 取回封装上下文。
     OPC_UA_Client::CallbackContext *self = static_cast<
-        OPC_UA_Client::CallbackContext *>(
-        // UA_Client_getContext没有被SDK包含，因该回调函数无法传入外部对象，所以特定留存该原始API
-        UA_Client_getContext(client));
+        OPC_UA_Client::CallbackContext *>(UA_Client_getContext(client));
     if (!self) {
       return;
     }
 
     // 只有在确实需要访问 Impl 时才 lock：
     if (auto impl = self->implWeak.lock()) {
+      std::lock_guard<std::mutex> stateLock(impl->m_stateWriteMx);
+      // Odd while publishing, even when stable. isConnected() waits for an
+      // even generation before getState, and compares after; a writer that
+      // starts before its capture but has not stored yet is therefore visible
+      // as odd, and a writer that starts later changes the generation.
+      impl->m_stateEpoch.fetch_add(1, std::memory_order_acq_rel);
       impl->sdkConnectStatus.store(connectStatus, std::memory_order_release);
       impl->sdkChannelState.store(channelState, std::memory_order_release);
       impl->sdkSessionState.store(sessionState, std::memory_order_release);
+      impl->m_stateEpoch.fetch_add(1, std::memory_order_acq_rel);
     }
   };
 
@@ -1513,8 +1609,8 @@ OPC_UA_Client::Impl::applyConfiguration(bool useDefault) {
   UA_SessionState ss;
   UA_StatusCode sc;
   {
-    std::lock_guard<std::recursive_mutex> lock(m_sdkMutex);
-    m_sdk->getState(m_impl.get(), &cs, &ss, &sc); // ★
+    std::lock_guard<std::mutex> lock(m_sdkMutex);
+    m_sdk->getState(m_impl.get(), &cs, &ss, &sc);
   }
   {
     sdkConnectStatus.store(sc,std::memory_order_release);
@@ -1620,8 +1716,14 @@ void OPC_UA_Client::Impl::runWatchdog() {
         return;
       client = m_impl;
     }
-    if (client)
-      callRunIterate(client);
+    if (client) {
+      // Idle housekeeping must not hold m_sdkMutex across UA_Client_run_iterate's
+      // full timeout: open62541 releases its own client lock inside el->run(),
+      // but the wrapper lock would still block every service call for up to
+      // `timeout` ms. timeout==0 processes already-received events only; the
+      // 100 ms cadence below bounds how long events wait.
+      callRunIterate(client, 0);
+    }
 
     if (m_lifeState.load(std::memory_order_acquire) == LifeState::RECOVERING) {
       delayFunction(++retryCounter);
@@ -1640,9 +1742,11 @@ void OPC_UA_Client::Impl::runWatchdog() {
        }
      }
 
-    std::unique_lock lock(m_watchDogMx);
-    m_watchdogCv.wait_for(lock, std::chrono::milliseconds(100),
-                          [this] { return getEffectiveStopSignal(); });
+     {
+       std::unique_lock lock(m_watchDogMx);
+       m_watchdogCv.wait_for(lock, std::chrono::milliseconds(100),
+                             [this] { return getEffectiveStopSignal(); });
+     }
   }
 }
 
@@ -1662,7 +1766,7 @@ void OPC_UA_Client::Impl::doWatchdogDecision(std::shared_ptr<Impl> ImplPtr) {
   // ---------- 健康检查 ----------
   bool healthyResult = true;
   {
-    auto result = isConnected();
+    auto result = isConnected(0);
     if (result.is_success()) {
       healthyResult &= result.value_or(false);
       if (healthyResult) {
@@ -1859,7 +1963,7 @@ OPC_UA_Client::create(const std::string &endpointUrl, ClientConfig config,
 }
 
 Result<std::unique_ptr<OPC_UA_Client>, RichError>
-OPC_UA_Client::createWithSdk(std::shared_ptr<ISdk> sdk,
+OPC_UA_Client::createWithSdk(std::shared_ptr<OPCUAPacking::internal::ISdk> sdk,
                              const std::string &url, ClientConfig cfg,bool useDefault,bool enableWatchDog) {
   try {
     if (!sdk) {
@@ -1928,7 +2032,7 @@ OPC_UA_Client::createWithSdk(std::shared_ptr<ISdk> sdk,
 }
 
 OPC_UA_Client::OPC_UA_Client(const std::string endpointUrl, ClientConfig config,
-                             std::shared_ptr<ISdk> sdk) {
+                             std::shared_ptr<OPCUAPacking::internal::ISdk> sdk) {
   m_recreateSync = std::make_shared<OPCUAPacking::internal::RecreateSync>();
   m_recreateSync->m_endpointUrl = endpointUrl;
   if(sdk)
@@ -1953,15 +2057,18 @@ OPC_UA_Client::OPC_UA_Client(const std::string endpointUrl, ClientConfig config,
 OPC_UA_Client::~OPC_UA_Client() {
   {
     std::unique_lock<std::mutex> lock(m_recreateSync->m_recreateLock);
-    m_recreateSync->m_terminated.store(std::memory_order_release);
+    m_recreateSync->m_terminated.store(true,std::memory_order_release);
     // 必须等到进行中的 recreateGiveUpClient() 真正退出后再析构：
     // 该路径在交换 pImpl 前后仍会解引用 this->pImpl / this->m_recreateSync。
-    // 原实现只等 10s 就放行，超时后本对象被销毁，而 recreate 线程可能仍在
+    // 若只等有限时间就放行，超时后本对象可能被销毁，而 recreate 线程仍在
     // 访问本对象成员（use-after-free）。
-    // ApiLease 已保证 m_terminated 置位后普通 API 不再进入，这里只需等待
-    // 唯一还会访问 this 的 recreate 路径；它是有界的（drain 2s + connect 超时）。
-    m_recreateSync->m_recreateCv.wait(
-        lock, [&] { return !m_recreateSync->m_recreating; });
+    // ApiLease 已保证 m_terminated 置位后普通 API 不再进入，这里等待
+    // recreate 与已赢得 shutdown 的调用者退出：第二个 shutdown 会立即返回，
+    // 调用方可能在第一个仍 drain 时销毁对象。两者的阻塞都有上界。
+    m_recreateSync->m_recreateCv.wait(lock, [&] {
+      return !m_recreateSync->m_recreating &&
+             m_recreateSync->m_shutdownInFlight == 0;
+    });
   }
   shutdownInternal(); // 无条件清理,绕过业务早退
 }
@@ -1980,8 +2087,13 @@ Result<Unit,RichError> OPC_UA_Client::shutdown() {
       return Result<Unit, RichError>::success(Unit{}); // 幂等成功
     }
     m_recreateSync->m_terminated.store(true,std::memory_order_release);
+    // Publish the in-progress marker in the same critical section as
+    // m_terminated. The destructor takes this lock and waits for it, so it can
+    // no longer free this object between the store above and shutdownInternal().
+    ++m_recreateSync->m_shutdownInFlight;
   }
 
+  ShutdownCallGuard shutdownGuard{m_recreateSync};
   return shutdownInternal();
 }
 
@@ -1994,6 +2106,7 @@ Result<Unit, RichError> OPC_UA_Client::shutdownInternal() {
       return Result<Unit, RichError>::success(Unit{});
     }
     doomed = std::move(pImpl);
+    pImpl = nullptr;
   }
 
   doomed->shutdown();
@@ -2123,7 +2236,7 @@ Result<Unit, RichError> OPC_UA_Client::checkConnected() {
                   "checkConnected: client is not running"});
   }
 
-  auto r = ImplPtr->isConnected();
+  auto r = ImplPtr->isConnected(0);
   if (r.has_value()) {
     auto status = r.value_or(false);
     if (status) {
@@ -2250,7 +2363,7 @@ Result<Unit, RichError> OPC_UA_Client::recreateGiveUpClient() {
     }
   }
 
-  std::shared_ptr<ISdk> sdkPtr;
+  std::shared_ptr<OPCUAPacking::internal::ISdk> sdkPtr;
   {
     std::lock_guard<std::mutex> lock(m_recreateSync->m_lock);
     if (pImpl) {
@@ -2313,12 +2426,16 @@ Result<Unit, RichError> OPC_UA_Client::recreateGiveUpClient() {
       pImpl = newImpl;
     }
 
-    recreateGuard.reset();
-
     if (old) {
       old->shutdown();
       old.reset();
     }
+
+    // Keep m_recreating set until the old Impl is fully shut down. Clearing it
+    // first lets a concurrent destructor pass its wait and free `this` while
+    // this function is still inside old->shutdown() (T153), the same lifetime
+    // rule T150 enforces for the shutdown winner.
+    recreateGuard.reset();
 
   } catch (const std::bad_alloc &e) {
     // 处理内存分配失败
@@ -2618,7 +2735,7 @@ bool OPC_UA_Client::Impl::shouldTriggerGiveUp() {
   int64_t ts = m_lastBadStatusMs.load(std::memory_order_acquire);
   if (ts == 0)
     return false;
-  return (nowMsImpl() - ts) >= m_config.giveUpThresholdMs; // ★ 用 config
+  return (nowMsImpl() - ts) >= m_config.giveUpThresholdMs; // 用 config
 }
 
 //  辅助函数:返回特定有效对象
@@ -2684,7 +2801,8 @@ Result<Unit,RichError> OPC_UA_Client::Impl::setGiveUpSignal() {
 int64_t OPC_UA_Client::Impl::nowMsImpl() { return m_sdk->nowMs(); } // 新增
 
 //  辅助函数:外部sdk锁内调用UA_Client_run_iterate
-void OPC_UA_Client::Impl::callRunIterate(UA_ClientPtr &client) {
-  std::lock_guard<std::recursive_mutex> lock(m_sdkMutex);
-  m_sdk->runIterate(client.get(), 50); // ★
+void OPC_UA_Client::Impl::callRunIterate(UA_ClientPtr &client,
+                                         UA_UInt32 timeoutMs) {
+  std::lock_guard<std::mutex> lock(m_sdkMutex);
+  m_sdk->runIterate(client.get(), timeoutMs);
 }

@@ -27,7 +27,7 @@ using namespace std::chrono_literals;
 TEST(Client, T16_ShutdownWaitsForInFlightRead_NoUAF) {
   auto sdk = std::make_shared<MockSdk>();
   sdk->setMode(MockSdk::Mode::Connected);
-  sdk->setAutoAdvancePerIterateMs(50); // ★ 关键：让虚拟时钟每次驱动 +50ms
+  sdk->setAutoAdvancePerIterateMs(50); // 关键：让虚拟时钟每次驱动 +50ms
   sdk->setReadDelayMs(300);                 // serviceRead 慢 300ms 返回 GOOD
 
   ClientConfig cfg;
@@ -89,7 +89,7 @@ TEST(Client, T17_ShutdownTimeout_ForceCleanup_NoUAF) {
   ASSERT_TRUE(c->shutdown().is_success());
   auto dt = std::chrono::steady_clock::now() - t0;
 
-  // ★ cfg.timeoutMs 是 uint32_t（毫秒数值），显式转成 milliseconds
+  // cfg.timeoutMs 是 uint32_t（毫秒数值），显式转成 milliseconds
   const auto timeout = std::chrono::milliseconds(cfg.timeoutMs);
 
   // 关键断言：至少等到了超时，且没有无限等
@@ -150,7 +150,7 @@ TEST(Client, T18_RecreateVsInFlightRead_OldFailsNewUsable) {
 
   std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
-  // ★ 关键断言：如果 recreator 已经返回，说明它没等在途 reader，
+  // 关键断言：如果 recreator 已经返回，说明它没等在途 reader，
   //   那就不是"并发"，测试语义失效。
   ASSERT_FALSE(recreateReturned.load(std::memory_order_acquire))
       << "recreator 在放行 reader 前就返回了——它没真正等在途读，"

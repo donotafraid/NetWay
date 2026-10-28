@@ -21,6 +21,9 @@ extern "C" {
 
 #include "src/OPCUAPacking/detail/Isdk.h" // 按工程实际路径
 
+// ISdk lives in OPCUAPacking::internal after the public-header hardening.
+using OPCUAPacking::internal::ISdk;
+
 
 class MockSdk final : public ISdk {
   
@@ -72,7 +75,7 @@ public:
       client = UA_Client_newWithConfig(cfg);
     } else {
       UA_ClientConfig cfg_;
-      std::memset(&cfg_, 0, sizeof(cfg_)); // ★ 先清零，杜绝栈垃圾
+      std::memset(&cfg_, 0, sizeof(cfg_)); // 先清零，杜绝栈垃圾
       UA_StatusCode rc = UA_ClientConfig_setDefault(&cfg_);
       if (rc != UA_STATUSCODE_GOOD) {
         // 与 RealSdk 对齐：setDefault 可能已分配 logger/eventLoop/
@@ -84,11 +87,11 @@ public:
       if (!cfg_.logging) {
         // setDefault 没给 logger（ABI 不匹配 / 日志被禁用 / 其他）
         // 直接落到静态 logger，clear = nullptr，不需要释放
-        cfg_.logging = &g_customLogger;
+        cfg_.logging = &customLogger();
       } else {
         // 就地复用默认 logger，保留 clear，避免泄漏
-        cfg_.logging->log = g_customLogger.log;
-        cfg_.logging->context = g_customLogger.context;
+        cfg_.logging->log = customLogger().log;
+        cfg_.logging->context = customLogger().context;
       }
 
       client = UA_Client_newWithConfig(&cfg_);
@@ -99,7 +102,7 @@ public:
       }
     }
 
-    realClient_ = client; // ★ 必须在 return 之前
+    realClient_ = client; // 必须在 return 之前
     return client;
   }
 
@@ -114,10 +117,22 @@ public:
   }
 
   void clientDelete(UA_Client *c) override {
-    std::lock_guard lk(clientMu_);
     if (!c)
       return;
     clientDeleteCalls_.fetch_add(1, std::memory_order_relaxed);
+    // Run the test hook before taking clientMu_: a hook that blocks the old
+    // client's delete must not also block deletion of the replacement client
+    // created by recreateGiveUpClient() (T153).
+    {
+      std::function<void()> h;
+      {
+        std::lock_guard hookLock(hookMu_);
+        h = clientDeleteHook_;
+      }
+      if (h)
+        h();
+    }
+    std::lock_guard lk(clientMu_);
     UA_Client_delete(c);
     if (realClient_ == c)
       realClient_ = nullptr;
@@ -179,6 +194,13 @@ public:
     std::lock_guard lk(hookMu_);
     disconnectHook_ = std::move(h);
   }
+  // Test-only: blocks inside clientDelete. Used by T150 to keep the winning
+  // shutdown() inside shutdownInternal() while a second shutdown() returns and
+  // the owner tries to destroy the client.
+  void setClientDeleteHook(std::function<void()> h) {
+    std::lock_guard lk(hookMu_);
+    clientDeleteHook_ = std::move(h);
+  }
   void setConnectAsyncResult(UA_StatusCode code) {
     connectAsyncResult_.store(code, std::memory_order_relaxed);
   }
@@ -192,9 +214,13 @@ public:
   // ============================================================
   //  ISdk: event loop
   // ============================================================
-  // ★ 纯虚拟推进：每次驱动推进 autoAdvanceMs_，不做墙钟 sleep
-  UA_StatusCode runIterate(UA_Client *, UA_UInt32) override {
+  // 纯虚拟推进：每次驱动推进 autoAdvanceMs_，不做墙钟 sleep
+  UA_StatusCode runIterate(UA_Client *, UA_UInt32 timeoutMs) override {
     runIterateCalls_.fetch_add(1, std::memory_order_relaxed);
+    {
+      std::lock_guard lk(runIterateMu_);
+      runIterateTimeouts_.push_back(timeoutMs);
+    }
     const int64_t step = autoAdvanceMs_.load(std::memory_order_relaxed);
     if (step > 0) {
       nowMs_.fetch_add(step, std::memory_order_relaxed);
@@ -207,7 +233,7 @@ public:
   // ============================================================
   void getState(UA_Client *, UA_SecureChannelState *ch, UA_SessionState *ss,
                 UA_StatusCode *sc) override {
-    // ★ 优先消费脚本队列（T19）
+    // 优先消费脚本队列（T19）
     {
       std::lock_guard lk(stateMu_);
       if (!stateQueue_.empty()) {
@@ -241,10 +267,21 @@ public:
       *sc = UA_STATUSCODE_GOOD;
       break;
     }
+
+    // Test seam for T159: run code while getState has already produced its
+    // snapshot but before the caller publishes it. The hook is intentionally
+    // outside stateMu_ so it can block without holding the SDK state lock.
+    std::function<void()> h;
+    {
+      std::lock_guard lk(hookMu_);
+      h = getStateHook_;
+    }
+    if (h)
+      h();
   }
 
   UA_ClientConfig *getConfig(UA_Client *c) override {
-    return UA_Client_getConfig(c); // ★ 谁问就给谁的
+    return UA_Client_getConfig(c); // 谁问就给谁的
   }
   void *getContext(UA_Client *c) override {
     return UA_Client_getConfig(c)->clientContext;
@@ -416,7 +453,7 @@ public:
       }
     }
 
-    // ★ 新增：优先消费 shape seam（T30）
+    // 新增：优先消费 shape seam（T30）
     {
       std::lock_guard lk(shapeMu_);
       // seam 3c：构造 resultsSize>0 且 results==nullptr 的写响应（T106）。
@@ -519,7 +556,7 @@ public:
   //  测试接缝 (1)：确定性虚拟时钟
   // ============================================================
   int64_t nowMs() override {
-    return nowMs_.load(std::memory_order_relaxed); // ★ 纯读，不推进
+    return nowMs_.load(std::memory_order_relaxed); // 纯读，不推进
   }
   void setNowMs(int64_t v) { nowMs_.store(v, std::memory_order_relaxed); }
   void advanceNowMs(int64_t d) {
@@ -556,6 +593,16 @@ public:
   unsigned runIterateCallCount() const {
     return runIterateCalls_.load(std::memory_order_relaxed);
   }
+  // Test seam: the timeout argument the wrapper passed to ISdk::runIterate.
+  // Used by T152 to pin the watchdog's idle poll to non-blocking.
+  void clearRunIterateTimeouts() {
+    std::lock_guard lk(runIterateMu_);
+    runIterateTimeouts_.clear();
+  }
+  std::vector<UA_UInt32> runIterateTimeouts() const {
+    std::lock_guard lk(runIterateMu_);
+    return runIterateTimeouts_;
+  }
   unsigned serviceReadCallCount() const {
     return readCalls_.load(std::memory_order_relaxed);
   }
@@ -583,6 +630,12 @@ public:
   void setServiceWriteHook(std::function<void()> h) {
     std::lock_guard lk(hookMu_);
     writeHook_ = std::move(h);
+  }
+  // Runs at the end of getState(), after the snapshot is written into the
+  // out-parameters. T159 uses it to race a stateCallback against getState.
+  void setGetStateHook(std::function<void()> h) {
+    std::lock_guard lk(hookMu_);
+    getStateHook_ = std::move(h);
   }
   void setReadDelayMs(int ms) {
     readDelayMs_.store(ms, std::memory_order_relaxed);
@@ -646,6 +699,33 @@ public:
     if (itemScalar_.size() <= i)
       itemScalar_.resize(i +1);
     itemScalar_[i] = std::move(holder);
+  }
+
+  // 空数组 seam：data == UA_EMPTY_ARRAY_SENTINEL、arrayLength == 0。
+  // open62541 v1.4.14 include/open62541/types.h:715-721 用该表示空数组；
+  // 只有把它注入响应，才能覆盖“哨兵被当成标量解引用”的边界。
+  void setReadItemEmptyArray(size_t i, const UA_DataType *type) {
+    auto holder = std::make_shared<ScalarHolder>();
+    holder->type = type;
+    holder->data = UA_EMPTY_ARRAY_SENTINEL;
+    holder->arrayLength = 0;
+    holder->emptyArray = true;
+    std::lock_guard lk(shapeMu_);
+    if (itemScalar_.size() <= i)
+      itemScalar_.resize(i + 1);
+    itemScalar_[i] = std::move(holder);
+  }
+
+  // 未初始化变体 seam：hasValue == true，但 Variant.type == nullptr、
+  // data == nullptr（open62541 的“empty variant”，types.h:723-724）。
+  // hasValue==false（T142）与它长得像，却是两条不同的服务器行为：真实
+  // server 在 DataValue 标了 hasValue 却没写 variant 时，SDK 交给业务的就是
+  // 这一形态。转换层必须只看 variant，不能因为 hasValue==true 就放行。
+  void setReadItemHasValueWithoutVariant(size_t i) {
+    std::lock_guard lk(shapeMu_);
+    if (itemBareValue_.size() <= i)
+      itemBareValue_.resize(i + 1, 0);
+    itemBareValue_[i] = 1;
   }
 
   // seam 3: 控制 WriteResponse 形状
@@ -720,6 +800,7 @@ public:
     itemString_.clear();
     itemStringSet_.clear();
     itemScalar_.clear();
+    itemBareValue_.clear();
     {
       std::lock_guard lkObs(requestMu_);
       lastReadNodeIdLengths_.clear();
@@ -773,8 +854,12 @@ private:
 
       // 按项 value：status==GOOD 时按 STRING / 通用标量 / INT16 优先级填充。
       {
-        if (itemStatus == UA_STATUSCODE_GOOD) {
-          if (i < itemStringSet_.size() && itemStringSet_[i]) {
+        if (UA_StatusCode_isGood(itemStatus)) {
+          if (i < itemBareValue_.size() && itemBareValue_[i]) {
+            // hasValue == true，但 variant 是 empty（type == nullptr）。
+            UA_Variant_init(&r.results[i].value);
+            r.results[i].hasValue = true;
+          } else if (i < itemStringSet_.size() && itemStringSet_[i]) {
             {
               // 长度保真：UA_STRING_ALLOC()/UA_String_fromChars() 走 strlen，
               // 会把内嵌 '\0' 截断。这里手工构造 UA_String。
@@ -797,6 +882,19 @@ private:
                   r.results[i].hasValue = true;
               }
             }
+          } else if (i < itemScalar_.size() && itemScalar_[i] &&
+                     itemScalar_[i]->emptyArray) {
+            // 空数组：手工构造 arrayLength == 0、data == 哨兵 的变体。
+            // 不能走 setScalarCopy/setArrayCopy，否则会把 0x01 当数据源。
+            const auto &holder = itemScalar_[i];
+            UA_Variant_init(&r.results[i].value);
+            r.results[i].value.type = holder->type;
+            r.results[i].value.storageType = UA_VARIANT_DATA;
+            r.results[i].value.arrayLength = 0;
+            r.results[i].value.data = UA_EMPTY_ARRAY_SENTINEL;
+            r.results[i].value.arrayDimensionsSize = 0;
+            r.results[i].value.arrayDimensions = nullptr;
+            r.results[i].hasValue = true;
           } else if (i < itemScalar_.size() && itemScalar_[i] &&
                      itemScalar_[i]->data) {
           const auto &holder = itemScalar_[i];
@@ -855,10 +953,16 @@ private:
      void *data = nullptr;
      size_t arrayLength = 0; // >0 表示 data 是数组（T90）
      const UA_DataType *type = nullptr;
+     // true: data 是 UA_EMPTY_ARRAY_SENTINEL（空数组），不是真实分配。
+     bool emptyArray = false;
      ScalarHolder() = default;
      ScalarHolder(const ScalarHolder &) = delete;
      ScalarHolder &operator=(const ScalarHolder &) = delete;
      ~ScalarHolder() {
+       if (emptyArray) {
+         // 哨兵地址从不分配，也不由 Variant_clear 释放。
+         return;
+       }
        if (arrayLength > 0) {
          UA_Array_delete(data, arrayLength, type);
          data = nullptr;
@@ -881,6 +985,8 @@ private:
 
   mutable std::mutex stateMu_;
   std::deque<std::tuple<uint32_t, uint32_t, uint32_t>> stateQueue_;
+  mutable std::mutex runIterateMu_;
+  std::vector<UA_UInt32> runIterateTimeouts_;
 
   mutable std::mutex svcMu_;
   std::deque<uint32_t> readScript_;
@@ -895,6 +1001,7 @@ private:
   std::function<void()> connectHook_;
   std::function<void()> readHook_;
   std::function<void()> writeHook_;
+  std::function<void()> getStateHook_;
 
   std::atomic<int> readDelayMs_{0};
   // 通过SetMode()可以修改该标志，控制隐式转换Mode的过程
@@ -928,9 +1035,12 @@ private:
   std::atomic<unsigned> disconnectAsyncCalls_{0};
   std::atomic<UA_StatusCode> disconnectAsyncResult_{UA_STATUSCODE_GOOD};
   std::function<void()> disconnectHook_;
+  std::function<void()> clientDeleteHook_;
 
   std::vector<std::string> itemString_;
   std::vector<uint8_t> itemStringSet_;
+  // 1 表示第 i 项是 hasValue==true + empty variant（type==null）。
+  std::vector<uint8_t> itemBareValue_;
 
    std::atomic<unsigned> syncDisconnectCalls_{0};
    std::atomic<unsigned> clientNewCalls_{0};

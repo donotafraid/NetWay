@@ -1,4 +1,7 @@
 #pragma  once
+#include <string>
+#include <variant>
+
 #include "OPCUAPacking/S7TypeStruct.h"
 
 using ValueType = std::variant<

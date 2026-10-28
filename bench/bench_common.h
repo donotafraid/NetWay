@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cstdarg>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -44,6 +45,19 @@ inline void initLogging() {
   spdlog::set_default_logger(
       std::make_shared<spdlog::logger>("bench", std::move(sink)));
 }
+
+// open62541's default server logger writes to stdout, which is the benchmark's
+// machine-readable result stream. Keep the logger object (and its clear
+// callback) but redirect only the log function to stderr.
+inline void benchLog(void *, UA_LogLevel, UA_LogCategory, const char *msg,
+                     va_list args) {
+  std::vfprintf(stderr, msg, args);
+  std::fputc('\n', stderr);
+}
+
+// Static logger with clear == nullptr: the config and server may hold this
+// pointer, but must never free it.
+inline UA_Logger benchLogger{benchLog, nullptr, nullptr};
 
 using Clock = std::chrono::steady_clock;
 
@@ -108,16 +122,21 @@ class Server {
 public:
   explicit Server(uint16_t port, std::string nodeName = "BenchInt")
       : port_(port), nodeName_(std::move(nodeName)) {
-    server_ = UA_Server_new();
-    if (!server_) {
-      std::fprintf(stderr, "UA_Server_new failed\n");
-      std::exit(2);
-    }
-    UA_ServerConfig *config = UA_Server_getConfig(server_);
-    if (UA_ServerConfig_setDefault(config) != UA_STATUSCODE_GOOD) {
+    UA_ServerConfig cfg;
+    std::memset(&cfg, 0, sizeof(cfg));
+    cfg.logging = &benchLogger;
+    if (UA_ServerConfig_setDefault(&cfg) != UA_STATUSCODE_GOOD) {
       std::fprintf(stderr, "UA_ServerConfig_setDefault failed\n");
       std::exit(2);
     }
+    // UA_Server_newWithConfig moves cfg (shallow copy) into the server.
+    server_ = UA_Server_newWithConfig(&cfg);
+    if (!server_) {
+      UA_ServerConfig_clean(&cfg);
+      std::fprintf(stderr, "UA_Server_newWithConfig failed\n");
+      std::exit(2);
+    }
+    UA_ServerConfig *config = UA_Server_getConfig(server_);
     configurePort(port_);
     addInt16Node();
     startServing();
