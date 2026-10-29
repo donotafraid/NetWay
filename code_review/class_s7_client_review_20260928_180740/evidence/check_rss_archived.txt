@@ -1,4 +1,0 @@
-=== check_rss.py on archived bench-results/rss_curve.csv (4.6h, in-process server) ===
-RSS check: rows=282 hours=4.68 first=7188KiB last=7212KiB delta=24KiB peak=7212KiB slope_h2=0.0KiB/h errors=0
-FAIL: hours=4.68 < min-hours=23.5
-exit=1

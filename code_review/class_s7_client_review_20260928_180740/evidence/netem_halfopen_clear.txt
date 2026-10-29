@@ -1,5 +1,0 @@
-=== netem_faults.sh halfopen 4891 then clear (bug fix verification) ===
-half-open blackhole on tcp/4891 (iptables DROP)
-rules on dport 4891 after inject: 1
-cleared faults on lo (port 4891)
-rules on dport 4891 after clear: 0
