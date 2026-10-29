@@ -17,40 +17,40 @@ TEST(ClientEncapsulation, T87_PublicApiSignaturesUseDomainTypesOnly) {
   static_assert(
       std::is_same_v<decltype(&C::create),
                      Result<std::unique_ptr<C>, RichError> (*)(
-                         const std::string &, ClientConfig, bool)>,
+                         const std::string &, ClientConfig, bool) noexcept>,
       "create 不得暴露 UA_*");
   static_assert(std::is_same_v<decltype(&C::connect),
-                               Result<Unit, RichError> (C::*)()>,
+                               Result<Unit, RichError> (C::*)() noexcept>,
                 "connect 不得暴露 UA_*");
   static_assert(std::is_same_v<decltype(&C::disconnect),
-                               Result<Unit, RichError> (C::*)()>,
+                               Result<Unit, RichError> (C::*)() noexcept>,
                 "disconnect 不得暴露 UA_*");
   static_assert(std::is_same_v<decltype(&C::checkConnected),
-                               Result<Unit, RichError> (C::*)()>,
+                               Result<Unit, RichError> (C::*)() noexcept>,
                 "checkConnected 不得暴露 UA_*");
   static_assert(std::is_same_v<decltype(&C::isHealthy),
-                               Result<Unit, RichError> (C::*)()>,
+                               Result<Unit, RichError> (C::*)() noexcept>,
                 "isHealthy 不得暴露 UA_*");
   static_assert(std::is_same_v<decltype(&C::checkLifeState),
-                               Result<LifeState, RichError> (C::*)()>,
+                               Result<LifeState, RichError> (C::*)() noexcept>,
                 "checkLifeState 不得暴露 UA_*");
   static_assert(std::is_same_v<decltype(&C::recreateGiveUpClient),
-                               Result<Unit, RichError> (C::*)()>,
+                               Result<Unit, RichError> (C::*)() noexcept>,
                 "recreateGiveUpClient 不得暴露 UA_*");
   static_assert(std::is_same_v<decltype(&C::shutdown),
-                               Result<Unit, RichError> (C::*)()>,
+                               Result<Unit, RichError> (C::*)() noexcept>,
                 "shutdown 不得暴露 UA_*");
-  static_assert(std::is_same_v<decltype(&C::setGiveUpSignal), Result<Unit, RichError> (C::*)()>,
+  static_assert(std::is_same_v<decltype(&C::setGiveUpSignal), Result<Unit, RichError> (C::*)() noexcept>,
                 "setGiveUpSignal 不得暴露 UA_*,且必须返回 Result 以便区分拒绝原因");
   static_assert(
       std::is_same_v<decltype(&C::batchRead),
                      Result<std::vector<C::ReadResult>, RichError> (C::*)(
-                         const std::vector<C::ReadValue> &)>,
+                         const std::vector<C::ReadValue> &) noexcept>,
       "batchRead 不得暴露 UA_*");
   static_assert(
       std::is_same_v<decltype(&C::batchWrite),
                      Result<std::vector<C::WriteResult>, RichError> (C::*)(
-                         const std::vector<C::WriteValue> &)>,
+                         const std::vector<C::WriteValue> &) noexcept>,
       "batchWrite 不得暴露 UA_*");
 
   SUCCEED();

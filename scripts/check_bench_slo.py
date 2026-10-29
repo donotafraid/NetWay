@@ -77,6 +77,10 @@ def main() -> int:
     ap.add_argument("--target", default="8t",
                     help="section to gate (default 8t; use 8t_ptc for the "
                          "per-thread-client baseline)")
+    ap.add_argument("--require-errors", action="store_true",
+                    help="require an errors field in every gated section and "
+                         "fail unless it is 0; run_slo_bench.sh writes this "
+                         "field. Use it for new archives.")
     args = ap.parse_args()
 
     s = parse(args.input)
@@ -89,6 +93,21 @@ def main() -> int:
     add("1T p99.9 <= 1ms", f"{p999_1t:.3f}ms", p999_1t <= 1.0)
 
     target = args.target
+
+    # A median file without an errors field cannot prove the run was clean.
+    # New archives include it (run_slo_bench.sh sums errors over the raw
+    # runs); --require-errors rejects old/ambiguous evidence.
+    for label in ("1t", target):
+        if label not in s:
+            continue
+        e = s[label].get("errors")
+        if e is None:
+            if args.require_errors:
+                raise SystemExit(f"missing {label}.errors in input "
+                                 f"(re-run with run_slo_bench.sh)")
+            continue
+        add(f"{label} errors == 0", f"{e:.0f}", e == 0)
+
     p99_1t = require(s, "1t", "p99")
     p99_8t = require(s, target, "p99")
     calls_1t = require(s, "1t", "calls_s")

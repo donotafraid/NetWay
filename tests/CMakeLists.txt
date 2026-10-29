@@ -45,6 +45,7 @@ set(
     ${CMAKE_CURRENT_SOURCE_DIR}/test40.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/test41.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/test42.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/test43.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/util/ClientTestFixture.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/compile/RuleOfFiveAsserts.cpp
 )

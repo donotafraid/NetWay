@@ -145,7 +145,15 @@ TEST(ClientExceptionSafety,
 
   auto d = c->disconnect();
   ASSERT_TRUE(d.is_success()) << (d.is_fail() ? d.get_error()->what() : "");
+
+  // The hook must be live during this call. The previous version cleared it
+  // on the next line, so no exception ever crossed connect() and the test
+  // proved nothing about CASGuard.
   sdk->setConnectAsyncHook([] { throw std::runtime_error("boom-connect"); });
+  auto failed = c->connect();
+  ASSERT_TRUE(failed.is_fail()) << "connectAsync hook 抛异常后 connect() 未返回错误";
+  EXPECT_EQ(failed.get_error()->code(), RichError::ErrorCode::INTERNAL_ERROR)
+      << "actual=" << failed.get_error()->codeName();
 
   // CASGuard 若未在异常路径复位，这里会拿到 THREAD_BUSY。
   sdk->setConnectAsyncHook(nullptr);

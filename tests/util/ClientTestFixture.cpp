@@ -157,6 +157,18 @@ void ClientTest::addTestNodes() {
     UA_Server_addVariableNode(server_, nodeId, parent, parentRef,
                               name, UA_NODEID_NUMERIC(0, UA_NS0ID_BASEDATAVARIABLETYPE),
                               attr, nullptr, nullptr);
+
+    // Same INT16 variable under a numeric NodeId (ns=1;i=20001). This is the
+    // real-server counterpart to the MockSdk numeric tests: it proves the
+    // wrapper sends UA_NODEID_NUMERIC and that open62541 accepts it on both
+    // read and write.
+    UA_NodeId numericNodeId = UA_NODEID_NUMERIC(1, kTestIntNumericId);
+    UA_QualifiedName numericName =
+        UA_QUALIFIEDNAME(1, const_cast<char *>("TestIntNumeric"));
+    UA_Server_addVariableNode(server_, numericNodeId, parent, parentRef,
+                              numericName,
+                              UA_NODEID_NUMERIC(0, UA_NS0ID_BASEDATAVARIABLETYPE),
+                              attr, nullptr, nullptr);
 }
 
 std::unique_ptr<OPC_UA_Client> ClientTest::connectTo() {

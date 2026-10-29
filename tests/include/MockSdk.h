@@ -299,12 +299,24 @@ public:
       std::lock_guard lk(requestMu_);
       lastReadNodeIdLengths_.clear();
       lastReadNamespaces_.clear();
+      lastReadNodeIdTypes_.clear();
+      lastReadNumericIds_.clear();
       for (size_t i = 0; i < req.nodesToReadSize; ++i) {
-        lastReadNodeIdLengths_.push_back(
-            req.nodesToRead[i].nodeId.identifier.string.length);
+        const UA_NodeId &nid = req.nodesToRead[i].nodeId;
+        lastReadNodeIdTypes_.push_back(nid.identifierType);
+        if (nid.identifierType == UA_NODEIDTYPE_STRING &&
+            nid.identifier.string.data) {
+          lastReadNodeIdLengths_.push_back(nid.identifier.string.length);
+          lastReadNumericIds_.push_back(0);
+        } else if (nid.identifierType == UA_NODEIDTYPE_NUMERIC) {
+          lastReadNodeIdLengths_.push_back(0);
+          lastReadNumericIds_.push_back(nid.identifier.numeric);
+        } else {
+          lastReadNodeIdLengths_.push_back(0);
+          lastReadNumericIds_.push_back(0);
+        }
         // 观察点：封装层必须把 NodeId.ns 原样传给 SDK，不得固定为 0。
-        lastReadNamespaces_.push_back(
-            req.nodesToRead[i].nodeId.namespaceIndex);
+        lastReadNamespaces_.push_back(nid.namespaceIndex);
       }
     }
 
@@ -416,16 +428,24 @@ public:
       lastWriteTypeIndices_.clear();
       lastWriteValueStrings_.clear();
       lastWriteNamespaces_.clear();
+      lastWriteNodeIdTypes_.clear();
+      lastWriteNumericIds_.clear();
       for (size_t i = 0; i < req.nodesToWriteSize; ++i) {
         const UA_WriteValue &w = req.nodesToWrite[i];
         lastWriteNamespaces_.push_back(w.nodeId.namespaceIndex);
+        lastWriteNodeIdTypes_.push_back(w.nodeId.identifierType);
         if (w.nodeId.identifierType == UA_NODEIDTYPE_STRING &&
             w.nodeId.identifier.string.data) {
           lastWriteNodeIds_.emplace_back(
               reinterpret_cast<const char *>(w.nodeId.identifier.string.data),
               w.nodeId.identifier.string.length);
+          lastWriteNumericIds_.push_back(0);
+        } else if (w.nodeId.identifierType == UA_NODEIDTYPE_NUMERIC) {
+          lastWriteNodeIds_.emplace_back();
+          lastWriteNumericIds_.push_back(w.nodeId.identifier.numeric);
         } else {
           lastWriteNodeIds_.emplace_back();
+          lastWriteNumericIds_.push_back(0);
         }
 
         int typeIndex = -1;
@@ -780,6 +800,24 @@ public:
     std::lock_guard lk(requestMu_);
     return lastWriteNamespaces_;
   }
+  // 观察点：NodeId.identifierType（UA_NODEIDTYPE_STRING / _NUMERIC）。
+  std::vector<uint32_t> lastReadNodeIdTypes() const {
+    std::lock_guard lk(requestMu_);
+    return lastReadNodeIdTypes_;
+  }
+  std::vector<uint32_t> lastWriteNodeIdTypes() const {
+    std::lock_guard lk(requestMu_);
+    return lastWriteNodeIdTypes_;
+  }
+  // 观察点：numeric NodeId 的 identifier.numeric；非 NUMERIC 项为 0。
+  std::vector<uint32_t> lastReadNumericIds() const {
+    std::lock_guard lk(requestMu_);
+    return lastReadNumericIds_;
+  }
+  std::vector<uint32_t> lastWriteNumericIds() const {
+    std::lock_guard lk(requestMu_);
+    return lastWriteNumericIds_;
+  }
 
   // 清空所有 seam（用例之间隔离）
   void resetResponseShape() {
@@ -1022,10 +1060,14 @@ private:
   mutable std::mutex requestMu_;
   std::vector<size_t> lastReadNodeIdLengths_;
   std::vector<uint32_t> lastReadNamespaces_;
+  std::vector<uint32_t> lastReadNodeIdTypes_;
+  std::vector<uint32_t> lastReadNumericIds_;
   std::vector<std::string> lastWriteNodeIds_;
   std::vector<int> lastWriteTypeIndices_;
   std::vector<std::string> lastWriteValueStrings_;
   std::vector<uint32_t> lastWriteNamespaces_;
+  std::vector<uint32_t> lastWriteNodeIdTypes_;
+  std::vector<uint32_t> lastWriteNumericIds_;
 
   std::atomic<unsigned> connectAsyncCalls_{0};
   std::atomic<UA_StatusCode> connectAsyncResult_{UA_STATUSCODE_GOOD};

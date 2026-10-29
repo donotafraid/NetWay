@@ -1,154 +1,153 @@
 # 已知限制
 
-本文只写“当前实现真的做不到 / 尚未验证”的事情，方便面试时主动交底，也方便
-后续排期。每条尽量给出应对方式。
+本文只写“当前实现真的做不到 / 尚未验证 / 有明确窗口”的事情。每条尽量给出
+影响、触发条件与应对方式；性能数字只引用带归档路径的 5 次中位数。
 
-## 1. 功能与语义限制
+## 1. 功能与语义
 
-- **只支持 STRING 型 NodeId。** `OPC_UA_Client::NodeId` 的 `id` 是
-  `std::string`，实现统一走 `UA_NODEID_STRING_ALLOC`。数字型 NodeId
-  （`UA_NODEID_NUMERIC`）目前无法表达。
-  应对：需要时给 `NodeId` 增加 variant 或 `uint32_t numericId` 字段。
-- **NodeId 不允许内嵌 `'\0'`。** `UA_NODEID_STRING_ALLOC` 内部走 `strlen`，
-  会把 `"A\0B"` 截断成 `"A"`。实现已在读、写两条路径显式拒绝并返回
-  `INVALID_ARGUMENT`，而不是静默截断（`detail/TypeTraits.h`）。
+- **NodeId 只支持 STRING 与 NUMERIC。** `OPC_UA_Client::NodeId.id` 是
+  `std::variant<std::string, uint32_t>`：
+  - `std::string` → `ns=<ns>;s=<id>`（`UA_NODEID_STRING_ALLOC`）
+  - `uint32_t` → `ns=<ns>;i=<id>`（`UA_NODEID_NUMERIC`）
+
+  GUID / ByteString 标识无法表达。数字型 NodeId 的读、写、混合批处理与真实
+  server 往返由 T163~T166 覆盖；GUID/ByteString 需要给 `NodeId` 增加 variant
+  分支并补 SDK 路径。
+- **STRING 型 NodeId 不允许内嵌 `'\0'`，也不允许空串。**
+  `UA_NODEID_STRING_ALLOC` 内部走 `strlen`，会把 `"A\0B"` 截断成 `"A"`。
+  读、写两条路径在进入 SDK 前显式拒绝并返回 `INVALID_ARGUMENT`。
+  NUMERIC 的 0 目前不做额外拒绝，由 server 决定（通常是
+  `BadNodeIdInvalid`）；如果业务需要更早失败，应在 `uaNodeIDAlloc()` 里加
+  策略。
 - **STRING 值的读、写不对称。** 读路径用 `src->length` 原样返回内嵌 `'\0'`
-  （T75 钉死）；写路径显式拒绝内嵌 `'\0'`（`detail/TypeTraits.h`），避免
-  `strlen` 截断。
+  （T75）；写路径显式拒绝内嵌 `'\0'`（`detail/TypeTraits.h`），避免
+  `strlen` 截断。这个不对称是 SDK 表示方式决定的，文档必须写清楚。
+- **只读/写 VALUE 属性。** 请求固定 `attributeId = UA_ATTRIBUTEID_VALUE`、
+  `indexRange = UA_STRING_NULL`。不支持读 NodeId/DisplayName 等其他属性，
+  不支持数组下标范围读取。
+- **没有 MethodCall / Browse / Subscription。** 当前 API 只有批量读、批量写、
+  连接/健康/生命周期管理。报警、历史数据、订阅需要另开 API 面。
 - **无最大批量上限。** `batchRead` / `batchWrite` 对元素个数没有上限，只受
-  内存与 `maxTotalWaitMs` 约束。官方 `UA_Array_new` 在超大 size 时可能失败，
-  实现在该处返回 `INTERNAL_ERROR`。工业现场建议由调用方分批，或后续在
-  `ClientConfig` 增加 `maxBatchSize` 并在进入 SDK 前拒绝。
+  内存与 `maxTotalWaitMs` 约束。`UA_Array_new` 在超大 size 时可能失败，实现
+  返回 `INTERNAL_ERROR`。工业现场建议调用方分批，或在 `ClientConfig` 增加
+  `maxBatchSize` 并在进入 SDK 前拒绝。
 - **写不自动重试。** OPC UA 写入非幂等；`batchWrite` 只尝试一次，逐项状态
   原样返回，由业务决定是否重试。读在可重试码上有 `maxRetries` 次指数退避。
 - **`disconnect()` 不是“保持断开”开关。** 断开后 `lifeState` 进入
   `RECOVERING`，看门狗会在下一个 `watchdogIntervalMs` 尝试重连；业务线程的
-  同步服务调用也可能触发 SDK 的 `connectSync()`，最终状态由看门狗收敛。
-  这正是“自愈”的设计意图。若要长期停用，请调用 `shutdown()` 或
-  `setGiveUpSignal()`。
+  同步服务调用也可能触发 SDK 的 `connectSync()`（v1.4.14
+  `src/client/ua_client.c:569-578`），最终状态由看门狗收敛。若要长期停用，
+  请调用 `shutdown()` 或 `setGiveUpSignal()`。
 - **`GIVEN_UP` 也计入 stop signal。** 一旦进入 `GIVEN_UP`，读写与 `connect()`
   都快速失败，必须 `recreateGiveUpClient()`。
+- **`recreateGiveUpClient()` 只接受 `GIVEN_UP`。** 其他状态返回
+  `NOT_GIVEN_UP`，不会隐式先 `setGiveUpSignal()`；这是为了避免业务误重建。
 
 ## 2. 阻塞与并发
 
 - **单实例串行化。** 所有 `UA_Client_*` 调用经 `m_sdkMutex` 串行；并发读写在
-  排队，吞吐不随线程数扩展。这是“多线程共享同一实例”的代价，而非缺陷。
+  排队，吞吐不随线程数线性扩展。这是“多线程共享同一实例”的代价，不是锁
+  写错。需要线性扩展时用 per-thread client 或 client pool，并接受多 session
+  的代价。
 - **看门狗空闲轮询不得阻塞。** `UA_Client_run_iterate(client, timeout)` 在
-  `timeout>0` 时会阻塞到有事件或超时；封装在它外面还持有 `m_sdkMutex`，因此
-  空闲轮询用 `timeout>0` 会把每个服务调用挡在锁外最长 `timeout` 毫秒。
-  当前实现把空闲轮询和健康探针改为 `timeout=0`，只处理已到达事件；
-  `disconnect()`/`connect()` 的恢复分支仍然允许阻塞，但只发生在看门狗
-  判定不健康时，而不是每 100ms 一次。
+  `timeout>0` 时会阻塞到有事件或超时；封装在它外面还持有 `m_sdkMutex`。
+  当前空闲轮询和健康探针用 `timeout=0`，只处理已到达事件；
+  `disconnect()`/`connect()` 的恢复分支仍然允许阻塞，但只发生在看门狗判定
+  不健康时。
 - **单次调用阻塞上界。** 预算只在每次尝试**开始前**检查：一次 `batchRead`
   最坏 ≈ `maxTotalWaitMs + 一次在途调用`，而单次在途调用还包含 SDK 内部的
-  `connectSync`，可能接近 `2 × timeoutMs`。因此 `maxTotalWaitMs` 是软预算，
-  不会抢占已经在 SDK 内的同步调用；最后一个重试点返回后也不再补一次预算检查。
-  高频健康检查请用 `isHealthy()`（只读缓存），不要用 `checkConnected()`
-  （会争抢 eventLoop 锁）。
-- **`shutdown()` 的第二个调用者立即返回 success，不等待第一个调用者 drain 完成**
-  （契约如此，测试 T77 钉死）。但析构会等待已赢得 shutdown 的调用者退出
-  `shutdownInternal()`（T150），所以“第二个调用者返回后销毁对象”不会与 drain
-  竞争；不要据此认为关闭已经完成。
+  `connectSync`，可能接近 `2 × timeoutMs`。`maxTotalWaitMs` 是软预算，不会
+  抢占已经在 SDK 内的同步调用。高频健康检查请用 `isHealthy()`（只读缓存），
+  不要用 `checkConnected()`（会争抢 eventLoop 锁）。
+- **`shutdown()` 的第二个调用者立即返回 success，不等待第一个调用者 drain
+  完成**（契约如此，T77 钉死）。但析构会等待已赢得 shutdown 的调用者退出
+  `shutdownInternal()`（T150）；不要据此认为关闭已经完成。
 - **`recreateGiveUpClient()` 在旧 Impl 收尾完成前保持 `m_recreating=true`。**
-  旧实现先把 `m_recreating` 复位、再 `old->shutdown()`，析构可能在这条尾巴
-  运行期间释放对象（T153 红）。现在析构会等到旧 Impl 的 `shutdown()` 返回；
-  代价是 recreate 期间所有业务 API 都返回 `RECREATING`，直到收尾结束。
+  析构会等到旧 Impl 的 `shutdown()` 返回，代价是 recreate 期间所有业务 API
+  返回 `RECREATING`，直到收尾结束。
 - **看门狗线程 join 无独立超时。** 依赖 `connect()` / `disconnect()` 自身的
   墙钟兜底（`2 × timeoutMs + 500ms`）与 `delayFunction()` 的分段可唤醒。
-- **公开 API 的异常约定不统一。** `create` / `createWithSdk` / `batchRead` /
-  `batchWrite` 捕获异常并返回 `Result`；`connect` / `disconnect` /
-  `checkConnected` / `isHealthy` / `checkLifeState` / `setGiveUpSignal` /
-  `recreateGiveUpClient` / `shutdown` 未捕获。走 `RealSdk` 时只有
-  `std::bad_alloc` 等极少数异常，但自定义 `ISdk`（或测试钩子）抛异常会直接
-  穿透公开 API。RAII 守卫保证不泄漏、状态机不会卡在 `CONNECTING`
-  （T135~T137），需要统一 no-throw 时应在这些入口补 `try/catch`。
+- **`connectionLost` 的清除存在一个竞争窗口。** `inactivityCallback` 在
+  重连判定窗口内置位，`TurnToRunning()` 成功后无条件清零，可能吞掉一次刚
+  发生的失联；`isHealthy()` 最多晚一个 `watchdogIntervalMs` 才报不健康。
+  修复需要给失联事件配代际号，或把清零移到 `connect()` 之前；本轮保留窗口
+  并在这里明确记录。
+- **状态三元组的 version 只有 16 位。** 单次 `getState()` 窗口内需要
+  65,536 次 `stateCallback` 才回绕，实际不可达；恶意 ISdk 可以构造该场景。
+  需要绝对防御时把 version 扩到 32 位或改用独立 tag。
+- **公开 API 已统一 no-throw，但 `ISdk` 必须配合。** 所有 public 入口捕获
+  异常并返回 `Result`，`tests/test43.cpp` 用 `static_assert(noexcept(...))`
+  钉死。自定义 `ISdk` 仍被要求不抛；`clientDelete` 有一层兜底 `try/catch`，
+  违约时可能泄漏 client 而不是 terminate。`~OPC_UA_Client` 是 best-effort，
+  锁/条件变量失败会吞掉，不会终止进程。
 - **`recreateGiveUpClient()` 的 drain 上限 2s**，超时返回
   `IN_FLIGHT_TIMEOUT`；此时旧实例保持原样，可重试。
 
 ## 3. 测试与文档边界
 
 - **MockSdk 不建模**：SDK 服务调用前的 `connectSync`、`noNewSession` 关通道、
-  `connectAsync` 的真实异步/超时、`run_iterate` 的 timeout 参数、
-  channel/session 的独立迁移。因此“断线恢复是否真的走通”必须由真实
-  server 的集成用例（T110/T116/T117）保证，不能只靠 Mock。
-- **benchmark 已提供，但不在 CI 门禁内。** `bench/` 与 `scripts/run_bench.sh`
+  `connectAsync` 的真实异步/超时、`run_iterate` 的 timeout 参数、channel/
+  session 的独立迁移。因此“断线恢复是否真的走通”必须由真实 server 的集成
+  用例（T110/T116/T117/T166）保证，不能只靠 Mock。
+- **数字 NodeId 的真实 server 覆盖只有一个变量。** T166 用
+  `ns=1;i=20001` 做 INT16 往返；没有覆盖 NUMERIC 的越界/不存在节点、复数
+  命名空间、GUID/ByteString。后者是能力缺口，不是测试缺口。
+- **benchmark 不在 CI 门禁内。** `bench/` 与 `scripts/run_slo_bench.sh`
   覆盖 8 线程 `batchRead`/`batchWrite` 的 P50/P99、断线恢复耗时分布、
   长时间 RSS 曲线。这些是观测值，需要人工跑并归档原始结果，CI 不设阈值。
-  `scripts/check_rss.py` 与 `scripts/run_netem_matrix.sh` 提供可复现的
-  PASS/FAIL 判据，但仍需人工在有 root / 长时间窗口的机器上触发。
 - **单次延迟 p99 不可复现。** 同一份代码、同一台机器，单次 8 线程 p99 可以在
-  0.9ms~28.6ms 之间波动；`bench_latency --repeats N` 的中位数才是可引用值。
-  8 线程吞吐并不随线程数线性扩展：`m_sdkMutex` 与 open62541 内部 clientMutex
-  把同步服务调用串行化，线程越多 p99 越大。2026-10-24 的 clean 归档（修复前）
-  为 t=1 p99=0.869ms、t=8 p99=147.505ms、p99.9=412.307ms。把空闲轮询与健康
-  探针改为 `timeout=0` 后，2026-10-28 复跑（WSL2、8 vCPU、独立 server 绑
-  CPU7、RelWithDebInfo、batch=16、10 万样本、5 次中位数）为：
-  t=1 calls_s=6724.2、p99=0.262ms、p99.9=0.506ms；
-  t=4 calls_s=5330.4、p99=18.360ms、p99.9=66.018ms；
-  t=8 calls_s=5146.1、p99=44.846ms、p99.9=149.195ms。
-  这组归档数据有 1.6GB 的 SDK trace 日志污染（见下一条），只能作对照。
-  去日志后同一台机器 5 次中位数（Debug 构建；不能与归档 RelWithDebInfo
-  直接比绝对值）：t=1 8770.4 calls/s、p99=0.241ms、p99.9=0.503ms；
-  t=8 共享 7032.4 calls/s、p99=3.104ms、p99.9=8.616ms；
-  t=8 per-thread client 21599.6 calls/s、p99=0.786ms、p99.9=1.055ms。
-  同构建 log=100/500 的 A/B：8T p99 7.416→3.204ms、calls/s 4657→7060，
-  stderr 28.3MB→65B。
-  **共享实例容量下限 PASS、严格线性 FAIL；per-thread client 的严格判据
-  PASS。** 共享 8T 的 0.80×1T 是单 session 串行化的结构结果；per-thread
-  client 的 3.07× 共享吞吐说明会话级并行有效，但代价是 8 条 session、
-  8 个看门狗和“单 session 写顺序”语义丢失。完整分析、PASS/FAIL 表与
-  per-thread client 判读见 [docs/benchmark.md](benchmark.md)。
-- **日志默认门槛是 WARNING，而不是“全量 trace”。** SDK 以
+  数毫秒到数十毫秒之间波动；`bench_latency --repeats N` 的中位数才是可引用值。
+  报告必须带 5 次原始文件、中位数、bootstrap CI 和构建类型。
+- **benchmark 证据必须带“二进制不旧于源码”的证明。**
+  `scripts/run_slo_bench.sh` 的 `env.txt` 记录 `bin vs src` 时间戳；发布前
+  必须确认 binary 晚于 `src/`、`include/` 的最后修改，否则结果不代表当前
+  HEAD。`bench-results/20261028_232459_slo` 就是反例：env 显示 binary
+  13:38、`ua.cpp` 23:11，且工作区有未提交改动；该归档只能作为历史对照，
+  不能作为当前源码的证据。
+- **日志默认门槛是 WARNING，不是“全量 trace”。** SDK 以
   `UA_LOGLEVEL=100` 编译；如果 `customLog()` 不按 `UA_LogLevel` 过滤，
-  一次 10 万次批量读会写出约 55MB stderr。2026-10-28 的 30 个 SLO run
-  因此产生约 1.6GB 日志，并且把日志 I/O 混进 8T 尾延迟。现在
+  一次 10 万次批量读会写出约 55MB stderr。现在
   `ClientConfig::logLevel` 默认 `LOG_WARNING`，`bench/` 用 `LOG_ERROR`；
   排查时显式调到 `LOG_INFO`/`LOG_DEBUG`，不要在产线默认打开。
 - **per-thread client 没有每线程绑核，也不需要把它当成代码优化项。**
-  当前 `8t_ptc` 只用了 `taskset -c 0-7` 允许迁移，去日志后 p99=0.786ms、
-  21599.6 calls/s，严格判据已经通过。8 个 client + 8 个看门狗 + server
-  在 8 vCPU 上无法一对一绑定；要降低线程成本，优先做“所有 client 共享
-  一个 watchdog”或固定 client 池，而不是绑核。绑核属于 benchmark 控制
-  变量；详见 [docs/benchmark.md](benchmark.md) 第 6 节。
+  `8t_ptc` 只用 `taskset -c 0-7` 允许迁移；在 valid 的 5 次中位数里
+  p99 已在亚毫秒级，严格判据通过。8 个 client + 8 个看门狗 + server 在
+  8 vCPU 上无法一对一绑定；要降低线程成本，优先做“所有 client 共享一个
+  watchdog”或固定 client 池，而不是绑核。绑核属于 benchmark 控制变量。
 - **RSS soak 必须让 server 跑在独立进程。** `bench_rss` 读的是自身
   `/proc/self/statm`；若用默认的 in-process server，server 的分配会混进
-  “客户端”曲线。`scripts/run_bench.sh` 现在用 `bench_server` 把 server 放到
+  “客户端”曲线。`scripts/run_bench.sh` 用 `bench_server` 把 server 放到
   子进程，`bench_rss --endpoint` 只测客户端。
 - **真实网络抖动需要人工注入。** `scripts/netem_faults.sh` 用 `tc netem` /
-  `iptables` 在回环上制造高延迟、丢包与半开连接；`scripts/run_netem_matrix.sh`
-  把四种故障串成一次可判定的矩阵。数据来自本机回环，不代表真实工业现场的
-  多跳网络。
-- **`bench_rss` 的长时间曲线依赖进程存活。** 机器重启 / OOM 会截断曲线，
-  归档时保留 CSV 原始数据；`check_rss.py --min-hours` 用于拒绝被截断的曲线。
+  `iptables` 在回环上制造高延迟、丢包与半开连接；数据来自本机回环，不代表
+  真实工业现场的多跳网络。
+- **`bench_rss` 的长时间曲线依赖进程存活。** 机器重启 / OOM 会截断曲线；
+  归档时保留 CSV 原始数据，`check_rss.py --min-hours` 用于拒绝被截断的曲线。
   `run_bench.sh` 的 soak 段是前台进程，会话退出会被 `trap` 连同独立 server
-  一起终止（实测一次 24h soak 在 43 min 处被截断）。长跑必须用
-  `setsid nohup ... < /dev/null &` 脱离终端，跑完再执行
-  `check_rss.py --min-hours 23.5`；`run_bench.sh` 现已自动传入该阈值并归档
-  `rss_check.txt`，失败时脚本非零退出。
-- **benchmark 的 stdout / 历史产物。** 当前 `bench/bench_common.h` 已把
-  open62541 内建 server 的 logger 重定向到 stderr；新跑出的
-  `bench_latency` / `bench_recovery` stdout 只含 `run=` / `median` /
-  `*_ms` 行。已归档的旧文件（例如 2026-10 之前生成的
-  `bench-results/latency_8thread_*.txt`）仍混有 server 日志，解析时继续用
-  `grep '^median '`；不要把旧文件的首行当作机器可读格式。
+  一起终止；长跑必须用 `setsid nohup ... < /dev/null &` 脱离终端。
+- **归档历史。** 旧文档引用的 `bench-results/20261028_101222_slo/` 在当前
+  checkout 中不存在，不能作为可审计证据；现存 `20261028_133818_slo/` 是
+  有效的 5 次中位数（源码 12:16、二进制 13:38），`20261028_232459_slo/`
+  的二进制早于 23:11 的源码改动，只能作历史对照。当前源码的复跑应以
+  `docs/benchmark.md` 的命令重新生成带时间戳的归档。
+- **旧 `median.txt` 不含 errors。** 原始 run 文件里有 `errors=0`；只看旧
+  中位数无法发现某一次 run 出错。新脚本在汇总前拒绝 `errors!=0`，并把
+  `errors: 0` 写进 median；`check_bench_slo.py --require-errors` 会对缺少
+  该字段的旧归档明确报错。
 
 ## 4. 高延迟链路上的连接预算
 
 `tc netem delay 200ms`（回环上单程 200ms，RTT ≈ 400ms）时，`create()` 在约
-5s 后返回 `CONNECT_TIMEOUT`：已归档的 `bench-results/netem_200ms/`
-`latency_delay200.txt` 末尾即为 `create failed: CONNECT_TIMEOUT`。
-
-根因是**预算，不是竞态**：`bench_latency` 固定用 `PROFILE_LOCAL`
-（`timeoutMs = 5000`），而 `Impl::connect()` 把这个 `timeoutMs` 当作整条连接
-握手（TCP + OPN + CreateSession + ActivateSession，若干次往返）的总预算；
-400ms RTT 下握手所需的往返数超过 5s。同一份代码在 50ms 单程（RTT ≈ 100ms）
-下稳定 PASS（见 `bench-results/netem/summary.txt`）。
+5s 后返回 `CONNECT_TIMEOUT`。根因是**预算，不是竞态**：`bench_latency` 固定用
+`PROFILE_LOCAL`（`timeoutMs = 5000`），而 `Impl::connect()` 把这个
+`timeoutMs` 当作整条连接握手（TCP + OPN + CreateSession + ActivateSession，
+若干次往返）的总预算；400ms RTT 下握手所需的往返数超过 5s。同一份代码在
+50ms 单程（RTT ≈ 100ms）下稳定 PASS（见 `bench-results/netem/summary.txt`）。
 
 应对：高 RTT 链路用 `PROFILE_REMOTE`（`timeoutMs = 15000`）或显式调大
 `timeoutMs`；`bench_latency` 目前只支持默认 `PROFILE_LOCAL`，需要在注入
 高延迟时加一个 `--profile` 开关。该结论来自本机回环注入，不代表真实多跳
-网络，现场需复核。`bench-results/netem_200ms/` 是这次失败样本，已被 50ms 的
-`bench-results/netem/` 取代，建议删除或改名归档，避免把失败样本当成当前能力。
+网络，现场需复核。
 
 ## 5. 错误码约定
 
@@ -156,4 +155,6 @@
   `ALREADY_TERMINATED`（语义不同，见 `ua.cpp` 注释）。
 - `RECREATING` / `THREAD_BUSY` / `ALREADY_TERMINATED` 是并发窗口的可重试结果，
   不表示请求本身失败。
-- `what()` 仅用于日志与诊断，分支判断一律用 `code()`。
+- `rawStatus` / `what()` 仅用于日志与诊断，分支判断一律用 `code()`。
+- 逐项状态用 `UA_StatusCode_isGood()`（`include/open62541/types.h:163-176`），
+  不与其他值做等值比较：`GOOD_CLAMPED` 等 GoodInfo 仍是成功。

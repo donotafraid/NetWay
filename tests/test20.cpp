@@ -22,21 +22,23 @@ static_assert(
     std::is_same_v<
         decltype(&OPC_UA_Client::batchRead),
         Result<std::vector<OPC_UA_Client::ReadResult>, RichError> (
-            OPC_UA_Client::*)(const std::vector<OPC_UA_Client::ReadValue> &)>,
+            OPC_UA_Client::*)(const std::vector<OPC_UA_Client::ReadValue> &)
+            noexcept>,
     "batchRead 公共签名不得暴露 UA_* 类型");
 
 static_assert(
     std::is_same_v<
         decltype(&OPC_UA_Client::batchWrite),
         Result<std::vector<OPC_UA_Client::WriteResult>, RichError> (
-            OPC_UA_Client::*)(const std::vector<OPC_UA_Client::WriteValue> &)>,
+            OPC_UA_Client::*)(const std::vector<OPC_UA_Client::WriteValue> &)
+            noexcept>,
     "batchWrite 公共签名不得暴露 UA_* 类型");
 
 static_assert(
     std::is_same_v<
         decltype(&OPC_UA_Client::create),
         Result<std::unique_ptr<OPC_UA_Client>, RichError> (*)(
-            const std::string &, ClientConfig, bool)>,
+            const std::string &, ClientConfig, bool) noexcept>,
     "create 公共签名不得暴露 UA_* 类型");
 
 // ============================================================

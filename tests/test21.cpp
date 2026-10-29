@@ -411,27 +411,27 @@ TEST(Client, T55_DomainValueTypes_RuleOfFive) {
 // ============================================================
 static_assert(
     std::is_same_v<decltype(&OPC_UA_Client::connect),
-                   Result<Unit, RichError> (OPC_UA_Client::*)()>,
+                   Result<Unit, RichError> (OPC_UA_Client::*)() noexcept>,
     "connect 公共签名应为 Result<Unit, RichError>()");
 
 static_assert(
     std::is_same_v<decltype(&OPC_UA_Client::disconnect),
-                   Result<Unit, RichError> (OPC_UA_Client::*)()>,
+                   Result<Unit, RichError> (OPC_UA_Client::*)() noexcept>,
     "disconnect 公共签名应为 Result<Unit, RichError>()");
 
 static_assert(
     std::is_same_v<decltype(&OPC_UA_Client::shutdown),
-                   Result<Unit, RichError> (OPC_UA_Client::*)()>,
+                   Result<Unit, RichError> (OPC_UA_Client::*)() noexcept>,
     "shutdown 公共签名应为 Result<Unit, RichError>()");
 
 static_assert(
     std::is_same_v<decltype(&OPC_UA_Client::recreateGiveUpClient),
-                   Result<Unit, RichError> (OPC_UA_Client::*)()>,
+                   Result<Unit, RichError> (OPC_UA_Client::*)() noexcept>,
     "recreateGiveUpClient 公共签名应为 Result<Unit, RichError>()");
 
 static_assert(
     std::is_same_v<decltype(&OPC_UA_Client::checkLifeState),
-                   Result<LifeState, RichError> (OPC_UA_Client::*)()>,
+                   Result<LifeState, RichError> (OPC_UA_Client::*)() noexcept>,
     "checkLifeState 公共签名应为 Result<LifeState, RichError>()");
 
 static_assert(

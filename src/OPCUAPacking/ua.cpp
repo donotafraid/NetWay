@@ -321,11 +321,13 @@ public:
       : m_watchdogThread(std::move(watchdogThread)), m_watchdogCv(watchdogCv) {}
 
   ~ThreadGuard() {
-    if (m_watchdogThread && m_watchdogThread->joinable()) {
-      m_watchdogCv.notify_all();
-      // 与 joinWatchdog() 保持同一防御：绝不 join 当前线程。
-      // 若析构线程恰好就是看门狗线程，无条件 join 会抛 std::system_error，
-      // 而析构函数中抛出异常即 std::terminate。
+    if (!m_watchdogThread || !m_watchdogThread->joinable())
+      return;
+    m_watchdogCv.notify_all();
+    // 与 joinWatchdog() 保持同一防御：绝不 join 当前线程。
+    // 若析构线程恰好就是看门狗线程，无条件 join 会抛 std::system_error，
+    // 而析构函数中抛出异常即 std::terminate。
+    try {
       if (m_watchdogThread->get_id() != std::this_thread::get_id()) {
         m_watchdogThread->join();
       } else {
@@ -334,6 +336,9 @@ public:
         // The loop has already exited (we are in ~Impl), so detaching is safe.
         m_watchdogThread->detach();
       }
+    } catch (...) {
+      if (m_watchdogThread->joinable())
+        m_watchdogThread->detach();
     }
   }
 
@@ -481,8 +486,6 @@ RichError::ErrorCode toRichErrorCode(DisconnectErrorState s) {
 struct OPC_UA_Client::Impl
     : public std::enable_shared_from_this<OPC_UA_Client::Impl> {
 
-  static constexpr int VER_SHIFT = 56;
-  static constexpr uint64_t VER_MASK = 0xFFull << VER_SHIFT;
   using UA_ClientPtr = std::shared_ptr<UA_Client>;
   UA_ClientPtr m_impl ;
   std::shared_ptr<OPCUAPacking::internal::ISdk> m_sdk;
@@ -503,12 +506,13 @@ struct OPC_UA_Client::Impl
   std::atomic<bool> m_shutdown{false}; // 析构运行状态，shutdown设置，没有重置
   std::atomic<bool> connectionLost{
       false}; // 断开连接标志,回调函数里设置，在看门狗里重连中重置
+  // 三元组打包成单个 64 位快照：[63:48] version，[47:16] status，
+  // [15:8] channel，[7:0] session。读者一次 load 即得到一致组合；写者用
+  // version 做 CAS 冲突检测（见 updatePacked / tryPublishIfUnchanged）。
   std::atomic<uint64_t> state_packed{packState(UA_STATUSCODE_BADNOTCONNECTED,
                                                UA_SECURECHANNELSTATE_CLOSED,
                                                UA_SESSIONSTATE_CLOSED, 0)};
 
-  std::atomic<uint64_t> m_stateEpoch{0};
-  std::mutex m_stateWriteMx;
   std::atomic<bool> m_stop{
       false}; // shutdown()保护变量，避免其他因素导致shutdown()未被调用
   std::mutex m_taskCvMx; // 专门保护任务计数和条件变量
@@ -619,7 +623,7 @@ struct OPC_UA_Client::Impl
   //   - 实际断开由 ~Impl → doCleanup → m_impl.reset() → UA_Client_delete 完成。
   //   - 断开时机取决于最后一个 UA_ClientPtr 的释放时机，可能晚于 shutdown()
   //   返回。
-  void shutdown();
+  void shutdown() noexcept;
   // 置位 + notify；实际断开由 ~Impl → doCleanup → UA_Client_delete 完成
   void signalShutdown();
   // 最大阻塞时间 = joinWatchdog 阻塞时间 + max(timeoutMs, 2×watchdogIntervalMs)
@@ -706,8 +710,13 @@ struct OPC_UA_Client::UA_ClientDeleter {
 
   void operator()(UA_Client *c) const noexcept {
     if (c && sdk) {
-      // 此期间即使 clientContext 被回调读取，ctx 也一定活着
-      sdk->clientDelete(c);
+      // 此期间即使 clientContext 被回调读取，ctx 也一定活着。
+      // ISdk::clientDelete 的契约是不抛；若自定义实现违约，这里吞掉异常
+      // 以避免 std::shared_ptr 的 noexcept 析构直接 terminate。
+      try {
+        sdk->clientDelete(c);
+      } catch (...) {
+      }
     }
     // deleter 作用域结束后 ctx 才释放。
     // 如果 Impl 早死、此处是最后一个引用，CallbackContext 在此销毁——
@@ -993,16 +1002,17 @@ OPC_UA_Client::Impl::batchWrite(
   for (auto &writeNode : batchWriteNodes) {
     auto &node = request.nodesToWrite[index];
     UA_WriteValue_init(&node);
-    if (node.attributeId != UA_ATTRIBUTEID_VALUE) {
-      {
-        auto result = uaNodeIDAlloc(writeNode.node, node.nodeId);
-        if (result.is_fail()) {
-          return Result<std::vector<OPC_UA_Client::WriteResult>,
-                        RichError>::error(*result.get_error());
-        }
-      }
-      node.attributeId = UA_ATTRIBUTEID_VALUE;
+
+    // NodeId is independent of the value conversion: allocate it for every
+    // item (STRING and NUMERIC). The previous version keyed this on
+    // node.attributeId, which UA_WriteValue_init() zeroes, and then rejected
+    // numeric NodeIds with a string-only check.
+    auto nodeResult = uaNodeIDAlloc(writeNode.node, node.nodeId);
+    if (nodeResult.is_fail()) {
+      return Result<std::vector<OPC_UA_Client::WriteResult>, RichError>::error(
+          *nodeResult.get_error());
     }
+    node.attributeId = UA_ATTRIBUTEID_VALUE;
 
     auto writeResult = opcua::writeConversion::dispatch(
         writeNode.node.ns, writeNode.node.id, writeNode.node.dataType, node,
@@ -1011,18 +1021,6 @@ OPC_UA_Client::Impl::batchWrite(
       return Result<std::vector<OPC_UA_Client::WriteResult>, RichError>::error(
           RichError{writeResult.get_error()->code(),
                     writeResult.get_error()->what()});
-    }
-    if (node.nodeId.identifierType != UA_NODEIDTYPE_STRING ||
-        node.nodeId.identifier.string.data == nullptr) {
-      return Result<std::vector<OPC_UA_Client::WriteResult>, RichError>::error(
-          RichError{RichError::ErrorCode::INTERNAL_ERROR,
-                    "batchWrite: UA_NODEID_STRING_ALLOC failed for ns=" +
-                        std::to_string(writeNode.node.ns)});
-    }
-    if (node.nodeId.identifier.string.length == 0) {
-      return Result<std::vector<OPC_UA_Client::WriteResult>, RichError>::error(
-          RichError{RichError::ErrorCode::INVALID_ARGUMENT,
-                    "batchWrite: NodeId string length is 0"});
     }
     ++index;
   }
@@ -1409,12 +1407,20 @@ Result<Unit, DisconnectErrorState> OPC_UA_Client::Impl::disconnect() {
   return Result<Unit, DisconnectErrorState>::success(Unit{});
 }
 
-void OPC_UA_Client::Impl::shutdown() {
-  signalShutdown();
-  joinWatchdog();
+void OPC_UA_Client::Impl::shutdown() noexcept {
+  // Best-effort teardown: this runs from ~Impl, which is implicitly noexcept.
+  // Lock/condition-variable failures must not escape and call std::terminate.
+  try {
+    signalShutdown();
+  } catch (...) {
+  }
+  try {
+    joinWatchdog();
+  } catch (...) {
+  }
   m_stop.store(true, std::memory_order_release);
 
-  {
+  try {
     std::unique_lock<std::mutex> lk(m_taskCvMx);
 
     auto timeoutMs =
@@ -1430,6 +1436,7 @@ void OPC_UA_Client::Impl::shutdown() {
           "forcing cleanup (counter={})",
           timeoutMs, m_taskCounter);
     }
+  } catch (...) {
   }
 }
 
@@ -1829,7 +1836,8 @@ void OPC_UA_Client::Impl::doWatchdogDecision(std::shared_ptr<Impl> ImplPtr) {
       if (error == ConnectErrorState::THREADBUSY) {
         return;
       }
-      std::cout<<"error: ";
+      spdlog::warn("watchdog: reconnect failed (state={})",
+                   static_cast<int>(error));
       TurnToRecovring();
     } else {
       TurnToRunning();
@@ -1917,7 +1925,7 @@ void OPC_UA_Client::Impl::doWatchdogDecision(std::shared_ptr<Impl> ImplPtr) {
 
 Result<std::unique_ptr<OPC_UA_Client>, RichError>
 OPC_UA_Client::create(const std::string &endpointUrl, ClientConfig config,
-                      bool useDefault) {
+                      bool useDefault) noexcept {
   try {
     // new 失败会抛出 std::bad_alloc，由外层的 catch 捕获
     auto client = std::unique_ptr<OPC_UA_Client>(
@@ -1973,7 +1981,7 @@ OPC_UA_Client::create(const std::string &endpointUrl, ClientConfig config,
 
 Result<std::unique_ptr<OPC_UA_Client>, RichError>
 OPC_UA_Client::createWithSdk(std::shared_ptr<OPCUAPacking::internal::ISdk> sdk,
-                             const std::string &url, ClientConfig cfg,bool useDefault,bool enableWatchDog) {
+                             const std::string &url, ClientConfig cfg,bool useDefault,bool enableWatchDog) noexcept {
   try {
     if (!sdk) {
       return Result<std::unique_ptr<OPC_UA_Client>, RichError>::error(RichError{
@@ -2063,8 +2071,8 @@ OPC_UA_Client::OPC_UA_Client(const std::string endpointUrl, ClientConfig config,
   }
 }
 
-OPC_UA_Client::~OPC_UA_Client() {
-  {
+OPC_UA_Client::~OPC_UA_Client() noexcept {
+  try {
     std::unique_lock<std::mutex> lock(m_recreateSync->m_recreateLock);
     m_recreateSync->m_terminated.store(true,std::memory_order_release);
     // 必须等到进行中的 recreateGiveUpClient() 真正退出后再析构：
@@ -2078,11 +2086,18 @@ OPC_UA_Client::~OPC_UA_Client() {
       return !m_recreateSync->m_recreating &&
              m_recreateSync->m_shutdownInFlight == 0;
     });
+  } catch (...) {
+    // Destructor must not throw. A failed wait still leaves m_terminated set,
+    // so no new API can enter; teardown below remains best-effort.
   }
-  shutdownInternal(); // 无条件清理,绕过业务早退
+  try {
+    shutdownInternal(); // 无条件清理,绕过业务早退
+  } catch (...) {
+    // Destructor must not throw. The Impl teardown is best-effort.
+  }
 }
 
-Result<Unit, RichError> OPC_UA_Client::shutdown() {
+Result<Unit, RichError> OPC_UA_Client::shutdown() noexcept {
   {
     std::lock_guard<std::mutex> lock(m_recreateSync->m_recreateLock);
     if (m_recreateSync->m_recreating.load(std::memory_order_acquire)) {
@@ -2149,7 +2164,7 @@ bool OPC_UA_Client::getRecreatingStatus() {
     return m_recreateSync->m_recreating.load(std::memory_order_acquire);
 }
 
-Result<Unit, RichError> OPC_UA_Client::connect() {
+Result<Unit, RichError> OPC_UA_Client::connect() noexcept {
   std::shared_ptr<Impl> ImplPtr;
   ApiLease lease{m_recreateSync};
   if (!lease.isActive()) {
@@ -2204,7 +2219,7 @@ Result<Unit, RichError> OPC_UA_Client::connect() {
   }
 }
 
-Result<Unit, RichError> OPC_UA_Client::disconnect() {
+Result<Unit, RichError> OPC_UA_Client::disconnect() noexcept {
   std::shared_ptr<Impl> ImplPtr;
   ApiLease lease{m_recreateSync};
 
@@ -2260,7 +2275,7 @@ Result<Unit, RichError> OPC_UA_Client::disconnect() {
   }
 }
 
-Result<Unit, RichError> OPC_UA_Client::checkConnected() {
+Result<Unit, RichError> OPC_UA_Client::checkConnected() noexcept {
   std::shared_ptr<Impl> ImplPtr;
   ApiLease lease{m_recreateSync};
 
@@ -2332,7 +2347,7 @@ Result<Unit, RichError> OPC_UA_Client::checkConnected() {
   }
 }
 
-Result<Unit, RichError> OPC_UA_Client::isHealthy() {
+Result<Unit, RichError> OPC_UA_Client::isHealthy() noexcept {
   std::shared_ptr<Impl> ImplPtr;
   ApiLease lease{m_recreateSync};
 
@@ -2394,7 +2409,7 @@ Result<Unit, RichError> OPC_UA_Client::isHealthy() {
   }
 }
 
-Result<Unit, RichError> OPC_UA_Client::recreateGiveUpClient() {
+Result<Unit, RichError> OPC_UA_Client::recreateGiveUpClient() noexcept {
   {
     std::lock_guard<std::mutex> lock(m_recreateSync->m_recreateLock);
 
@@ -2468,9 +2483,12 @@ Result<Unit, RichError> OPC_UA_Client::recreateGiveUpClient() {
   try {
     std::shared_ptr<CallbackContext> callbackContext_ =
         std::make_shared<CallbackContext>();
+    // Delete with the same ISdk instance that created the client. The
+    // recreate path normally has sdkPtr == m_sdkForRecreate, but keeping the
+    // pair explicit prevents a mismatched create/delete if that ever changes.
     OPC_UA_Client::Impl::UA_ClientPtr raw(
         sdkPtr->clientNew(nullptr),
-        UA_ClientDeleter{m_recreateSync->m_sdkForRecreate, callbackContext_});
+        UA_ClientDeleter{sdkPtr, callbackContext_});
     if (!raw) {
       std::lock_guard<std::mutex> lock(m_recreateSync->m_lock);
       return Result<Unit, RichError>::error(
@@ -2478,8 +2496,8 @@ Result<Unit, RichError> OPC_UA_Client::recreateGiveUpClient() {
     }
 
     auto newImpl =
-        std::make_shared<Impl>(effectiveConfig, m_recreateSync->m_endpointUrl, std::move(raw),
-                               callbackContext_, m_recreateSync->m_sdkForRecreate);
+        std::make_shared<Impl>(effectiveConfig, m_recreateSync->m_endpointUrl,
+                               std::move(raw), callbackContext_, sdkPtr);
 
     // 4. 完整初始化新 Impl（配置 → 连接 → 启动看门狗）
     //    这些操作可能耗时，但此时不持锁，不会阻塞其他线程
@@ -2552,7 +2570,7 @@ Result<Unit, RichError> OPC_UA_Client::recreateGiveUpClient() {
   return Result<Unit, RichError>::success(Unit{});
 }
 
-Result<LifeState, RichError> OPC_UA_Client::checkLifeState() {
+Result<LifeState, RichError> OPC_UA_Client::checkLifeState() noexcept {
   std::shared_ptr<Impl> ImplPtr;
   ApiLease lease{m_recreateSync};
 
@@ -2602,7 +2620,7 @@ Result<LifeState, RichError> OPC_UA_Client::checkLifeState() {
   }
 }
 
-Result<Unit, RichError> OPC_UA_Client::setGiveUpSignal() {
+Result<Unit, RichError> OPC_UA_Client::setGiveUpSignal() noexcept {
   std::shared_ptr<Impl> ImplPtr;
   ApiLease lease{m_recreateSync};
 
@@ -2673,7 +2691,7 @@ void OPC_UA_Client::pumpWatchdogForTest() {
 // 该调用全程持有 SDK 内部互斥锁。若多线程并发，将在此处排队。
 // 最坏等待时间 = 重试次数 × (同步重连 + timeoutMs)。
 Result<std::vector<OPC_UA_Client::ReadResult>, RichError>
-OPC_UA_Client::batchRead(const std::vector<ReadValue> &batchReadNodes) {
+OPC_UA_Client::batchRead(const std::vector<ReadValue> &batchReadNodes) noexcept {
   try {
     std::shared_ptr<Impl> ImplPtr;
     ApiLease lease{m_recreateSync};
@@ -2728,7 +2746,7 @@ OPC_UA_Client::batchRead(const std::vector<ReadValue> &batchReadNodes) {
 }
 
 Result<std::vector<OPC_UA_Client::WriteResult>, RichError>
-OPC_UA_Client::batchWrite(const std::vector<WriteValue> &batchWriteNodes) {
+OPC_UA_Client::batchWrite(const std::vector<WriteValue> &batchWriteNodes) noexcept {
   try {
     std::shared_ptr<Impl> ImplPtr;
     ApiLease lease{m_recreateSync};
@@ -2977,14 +2995,14 @@ Result<Unit,RichError> OPC_UA_Client::Impl::uaNodeIDAlloc(const NodeId &id, UA_N
     if (strID.empty()) {
       return Result<Unit,RichError>::error(
           RichError{RichError::ErrorCode::INVALID_ARGUMENT,
-                    "batchRead: node id is empty for ns=" +
+                    "NodeId: id is empty for ns=" +
                         std::to_string(id.ns)});
     }
 
     if (TypeTraits::containsEmbeddedNul(strID)) {
       return   Result<Unit,RichError>::error(
           RichError{RichError::ErrorCode::INVALID_ARGUMENT,
-                    "batchRead: NodeId contains embedded NULL"});
+                    "NodeId: contains embedded NULL"});
     }
 
     nodeId = UA_NODEID_STRING_ALLOC(id.ns,
@@ -2994,13 +3012,13 @@ Result<Unit,RichError> OPC_UA_Client::Impl::uaNodeIDAlloc(const NodeId &id, UA_N
         nodeId.identifier.string.data == nullptr) {
       return Result<Unit, RichError>::error(
           RichError{RichError::ErrorCode::INTERNAL_ERROR,
-                    "batchRead: UA_NODEID_STRING_ALLOC failed for ns=" +
+                    "NodeId: UA_NODEID_STRING_ALLOC failed for ns=" +
                         std::to_string(id.ns)});
     }
     if (nodeId.identifier.string.length == 0) {
       return Result<Unit, RichError>::error(
           RichError{RichError::ErrorCode::INVALID_ARGUMENT,
-                    "batchRead: NodeId string length is 0"});
+                    "NodeId: string length is 0"});
     }
 
     return Result<Unit, RichError>::success(Unit{});

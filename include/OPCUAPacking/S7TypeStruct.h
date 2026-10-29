@@ -49,8 +49,8 @@ enum class S7DataType
 // OPC_UA_Client. ARRAY / STRUCT / UNKNOWN have no representation in
 // NormalDataType and throw std::invalid_argument; callers must handle those
 // before asking for a default. Defined inline so a consumer of this public
-// header does not have to link the PLC library (the previous out-of-line
-// definition lived in src/PLC/TransformS7AndOPCUA.cpp).
+// header needs no external definition (the header is usable from an
+// OPCUAPacking-only translation unit).
 inline NormalDataType default_value_for(S7DataType type) {
   switch (type) {
   case S7DataType::BOOL:

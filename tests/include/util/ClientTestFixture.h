@@ -36,6 +36,10 @@ protected:
 
   static std::atomic<uint16_t> g_nextPort;
 
+  // Fixture-defined numeric NodeId (ns=1;i=20001) for the numeric-NodeId
+  // round-trip test. String NodeIds are ns=1;s=TestInt.
+  static constexpr uint32_t kTestIntNumericId = 20001;
+
   // 使用 RAII 包装器
   struct ServerDeleter ;
 

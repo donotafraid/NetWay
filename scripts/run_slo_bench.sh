@@ -39,6 +39,20 @@ C8_CPUS=${C8_CPUS:-0-7}
   echo "RUNS=$RUNS OPS=$OPS BATCH=$BATCH SRV_CPUS=$SRV_CPUS RATE_80=$RATE_80"
 } > "$OUT/env.txt" 2>&1
 
+# ---- 证据门禁：binary 必须不旧于源码 ----
+# 2026-10-28 23:24 的归档就是因为 binary(13:38) 早于 ua.cpp(23:11)，结果
+# 被误当成当前源码的证据。这里在跑之前直接拒绝，避免再产生不可审计的归档。
+for BIN in "$BIN_LAT" "$BIN_SRV"; do
+  STALE_SRC=$(find src include -type f \( -name '*.cpp' -o -name '*.h' -o -name '*.hpp' \) \
+      -newer "$BIN" -print -quit 2>/dev/null || true)
+  if [ -n "$STALE_SRC" ]; then
+    echo "error: $BIN is older than source: $STALE_SRC" >&2
+    echo "       rebuild (cmake --build build-bench --target bench_latency bench_server -j)" >&2
+    echo "       or set BIN_LAT/BIN_SRV to a fresh build" >&2
+    exit 4
+  fi
+done
+
 # ---- 启动独立 server ----
 taskset -c "$SRV_CPUS" "$BIN_SRV" --port "$SRV_PORT" > "$OUT/server.log" 2>&1 &
 SRV_PID=$!
@@ -78,6 +92,13 @@ run_one 8t_r80  "$C8_CPUS" 8 "$RATE_80"
 run_one 8t_ptc  "$C8_CPUS" 8 0 --per-thread-client
 run_one 8t_ptc_r80 "$C8_CPUS" 8 "$RATE_80_PTC" --per-thread-client
 
+# ---- errors 门禁：任何一次 run 有 errors>0 都不允许进入 median ----
+if grep -h 'errors=' "$OUT"/*_run*.txt 2>/dev/null | grep -qv 'errors=0'; then
+  echo "error: at least one benchmark run reported errors!=0" >&2
+  grep -H 'errors=' "$OUT"/*_run*.txt | grep -v 'errors=0' >&2 || true
+  exit 5
+fi
+
 # ---- 中位数汇总（动态发现所有 label）----
 med() { sort -n | awk '{a[NR]=$1} END{if(NR%2)print a[(NR+1)/2];else print (a[NR/2]+a[NR/2+1])/2}'; }
 LABELS=$(ls "$OUT"/*_run1.txt 2>/dev/null | xargs -n1 basename | sed 's/_run1.txt//' | sort)
@@ -90,6 +111,9 @@ LABELS=$(ls "$OUT"/*_run1.txt 2>/dev/null | xargs -n1 basename | sed 's/_run1.tx
     done
     echo -n "calls_s: "
     grep -ho "calls_s=[0-9.]*" "$OUT/${label}_run"*.txt | cut -d= -f2 | med
+    echo -n "errors: "
+    grep -ho "errors=[0-9]*" "$OUT/${label}_run"*.txt | cut -d= -f2 |
+      awk '{s+=$1} END {print s+0}'
     echo
   done
 } | tee "$OUT/median.txt"
