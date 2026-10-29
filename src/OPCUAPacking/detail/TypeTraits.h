@@ -119,7 +119,7 @@ namespace opcua::writeTraits {
 
 template <typename T, int TYPE_ENUM> struct UATypeTraitsBase {
   static const UA_DataType *uaType() { return &UA_TYPES[TYPE_ENUM]; }
-  static Result<Unit, RichError> convert(int nameSpace,const std::string &nodeID,
+  static Result<Unit, RichError> convert(int nameSpace,const std::variant<std::string,uint32_t> &nodeID,
                                         const S7DataType &dataType,
                                         UA_WriteValue &destValue,
                                         const ValueType &VariableItem) {
@@ -131,20 +131,6 @@ template <typename T, int TYPE_ENUM> struct UATypeTraitsBase {
           RichError::ErrorCode::TYPE_MISMATCH,
           "writeTraits: declared S7DataType does not match the ValueType "
           "alternative"});
-    }
-
-    //  INIT WRITE UA_VALUE
-    if (destValue.attributeId != UA_ATTRIBUTEID_VALUE) {
-      {
-        if (TypeTraits::containsEmbeddedNul(nodeID)) {
-          return Result<Unit, RichError>::error(
-              RichError{RichError::ErrorCode::INVALID_ARGUMENT,
-                        "writeTraits: NodeId contains embedded NULL"});
-        }
-        destValue.nodeId = UA_NODEID_STRING_ALLOC(nameSpace,
-                                                  nodeID.data());
-      }
-      destValue.attributeId = UA_ATTRIBUTEID_VALUE;
     }
 
     //  COPY RESOURCE TO UA_VARIANT OF UA_WriteValue
@@ -171,7 +157,7 @@ template <typename T, int TYPE_ENUM> struct UATypeTraitsBase {
 template <> struct UATypeTraitsBase<std::string, UA_TYPES_STRING> {
   static const UA_DataType *uaType() { return &UA_TYPES[UA_TYPES_STRING]; }
   static Result<Unit, RichError>
-  convert(int nameSpace, const std::string &nodeID, const S7DataType &dataType,
+  convert(int nameSpace, const std::variant<std::string,uint32_t> &nodeID, const S7DataType &dataType,
           UA_WriteValue &destValue, const ValueType &VariableItem) {
     std::string value{""};
     if (const std::string *pValue = std::get_if<std::string>(&VariableItem)) {
@@ -181,19 +167,6 @@ template <> struct UATypeTraitsBase<std::string, UA_TYPES_STRING> {
           RichError::ErrorCode::TYPE_MISMATCH,
           "writeTraits: declared S7DataType does not match the ValueType "
           "alternative"});
-    }
-
-    //  INIT WRITE UA_VALUE
-    if (destValue.attributeId != UA_ATTRIBUTEID_VALUE) {
-      {
-        if (TypeTraits::containsEmbeddedNul(nodeID)) {
-          return Result<Unit, RichError>::error(
-              RichError{RichError::ErrorCode::INVALID_ARGUMENT,
-                        "writeTraits: NodeId contains embedded NULL"});
-        }
-        destValue.nodeId = UA_NODEID_STRING_ALLOC(nameSpace, nodeID.data());
-      }
-      destValue.attributeId = UA_ATTRIBUTEID_VALUE;
     }
 
     if (value.find('\0') != std::string::npos) {

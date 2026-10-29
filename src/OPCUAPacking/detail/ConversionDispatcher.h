@@ -55,7 +55,7 @@ inline Result<Unit, RichError> dispatch(S7DataType type,
 namespace opcua::writeConversion {
 template <S7DataType S7type>
 inline Result<Unit, RichError>
-setUaNormalScalar(int nameSpace,const std::string &nodeID, const S7DataType &dataType,
+setUaNormalScalar(int nameSpace,const std::variant<std::string,uint32_t>&nodeID, const S7DataType &dataType,
                   UA_WriteValue &destValue, const ValueType &VariableItem) {
   using Traits = typename opcua::writeTraits::S7TypeToUATraits<S7type>::type;
   auto val = Traits::convert(nameSpace,nodeID, dataType, destValue, VariableItem);
@@ -66,7 +66,7 @@ setUaNormalScalar(int nameSpace,const std::string &nodeID, const S7DataType &dat
 };
 
 // 定义转换器类型
-using ConverterFunc = Result<Unit, RichError> (*)(int,const std::string &,
+using ConverterFunc = Result<Unit, RichError> (*)(int,const std::variant<std::string,uint32_t>&,
                                                   const S7DataType &,
                                                   UA_WriteValue &,
                                                   const ValueType &);
@@ -87,13 +87,13 @@ inline const std::unordered_map<S7DataType, ConverterFunc> converters = {
     {S7DataType::LREAL, setUaNormalScalar<S7DataType::LREAL>},
     {S7DataType::STRING, setUaNormalScalar<S7DataType::STRING>}};
 
-inline Result<Unit, RichError> dispatch(int nameSpace,const std::string &nodeID,
+inline Result<Unit, RichError> dispatch(int nameSpace,const std::variant<std::string,uint32_t> &id,
                                         const S7DataType &dataType,
                                         UA_WriteValue &destValue,
                                         const ValueType &srcVariant) {
   auto it = converters.find(dataType);
   if (it != converters.end()) {
-    return it->second(nameSpace,nodeID, dataType, destValue, srcVariant);
+    return it->second(nameSpace,id, dataType, destValue, srcVariant);
   } else {
     return Result<Unit, RichError>::error(RichError{RichError::ErrorCode::TYPE_NOTSUPPORT,"Unsupported S7DataType"});
   }

@@ -63,7 +63,7 @@ TEST(ClientEncapsulation, T87_PublicApiSignaturesUseDomainTypesOnly) {
 namespace {
 using C = OPC_UA_Client;
 static_assert(std::is_same_v<decltype(C::NodeId::ns), uint16_t>, "NodeId::ns");
-static_assert(std::is_same_v<decltype(C::NodeId::id), std::string>, "NodeId::id");
+static_assert(std::is_same_v<decltype(C::NodeId::id), std::variant<std::string,uint32_t>>, "NodeId::id");
 static_assert(std::is_same_v<decltype(C::NodeId::dataType), S7DataType>, "NodeId::dataType");
 static_assert(std::is_same_v<decltype(C::ReadValue::node), C::NodeId>, "ReadValue::node");
 static_assert(std::is_same_v<decltype(C::WriteValue::node), C::NodeId>, "WriteValue::node");

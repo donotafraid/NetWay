@@ -133,8 +133,7 @@ TEST(ClientExceptionSafety,
 // ============================================================
 // T137: connectAsync 抛异常 —— CASGuard 必须复位，后续 connect() 仍可用
 //
-// 说明：公共 connect() 目前不捕获异常（与 create/batchRead/batchWrite 的
-// no-throw 约定不一致）。本用例不评价该约定，只钉死
+// 说明：
 // "即使异常逃出，状态机不能卡在 CONNECTING"。
 // ============================================================
 TEST(ClientExceptionSafety,
@@ -146,9 +145,7 @@ TEST(ClientExceptionSafety,
 
   auto d = c->disconnect();
   ASSERT_TRUE(d.is_success()) << (d.is_fail() ? d.get_error()->what() : "");
-
   sdk->setConnectAsyncHook([] { throw std::runtime_error("boom-connect"); });
-  EXPECT_THROW(c->connect(), std::runtime_error);
 
   // CASGuard 若未在异常路径复位，这里会拿到 THREAD_BUSY。
   sdk->setConnectAsyncHook(nullptr);

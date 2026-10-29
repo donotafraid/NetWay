@@ -32,7 +32,7 @@ public:
   // 使用现代 C++ 领域类型，彻底取代 UA_* 类型 
   struct NodeId {
     uint16_t ns;
-    std::string id;
+    std::variant<std::string,uint32_t>id;
     S7DataType dataType;
   };
   struct ReadValue {

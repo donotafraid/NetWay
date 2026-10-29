@@ -12,6 +12,49 @@
 #include <cstdint>
 
 namespace {
+
+// [63:48] version  16 位（任何一次写 +1，防 ABA）
+// [47:16] status   32 位（UA_StatusCode）
+// [15:8]  channel   8 位（UA_SecureChannelState）
+// [7:0]   session   8 位（UA_SessionState）
+constexpr uint64_t kVerShift     = 48;
+constexpr uint64_t kVerMask      = 0xFFFFull << kVerShift;
+constexpr uint64_t kStatusShift  = 16;
+constexpr uint64_t kChannelShift = 8;
+constexpr uint64_t kSessionShift = 0;
+
+inline uint64_t packState(UA_StatusCode status,
+                          UA_SecureChannelState channel,
+                          UA_SessionState session,
+                          uint16_t version) {
+  return (static_cast<uint64_t>(version) << kVerShift) |
+         (static_cast<uint64_t>(status)  << kStatusShift) |
+         (static_cast<uint64_t>(channel) << kChannelShift) |
+         (static_cast<uint64_t>(session) << kSessionShift);
+}
+
+struct StateFields {
+  UA_StatusCode         status;
+  UA_SecureChannelState channel;
+  UA_SessionState       session;
+  uint16_t              version;
+};
+
+inline StateFields unpackState(uint64_t v) {
+  StateFields f;
+  f.status  = static_cast<UA_StatusCode>(
+                  (v >> kStatusShift) & 0xFFFFFFFFull);
+  f.channel = static_cast<UA_SecureChannelState>(
+                  (v >> kChannelShift) & 0xFFull);
+  f.session = static_cast<UA_SessionState>(
+                  (v >> kSessionShift) & 0xFFull);
+  f.version = static_cast<uint16_t>((v & kVerMask) >> kVerShift);
+  return f;
+}
+
+} // namespace
+
+namespace {
 // 自定义 Log：直接写 stderr，不取时间戳，因此不触碰 localtime/mktime/tzset。
 // context 指向 Impl::m_logLevel（UA_LogLevel 数值）。SDK 以 UA_LOGLEVEL=100
 // 编译时 trace/debug 也会回调到这里；没有这个过滤，一次 10 万次批量读会写出
@@ -438,6 +481,8 @@ RichError::ErrorCode toRichErrorCode(DisconnectErrorState s) {
 struct OPC_UA_Client::Impl
     : public std::enable_shared_from_this<OPC_UA_Client::Impl> {
 
+  static constexpr int VER_SHIFT = 56;
+  static constexpr uint64_t VER_MASK = 0xFFull << VER_SHIFT;
   using UA_ClientPtr = std::shared_ptr<UA_Client>;
   UA_ClientPtr m_impl ;
   std::shared_ptr<OPCUAPacking::internal::ISdk> m_sdk;
@@ -458,12 +503,10 @@ struct OPC_UA_Client::Impl
   std::atomic<bool> m_shutdown{false}; // 析构运行状态，shutdown设置，没有重置
   std::atomic<bool> connectionLost{
       false}; // 断开连接标志,回调函数里设置，在看门狗里重连中重置
-  std::atomic<UA_StatusCode> sdkConnectStatus{
-      UA_STATUSCODE_GOOD}; // sdk内部重连是否继续标志，回调函数里设置，看门狗中使用
-  std::atomic<UA_SecureChannelState> sdkChannelState{
-      UA_SECURECHANNELSTATE_CLOSED}; // sdk内部重连是否继续标志，回调函数里设置，看门狗中使用
-  std::atomic<UA_SessionState> sdkSessionState{
-      UA_SESSIONSTATE_CLOSED}; // sdk内部重连是否继续标志，回调函数里设置，看门狗中使用
+  std::atomic<uint64_t> state_packed{packState(UA_STATUSCODE_BADNOTCONNECTED,
+                                               UA_SECURECHANNELSTATE_CLOSED,
+                                               UA_SESSIONSTATE_CLOSED, 0)};
+
   std::atomic<uint64_t> m_stateEpoch{0};
   std::mutex m_stateWriteMx;
   std::atomic<bool> m_stop{
@@ -629,9 +672,16 @@ struct OPC_UA_Client::Impl
   bool getEffectiveStopSignal(); 
 
   // 辅助函数:返回健康状态
+  template <typename Fn> void updatePacked(Fn &&mutate);
+
+  bool tryPublishIfUnchanged(uint64_t expected, UA_StatusCode status,
+                             UA_SecureChannelState channel,
+                             UA_SessionState session);
+
   // 判据：四元组全就绪（connectStatus==GOOD && channel==OPEN &&
   // session==ACTIVATED）&& (!connectionLost)  RUNNING 的充要条件即本函数返回 true。
   bool isHealthyCached() const; 
+
   // 辅助函数:判断Channel,ConnectStatus,SessionStatus状态是否处于CLOSED，用于判断connect是否合适进行
   bool isChannelClosed() const; 
   bool isConnectBad() const; 
@@ -646,6 +696,8 @@ struct OPC_UA_Client::Impl
   //  辅助函数:外部sdk锁内调用UA_Client_run_iterate
   void callRunIterate(UA_ClientPtr &client, UA_UInt32 timeoutMs = 1);
 
+  //  辅助函数：UA_Node_UA_NODEID 生成
+  Result<Unit, RichError> uaNodeIDAlloc(const NodeId &id,UA_NodeId &nodeId);
 };
 
 struct OPC_UA_Client::UA_ClientDeleter {
@@ -734,32 +786,13 @@ OPC_UA_Client::Impl::batchRead(const std::vector<ReadValue> &batchReadNodes) {
   for (auto &readNode : batchReadNodes) {
     auto &node = request.nodesToRead[index];
     UA_ReadValueId_init(&node);
-    if (readNode.node.id.empty()) {
+    auto result = uaNodeIDAlloc(readNode.node, node.nodeId);
+    if(result.is_fail())
+    {
       return Result<std::vector<OPC_UA_Client::ReadResult>, RichError>::error(
-          RichError{RichError::ErrorCode::INVALID_ARGUMENT,
-                    "batchRead: node id is empty for ns=" +
-                        std::to_string(readNode.node.ns)});
+          *result.get_error());
     }
 
-    if (TypeTraits::containsEmbeddedNul(readNode.node.id)) {
-      return Result<std::vector<OPC_UA_Client::ReadResult>, RichError>::error(
-          RichError{RichError::ErrorCode::INVALID_ARGUMENT,
-                    "batchRead: NodeId contains embedded NULL"});
-    }
-    node.nodeId =
-        UA_NODEID_STRING_ALLOC(readNode.node.ns, readNode.node.id.data());
-    if (node.nodeId.identifierType != UA_NODEIDTYPE_STRING ||
-        node.nodeId.identifier.string.data == nullptr) {
-      return Result<std::vector<OPC_UA_Client::ReadResult>, RichError>::error(
-          RichError{RichError::ErrorCode::INTERNAL_ERROR,
-                    "batchRead: UA_NODEID_STRING_ALLOC failed for ns=" +
-                        std::to_string(readNode.node.ns)});
-    }
-    if (node.nodeId.identifier.string.length == 0) {
-      return Result<std::vector<OPC_UA_Client::ReadResult>, RichError>::error(
-          RichError{RichError::ErrorCode::INVALID_ARGUMENT,
-                    "batchRead: NodeId string length is 0"});
-    }
     node.indexRange = UA_STRING_NULL;
     node.attributeId = UA_ATTRIBUTEID_VALUE;
     ++index;
@@ -848,8 +881,7 @@ OPC_UA_Client::Impl::batchRead(const std::vector<ReadValue> &batchReadNodes) {
                           safeStatusCodeName(sr)});
       }
     } else {
-
-      if (response.responseHeader.serviceResult != UA_STATUSCODE_GOOD ||
+      if (!UA_StatusCode_isGood(response.responseHeader.serviceResult) ||
           response.resultsSize != batchReadNodes.size() || !response.results) {
         std::stringstream ss;
         ss << "read fail :"
@@ -961,11 +993,15 @@ OPC_UA_Client::Impl::batchWrite(
   for (auto &writeNode : batchWriteNodes) {
     auto &node = request.nodesToWrite[index];
     UA_WriteValue_init(&node);
-    if (writeNode.node.id.empty()) {
-      return Result<std::vector<OPC_UA_Client::WriteResult>, RichError>::error(
-          RichError{RichError::ErrorCode::INVALID_ARGUMENT,
-                    "batchWrite: node id is empty for ns=" +
-                        std::to_string(writeNode.node.ns)});
+    if (node.attributeId != UA_ATTRIBUTEID_VALUE) {
+      {
+        auto result = uaNodeIDAlloc(writeNode.node, node.nodeId);
+        if (result.is_fail()) {
+          return Result<std::vector<OPC_UA_Client::WriteResult>,
+                        RichError>::error(*result.get_error());
+        }
+      }
+      node.attributeId = UA_ATTRIBUTEID_VALUE;
     }
 
     auto writeResult = opcua::writeConversion::dispatch(
@@ -1044,7 +1080,8 @@ OPC_UA_Client::Impl::batchWrite(
     response = m_sdk->serviceWrite(client.get(), request);
 
   }
-  if (response.responseHeader.serviceResult == UA_STATUSCODE_GOOD &&
+  
+  if (UA_StatusCode_isGood(response.responseHeader.serviceResult) &&
       response.resultsSize > 0 && response.results &&
       response.resultsSize == batchWriteNodes.size()) {
     std::vector<WriteResult> resultVec;
@@ -1101,28 +1138,17 @@ OPC_UA_Client::Impl::isConnected(UA_UInt32 iterateTimeoutMs) {
   UA_SessionState sessionState{UA_SESSIONSTATE_CLOSED};
   // 2. 获取实际状态
   callRunIterate(client, iterateTimeoutMs);
-  uint64_t stateEpoch = 0;
-  for (;;) {
-    stateEpoch = m_stateEpoch.load(std::memory_order_acquire);
-    if ((stateEpoch & 1u) == 0)
-      break;
-    std::this_thread::yield();
-  }
+  uint64_t expected = state_packed.load(std::memory_order_acquire);
   {
     std::lock_guard<std::mutex> lock(m_sdkMutex);
     m_sdk->getState(client.get(), &channelState, &sessionState,
                     &statusCode);
   }
-  {
-    std::lock_guard<std::mutex> stateLock(m_stateWriteMx);
-    if (m_stateEpoch.load(std::memory_order_acquire) == stateEpoch) {
-      sdkConnectStatus.store(statusCode, std::memory_order_release);
-      sdkChannelState.store(channelState, std::memory_order_release);
-      sdkSessionState.store(sessionState, std::memory_order_release);
-    }
-  }
 
-  if (statusCode != UA_STATUSCODE_GOOD) {
+  // 只在期间没人写时发布；失败丢弃本次 getState 结果
+  tryPublishIfUnchanged(expected, statusCode, channelState, sessionState);
+
+  if (!UA_StatusCode_isGood(statusCode) ) {
     pImplQuote->updateBadStatusTime();
   }
   return Result<bool, ConnectErrorState>::success(isHealthyCached());
@@ -1170,7 +1196,7 @@ OPC_UA_Client::Impl::connect() {
     std::lock_guard<std::mutex> sdkLock(m_sdkMutex);
     UA_StatusCode retval =
         m_sdk->connectAsync(client.get(), endpointUrl.c_str());
-    if (retval != UA_STATUSCODE_GOOD) {
+    if (!UA_StatusCode_isGood(retval) ) {
       // 与 disconnect() 的成功出口对称：连接未建立时，若缓存三元组已不健康，
       // lifeState 必须离开 RUNNING。否则 checkLifeState()==RUNNING 与
       // isHealthy()==false 同时成立，破坏 Types.h 的 RUNNING 契约。
@@ -1202,13 +1228,11 @@ OPC_UA_Client::Impl::connect() {
             ConnectErrorState::NULLPTR);
       }
     } else {
-      auto connectResultValue =
-          sdkConnectStatus.load(std::memory_order_acquire) ==
-              UA_STATUSCODE_GOOD &&
-          sdkChannelState.load(std::memory_order_acquire) ==
-              UA_SECURECHANNELSTATE_OPEN &&
-          sdkSessionState.load(std::memory_order_acquire) ==
-              UA_SESSIONSTATE_ACTIVATED;
+      const StateFields f =
+          unpackState(state_packed.load(std::memory_order_acquire));
+      auto connectResultValue = UA_StatusCode_isGood(f.status) &&
+                                f.channel == UA_SECURECHANNELSTATE_OPEN &&
+                                f.session == UA_SESSIONSTATE_ACTIVATED;
       if (connectResultValue) {
         //  健康度检测正常
         TurnToRunning();
@@ -1234,14 +1258,7 @@ OPC_UA_Client::Impl::connect() {
               ConnectErrorState::NULLPTR);
         }
       } else {
-        auto lastConnectResultValue =
-            sdkConnectStatus.load(std::memory_order_acquire) ==
-                UA_STATUSCODE_GOOD &&
-            sdkChannelState.load(std::memory_order_acquire) ==
-                UA_SECURECHANNELSTATE_OPEN &&
-            sdkSessionState.load(std::memory_order_acquire) ==
-                UA_SESSIONSTATE_ACTIVATED;
-        ;
+        auto lastConnectResultValue = isHealthyCached();
         if (lastConnectResultValue) {
           TurnToRunning();
           return Result<Unit, ConnectErrorState>::success(Unit{});
@@ -1306,7 +1323,7 @@ Result<Unit, DisconnectErrorState> OPC_UA_Client::Impl::disconnect() {
   {
     std::lock_guard<std::mutex> sdkLock(m_sdkMutex);
     UA_StatusCode retval = m_sdk->disconnectAsync(client.get());
-    if (retval != UA_STATUSCODE_GOOD) {
+    if (!UA_StatusCode_isGood(retval) ) {
       pImplQuote->TurnToRecovring();
       return Result<Unit, DisconnectErrorState>::error(
           DisconnectErrorState::DISCONNECT_FAIL);
@@ -1336,22 +1353,22 @@ Result<Unit, DisconnectErrorState> OPC_UA_Client::Impl::disconnect() {
             DisconnectErrorState::NULLPTR);
       }
     }
-    if (sdkConnectStatus.load(std::memory_order_acquire) !=
-        UA_STATUSCODE_GOOD) {
+    const StateFields f =
+        unpackState(state_packed.load(std::memory_order_acquire));
+    if (!UA_StatusCode_isGood(f.status) ) {
       pImplQuote->updateBadStatusTime();
     }
-    if (sdkChannelState.load(std::memory_order_acquire) ==
-        UA_SECURECHANNELSTATE_CLOSED)
+    if (f.channel == UA_SECURECHANNELSTATE_CLOSED)
       break;
 
     // 检查超时（虚拟时钟为主；墙钟兜底防止虚拟时钟冻结时无界阻塞）
-    auto elapsed =  pImplQuote->nowMsImpl() - start;
-    const bool wallTimedOut =
-        std::chrono::steady_clock::now() >= wallDeadline;
+    auto elapsed = pImplQuote->nowMsImpl() - start;
+    const bool wallTimedOut = std::chrono::steady_clock::now() >= wallDeadline;
     if (elapsed > static_cast<int64_t>(pImplQuote->m_config.timeoutMs) ||
         wallTimedOut) {
       //  查询
-      //  UA_Client_getState 据实修正返回，避免异步结果此时才更新，导致外部需要重新进入disconnect
+      //  UA_Client_getState
+      //  据实修正返回，避免异步结果此时才更新，导致外部需要重新进入disconnect
       UA_SecureChannelState cs;
       UA_SessionState ss;
       UA_StatusCode sc;
@@ -1575,13 +1592,14 @@ OPC_UA_Client::Impl::applyConfiguration(bool useDefault) {
 
     // 只有在确实需要访问 Impl 时才 lock：
     if (auto impl = self->implWeak.lock()) {
-      std::lock_guard<std::mutex> stateLock(impl->m_stateWriteMx);
-      impl->m_stateEpoch.fetch_add(1, std::memory_order_acq_rel);
-      impl->sdkConnectStatus.store(connectStatus, std::memory_order_release);
-      impl->sdkChannelState.store(channelState, std::memory_order_release);
-      impl->sdkSessionState.store(sessionState, std::memory_order_release);
-      impl->m_stateEpoch.fetch_add(1, std::memory_order_acq_rel);
-    }
+    impl->updatePacked([&](UA_StatusCode &status,
+                           UA_SecureChannelState &channel,
+                           UA_SessionState &session) {
+      status  = connectStatus;
+      channel = channelState;
+      session = sessionState;
+    });
+  }
   };
 
   // ==================== 7. 初始化原子状态变量 ====================
@@ -1600,32 +1618,12 @@ OPC_UA_Client::Impl::applyConfiguration(bool useDefault) {
   // 关闭标志 - 设置为 false（未关闭）
   m_shutdown.store(false, std::memory_order_release);
 
-
   // 连接丢失标志 - 设置为 false（初始连接未丢失）
   connectionLost.store(false, std::memory_order_release);
 
-  // SDK 连接状态 - 设置为 GOOD（初始状态良好）
-  sdkConnectStatus.store(UA_STATUSCODE_GOOD, std::memory_order_release);
+  // 更新四元组状态
+  isConnected();
 
-  // SDK 通道状态 - 先置 CLOSED（紧随其后的 getState() 会覆盖为实际值）
-  sdkChannelState.store(UA_SECURECHANNELSTATE_CLOSED, std::memory_order_release);
-
-  // SDK 会话状态 - 先置 CLOSED（紧随其后的 getState() 会覆盖为实际值）
-  sdkSessionState.store(UA_SESSIONSTATE_CLOSED, std::memory_order_release);
-
-  // 更新上面设置的原子变量对象
-  UA_SecureChannelState cs;
-  UA_SessionState ss;
-  UA_StatusCode sc;
-  {
-    std::lock_guard<std::mutex> lock(m_sdkMutex);
-    m_sdk->getState(m_impl.get(), &cs, &ss, &sc);
-  }
-  {
-    sdkConnectStatus.store(sc,std::memory_order_release);
-    sdkChannelState.store(cs,std::memory_order_release);
-    sdkSessionState.store(ss,std::memory_order_release);
-  }
   return Result<Unit, RichError>::success(Unit{});
 }
 
@@ -1791,10 +1789,11 @@ void OPC_UA_Client::Impl::doWatchdogDecision(std::shared_ptr<Impl> ImplPtr) {
     }
   }
 
+  const StateFields f =
+      unpackState(state_packed.load(std::memory_order_acquire));
   // ---------- 一次尝试，不做重试 ----------
   if (connectionLost.load(std::memory_order_acquire) ||
-      (sdkSessionState.load(std::memory_order_acquire) !=
-       UA_SESSIONSTATE_ACTIVATED)) {
+      (f.session != UA_SESSIONSTATE_ACTIVATED)) {
     // 与另外两条恢复分支对称：先记账，再判断放弃窗口。否则当 SDK 持续报
     // connectStatus==GOOD、只是会话丢失（或 inactivity 回调触发）时，
     // m_lastBadStatusMs 永远为 0，shouldTriggerGiveUp() 永远为 false，
@@ -1830,6 +1829,7 @@ void OPC_UA_Client::Impl::doWatchdogDecision(std::shared_ptr<Impl> ImplPtr) {
       if (error == ConnectErrorState::THREADBUSY) {
         return;
       }
+      std::cout<<"error: ";
       TurnToRecovring();
     } else {
       TurnToRunning();
@@ -2082,20 +2082,19 @@ OPC_UA_Client::~OPC_UA_Client() {
   shutdownInternal(); // 无条件清理,绕过业务早退
 }
 
-Result<Unit,RichError> OPC_UA_Client::shutdown() {
+Result<Unit, RichError> OPC_UA_Client::shutdown() {
   {
     std::lock_guard<std::mutex> lock(m_recreateSync->m_recreateLock);
     if (m_recreateSync->m_recreating.load(std::memory_order_acquire)) {
-        // 正在重建，拒绝关闭（或等待/记录日志）
-        return Result<Unit, RichError>::error(
-            RichError{RichError::ErrorCode::RECREATING,
-                      "shutdown: client is being recreated, please retry later"});
+      // 正在重建，拒绝关闭（或等待/记录日志）
+      return Result<Unit, RichError>::error(
+          RichError{RichError::ErrorCode::RECREATING,
+                    "shutdown: client is being recreated, please retry later"});
     }
-    if(m_recreateSync->m_terminated.load(std::memory_order_acquire))
-    {
-      return Result<Unit, RichError>::success(Unit{}); // 幂等成功
+    if (m_recreateSync->m_terminated.load(std::memory_order_acquire)) {
+      return Result<Unit, RichError>::success(Unit{});  // 幂等成功
     }
-    m_recreateSync->m_terminated.store(true,std::memory_order_release);
+    m_recreateSync->m_terminated.store(true, std::memory_order_release);
     // Publish the in-progress marker in the same critical section as
     // m_terminated. The destructor takes this lock and waits for it, so it can
     // no longer free this object between the store above and shutdownInternal().
@@ -2103,7 +2102,29 @@ Result<Unit,RichError> OPC_UA_Client::shutdown() {
   }
 
   ShutdownCallGuard shutdownGuard{m_recreateSync};
-  return shutdownInternal();
+
+  try {
+    return shutdownInternal();
+  } catch (const std::bad_alloc &e) {
+    // 处理内存分配失败
+    return Result<Unit, RichError>::error(
+        RichError{RichError::ErrorCode::INTERNAL_ERROR,
+                  "Memory allocation failed: " + std::string(e.what())});
+  } catch (const std::system_error &e) {
+    // 处理线程 join / 系统级失败
+    return Result<Unit, RichError>::error(
+        RichError{RichError::ErrorCode::SDK_ERROR,
+                  "System error:" + std::string(e.what())});
+  } catch (const std::exception &e) {
+    // 捕获其他标准异常作为兜底
+    return Result<Unit, RichError>::error(
+        RichError{RichError::ErrorCode::INTERNAL_ERROR,
+                  "Unexpected error: " + std::string(e.what())});
+  } catch (...) {
+    // 捕获未知异常作为最终保障
+    return Result<Unit, RichError>::error(
+        RichError{RichError::ErrorCode::UNKNOWN, "Unknown error"});
+  }
 }
 
 Result<Unit, RichError> OPC_UA_Client::shutdownInternal() {
@@ -2156,14 +2177,30 @@ Result<Unit, RichError> OPC_UA_Client::connect() {
     }
   }
 
-  auto result = ImplPtr->connect();
-  if (result.has_value()) {
-    return Result<Unit, RichError>::success(Unit{});
-  } else {
+   try {
+    auto result = ImplPtr->connect();
+    if (result.has_value()) {
+      return Result<Unit, RichError>::success(Unit{});
+    }
     ConnectErrorState errorState = *result.get_error();
     return Result<Unit, RichError>::error(RichError{
         OPCUAPacking::internal::toRichErrorCode(errorState),
         OPCUAPacking::internal::connectErrorStateToString(errorState)});
+  } catch (const std::bad_alloc &e) {
+    return Result<Unit, RichError>::error(
+        RichError{RichError::ErrorCode::INTERNAL_ERROR,
+                  "Memory allocation failed: " + std::string(e.what())});
+  } catch (const std::system_error &e) {
+    return Result<Unit, RichError>::error(
+        RichError{RichError::ErrorCode::SDK_ERROR,
+                  "System error:" + std::string(e.what())});
+  } catch (const std::exception &e) {
+    return Result<Unit, RichError>::error(
+        RichError{RichError::ErrorCode::INTERNAL_ERROR,
+                  "Unexpected error: " + std::string(e.what())});
+  } catch (...) {
+    return Result<Unit, RichError>::error(
+        RichError{RichError::ErrorCode::UNKNOWN, "Unknown error"});
   }
 }
 
@@ -2190,18 +2227,36 @@ Result<Unit, RichError> OPC_UA_Client::disconnect() {
     if (pImpl) {
       ImplPtr = pImpl;
     } else {
-      return Result<Unit, RichError>::error({RichError{RichError::ErrorCode::ALREADY_TERMINATED, "disconnect: client is nullptr"}});
+      return Result<Unit, RichError>::error(
+          {RichError{RichError::ErrorCode::ALREADY_TERMINATED,
+                     "disconnect: client is nullptr"}});
     }
   }
 
-  auto result = ImplPtr->disconnect();
-  if (result.has_value()) {
-    return Result<Unit, RichError>::success(Unit{});
-  } else {
+  try {
+    auto result = ImplPtr->disconnect();
+    if (result.has_value()) {
+      return Result<Unit, RichError>::success(Unit{});
+    }
     DisconnectErrorState errorState = *result.get_error();
     return Result<Unit, RichError>::error(RichError{
         OPCUAPacking::internal::toRichErrorCode(errorState),
         OPCUAPacking::internal::disconnectErrorStateToString(errorState)});
+  } catch (const std::bad_alloc &e) {
+    return Result<Unit, RichError>::error(
+        RichError{RichError::ErrorCode::INTERNAL_ERROR,
+                  "Memory allocation failed: " + std::string(e.what())});
+  } catch (const std::system_error &e) {
+    return Result<Unit, RichError>::error(
+        RichError{RichError::ErrorCode::SDK_ERROR,
+                  "System error:" + std::string(e.what())});
+  } catch (const std::exception &e) {
+    return Result<Unit, RichError>::error(
+        RichError{RichError::ErrorCode::INTERNAL_ERROR,
+                  "Unexpected error: " + std::string(e.what())});
+  } catch (...) {
+    return Result<Unit, RichError>::error(
+        RichError{RichError::ErrorCode::UNKNOWN, "Unknown error"});
   }
 }
 
@@ -2236,30 +2291,44 @@ Result<Unit, RichError> OPC_UA_Client::checkConnected() {
 
   // 与 isHealthy() 统一——stop signal / lifeState 非 RUNNING 时，
   // 所有只读查询返回同一错误码 NOT_CONNECTED。
-  // batchRead/batchWrite 仍返回 ALREADY_TERMINATED，语义不同是有意的：
-  // 只读查询是"询问状态"，stop 时状态就是"未连接"；
-  // 读写是"发起动作"，stop 时对象已经终结。
+  // batchRead/batchWrite 仍返回 ALREADY_TERMINATED，语义不同是有意的。
   if (ImplPtr->getEffectiveStopSignal()) {
     return Result<Unit, RichError>::error(
         RichError{RichError::ErrorCode::NOT_CONNECTED,
                   "checkConnected: client is not running"});
   }
 
-  auto r = ImplPtr->isConnected(0);
-  if (r.has_value()) {
-    auto status = r.value_or(false);
-    if (status) {
-      return Result<Unit, RichError>::success(
-          Unit{});
+  try {
+    auto r = ImplPtr->isConnected(0);
+    if (r.has_value()) {
+      auto status = r.value_or(false);
+      if (status) {
+        return Result<Unit, RichError>::success(Unit{});
+      }
+      return Result<Unit, RichError>::error(
+          RichError{RichError::ErrorCode::NOT_CONNECTED,
+                    "checkConnected: fail"});
+    } else {
+      auto errorInfo{*r.get_error()};
+      return Result<Unit, RichError>::error(
+          RichError{OPCUAPacking::internal::toRichErrorCode(errorInfo),
+                    "checkConnected: fail"});
     }
-    // 与 isHealthy() 统一——"不健康"一律返回错误，
+  } catch (const std::bad_alloc &e) {
     return Result<Unit, RichError>::error(
-        RichError{RichError::ErrorCode::NOT_CONNECTED, "checkConnected: fail"});
-  } else {
-    auto errorInfo{*r.get_error()};
+        RichError{RichError::ErrorCode::INTERNAL_ERROR,
+                  "Memory allocation failed: " + std::string(e.what())});
+  } catch (const std::system_error &e) {
     return Result<Unit, RichError>::error(
-        RichError{OPCUAPacking::internal::toRichErrorCode(errorInfo),
-                  "checkConnected: fail"});
+        RichError{RichError::ErrorCode::SDK_ERROR,
+                  "System error:" + std::string(e.what())});
+  } catch (const std::exception &e) {
+    return Result<Unit, RichError>::error(
+        RichError{RichError::ErrorCode::INTERNAL_ERROR,
+                  "Unexpected error: " + std::string(e.what())});
+  } catch (...) {
+    return Result<Unit, RichError>::error(
+        RichError{RichError::ErrorCode::UNKNOWN, "Unknown error"});
   }
 }
 
@@ -2299,13 +2368,29 @@ Result<Unit, RichError> OPC_UA_Client::isHealthy() {
                   "isHealthy: client is not running"});
   }
 
-  auto r = ImplPtr->isHealthyCached();
-  if (r) {
-    return Result<Unit, RichError>::success(
-        Unit{});
-  } else {
+  try {
+    auto r = ImplPtr->isHealthyCached();
+    if (r) {
+      return Result<Unit, RichError>::success(Unit{});
+    } else {
+      return Result<Unit, RichError>::error(
+          RichError{RichError::ErrorCode::NOT_CONNECTED, "isHealthy: fail"});
+    }
+  } catch (const std::bad_alloc &e) {
     return Result<Unit, RichError>::error(
-        RichError{RichError::ErrorCode::NOT_CONNECTED, "isHealthy: fail"});
+        RichError{RichError::ErrorCode::INTERNAL_ERROR,
+                  "Memory allocation failed: " + std::string(e.what())});
+  } catch (const std::system_error &e) {
+    return Result<Unit, RichError>::error(
+        RichError{RichError::ErrorCode::SDK_ERROR,
+                  "System error:" + std::string(e.what())});
+  } catch (const std::exception &e) {
+    return Result<Unit, RichError>::error(
+        RichError{RichError::ErrorCode::INTERNAL_ERROR,
+                  "Unexpected error: " + std::string(e.what())});
+  } catch (...) {
+    return Result<Unit, RichError>::error(
+        RichError{RichError::ErrorCode::UNKNOWN, "Unknown error"});
   }
 }
 
@@ -2467,7 +2552,7 @@ Result<Unit, RichError> OPC_UA_Client::recreateGiveUpClient() {
   return Result<Unit, RichError>::success(Unit{});
 }
 
-Result<LifeState, RichError> OPC_UA_Client::checkLifeState()  {
+Result<LifeState, RichError> OPC_UA_Client::checkLifeState() {
   std::shared_ptr<Impl> ImplPtr;
   ApiLease lease{m_recreateSync};
 
@@ -2475,13 +2560,13 @@ Result<LifeState, RichError> OPC_UA_Client::checkLifeState()  {
     auto reason = lease.reason();
     if (reason == ApiLease::Reason::Recreating) {
       return Result<LifeState, RichError>::error({RichError{
-            RichError::ErrorCode::RECREATING,
-            "checkLifeState: client is being recreated, please retry later"}});
+          RichError::ErrorCode::RECREATING,
+          "checkLifeState: client is being recreated, please retry later"}});
     }
     if (reason == ApiLease::Reason::Terminated) {
-        return Result<LifeState, RichError>::error(
-            {RichError{RichError::ErrorCode::ALREADY_TERMINATED,
-                       "checkLifeState: client has been terminated"}});
+      return Result<LifeState, RichError>::error(
+          {RichError{RichError::ErrorCode::ALREADY_TERMINATED,
+                     "checkLifeState: client has been terminated"}});
     }
   }
 
@@ -2491,12 +2576,30 @@ Result<LifeState, RichError> OPC_UA_Client::checkLifeState()  {
       ImplPtr = pImpl;
     } else {
       return Result<LifeState, RichError>::error(
-          {RichError{RichError::ErrorCode::ALREADY_TERMINATED, "checkLifeState: client is nullptr"}});
+          {RichError{RichError::ErrorCode::ALREADY_TERMINATED,
+                     "checkLifeState: client is nullptr"}});
     }
   }
 
-  return Result<LifeState, RichError>::success(
-      ImplPtr->m_lifeState.load(std::memory_order_acquire));
+  try {
+    return Result<LifeState, RichError>::success(
+        ImplPtr->m_lifeState.load(std::memory_order_acquire));
+  } catch (const std::bad_alloc &e) {
+    return Result<LifeState, RichError>::error(
+        RichError{RichError::ErrorCode::INTERNAL_ERROR,
+                  "Memory allocation failed: " + std::string(e.what())});
+  } catch (const std::system_error &e) {
+    return Result<LifeState, RichError>::error(
+        RichError{RichError::ErrorCode::SDK_ERROR,
+                  "System error:" + std::string(e.what())});
+  } catch (const std::exception &e) {
+    return Result<LifeState, RichError>::error(
+        RichError{RichError::ErrorCode::INTERNAL_ERROR,
+                  "Unexpected error: " + std::string(e.what())});
+  } catch (...) {
+    return Result<LifeState, RichError>::error(
+        RichError{RichError::ErrorCode::UNKNOWN, "Unknown error"});
+  }
 }
 
 Result<Unit, RichError> OPC_UA_Client::setGiveUpSignal() {
@@ -2506,10 +2609,12 @@ Result<Unit, RichError> OPC_UA_Client::setGiveUpSignal() {
   if (!lease.isActive()) {
     auto reason = lease.reason();
     if (reason == ApiLease::Reason::Recreating) {
-      return Result<Unit,RichError>::error(RichError{RichError::ErrorCode::RECREATING,"setGiveUpSignal: recreating"}); 
+      return Result<Unit, RichError>::error(RichError{
+          RichError::ErrorCode::RECREATING, "setGiveUpSignal: recreating"});
     }
     if (reason == ApiLease::Reason::Terminated) {
-      return Result<Unit,RichError>::error(RichError{RichError::ErrorCode::ALREADY_TERMINATED,"setGiveUpSignal: terminated"}); 
+      return Result<Unit, RichError>::error(RichError{
+          RichError::ErrorCode::ALREADY_TERMINATED, "setGiveUpSignal: terminated"});
     }
   }
 
@@ -2517,13 +2622,28 @@ Result<Unit, RichError> OPC_UA_Client::setGiveUpSignal() {
     std::lock_guard<std::mutex> lock(m_recreateSync->m_lock);
     ImplPtr = pImpl;
   }
-  if (ImplPtr) {
-    return ImplPtr->setGiveUpSignal();
-  }
-  else
-  {
+  if (!ImplPtr) {
     return Result<Unit, RichError>::error(RichError{
         RichError::ErrorCode::NOT_INITIALIZED, "setGiveUpSignal: client is nullptr"});
+  }
+
+  try {
+    return ImplPtr->setGiveUpSignal();
+  } catch (const std::bad_alloc &e) {
+    return Result<Unit, RichError>::error(
+        RichError{RichError::ErrorCode::INTERNAL_ERROR,
+                  "Memory allocation failed: " + std::string(e.what())});
+  } catch (const std::system_error &e) {
+    return Result<Unit, RichError>::error(
+        RichError{RichError::ErrorCode::SDK_ERROR,
+                  "System error:" + std::string(e.what())});
+  } catch (const std::exception &e) {
+    return Result<Unit, RichError>::error(
+        RichError{RichError::ErrorCode::INTERNAL_ERROR,
+                  "Unexpected error: " + std::string(e.what())});
+  } catch (...) {
+    return Result<Unit, RichError>::error(
+        RichError{RichError::ErrorCode::UNKNOWN, "Unknown error"});
   }
 }
 
@@ -2761,23 +2881,53 @@ bool OPC_UA_Client::Impl::getEffectiveStopSignal() {
          m_lifeState.load(std::memory_order_acquire) == LifeState::GIVEN_UP;
 }
 
+
+// 权威写者（stateCallback）用：CAS 循环，必须写入，失败重试
+template <typename Fn>
+void OPC_UA_Client::Impl::updatePacked(Fn &&mutate) {
+  uint64_t old = state_packed.load(std::memory_order_acquire);
+  for (;;) {
+    StateFields f = unpackState(old);
+    mutate(f.status, f.channel, f.session);
+    uint64_t next = packState(f.status, f.channel, f.session,
+                              static_cast<uint16_t>(f.version + 1));
+    if (state_packed.compare_exchange_weak(old, next,
+                                           std::memory_order_release,
+                                           std::memory_order_acquire))
+      return;
+    // 失败：old 已被更新，用新 old 重试
+  }
+}
+
+// 缓存写者（isConnected 的 getState 写回）用：CAS 单次，失败即丢弃
+// 语义：getState 期间 stateCallback 写过（它的数据更新），本次结果过时
+bool OPC_UA_Client::Impl::tryPublishIfUnchanged(uint64_t expected,
+                                                UA_StatusCode status,
+                                                UA_SecureChannelState channel,
+                                                UA_SessionState session) {
+  uint64_t next =
+      packState(status, channel, session,
+                static_cast<uint16_t>(unpackState(expected).version + 1));
+  return state_packed.compare_exchange_strong(
+      expected, next, std::memory_order_release, std::memory_order_acquire);
+}
+
 // 辅助函数:返回健康状态
 // 判据：四元组全就绪,RUNNING 的充要条件即本函数返回 true。
 bool OPC_UA_Client::Impl::isHealthyCached() const {
-  return sdkConnectStatus.load(std::memory_order_acquire) ==
-             UA_STATUSCODE_GOOD &&
-         sdkChannelState.load(std::memory_order_acquire) ==
-             UA_SECURECHANNELSTATE_OPEN &&
-         sdkSessionState.load(std::memory_order_acquire) ==
-             UA_SESSIONSTATE_ACTIVATED &&
-         !(connectionLost.load(std::memory_order_acquire));
-  // uint64_t packed = (status << 17) | (channel << 9) | (session << 1) | lost;
-  // atomic_store_release(&state_packed, packed);
+  if (connectionLost.load(std::memory_order_acquire))
+    return false;
+  const StateFields f =
+      unpackState(state_packed.load(std::memory_order_acquire));
+  return UA_StatusCode_isGood(f.status) &&
+         f.channel == UA_SECURECHANNELSTATE_OPEN &&
+         f.session == UA_SESSIONSTATE_ACTIVATED;
 }
 
 bool OPC_UA_Client::Impl::isChannelClosed() const {
-  return sdkChannelState.load(std::memory_order_acquire) ==
-         UA_SECURECHANNELSTATE_CLOSED;
+  const StateFields f =
+      unpackState(state_packed.load(std::memory_order_acquire));
+  return f.channel == UA_SECURECHANNELSTATE_CLOSED;
 }
 
 bool OPC_UA_Client::Impl::isConnectBad() const {
@@ -2785,12 +2935,15 @@ bool OPC_UA_Client::Impl::isConnectBad() const {
   // UA_STATUSCODE_BADSESSIONIDINVALID=0x80250000），与泛型
   // UA_STATUSCODE_BAD=0x80000000 永远不相等。UA_StatusCode_isBad() 是
   // open62541 v1.4.14 include/open62541/types.h 的官方判据。
-  return UA_StatusCode_isBad(sdkConnectStatus.load(std::memory_order_acquire));
+  const StateFields f =
+      unpackState(state_packed.load(std::memory_order_acquire));
+  return UA_StatusCode_isBad(f.status);
 }
 
 bool OPC_UA_Client::Impl::isSessionClosed() const {
-  return sdkSessionState.load(std::memory_order_acquire) ==
-         UA_SESSIONSTATE_CLOSED;
+  const StateFields f =
+      unpackState(state_packed.load(std::memory_order_acquire));
+  return f.session == UA_SESSIONSTATE_CLOSED;
 }
 
 // 辅助函数:仅用于主动放弃该Client，用户需要明确状态后再使用
@@ -2814,4 +2967,50 @@ void OPC_UA_Client::Impl::callRunIterate(UA_ClientPtr &client,
                                          UA_UInt32 timeoutMs) {
   std::lock_guard<std::mutex> lock(m_sdkMutex);
   m_sdk->runIterate(client.get(), timeoutMs);
+}
+
+Result<Unit,RichError> OPC_UA_Client::Impl::uaNodeIDAlloc(const NodeId &id, UA_NodeId &nodeId) {
+  if (std::holds_alternative<std::string>(id.id)) {
+    // string 路径：与原来 UA_NODEID_STRING_ALLOC 行为一致
+    // 注意 ALLOC 宏/函数会 malloc 拷贝，调用方需 UA_NodeId_clear
+    std::string strID = std::get<std::string>(id.id);
+    if (strID.empty()) {
+      return Result<Unit,RichError>::error(
+          RichError{RichError::ErrorCode::INVALID_ARGUMENT,
+                    "batchRead: node id is empty for ns=" +
+                        std::to_string(id.ns)});
+    }
+
+    if (TypeTraits::containsEmbeddedNul(strID)) {
+      return   Result<Unit,RichError>::error(
+          RichError{RichError::ErrorCode::INVALID_ARGUMENT,
+                    "batchRead: NodeId contains embedded NULL"});
+    }
+
+    nodeId = UA_NODEID_STRING_ALLOC(id.ns,
+                                    std::get<std::string>(id.id).c_str());
+
+    if (nodeId.identifierType != UA_NODEIDTYPE_STRING ||
+        nodeId.identifier.string.data == nullptr) {
+      return Result<Unit, RichError>::error(
+          RichError{RichError::ErrorCode::INTERNAL_ERROR,
+                    "batchRead: UA_NODEID_STRING_ALLOC failed for ns=" +
+                        std::to_string(id.ns)});
+    }
+    if (nodeId.identifier.string.length == 0) {
+      return Result<Unit, RichError>::error(
+          RichError{RichError::ErrorCode::INVALID_ARGUMENT,
+                    "batchRead: NodeId string length is 0"});
+    }
+
+    return Result<Unit, RichError>::success(Unit{});
+  }
+
+  // numeric 路径：ns=2;i=123 这类
+  const uint32_t numeric = std::get<uint32_t>(id.id);
+
+  // 分支：i= 走 NUMERIC，若你的现场还有 ns=2;s=... 之外的 s= 不在此列
+  nodeId = UA_NODEID_NUMERIC(id.ns, numeric);
+
+  return Result<Unit, RichError>::success(Unit{});
 }
