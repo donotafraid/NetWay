@@ -26,6 +26,14 @@ JOBS=${JOBS:-$(nproc 2>/dev/null || echo 2)}
 CC=${CC:-clang-17}
 CXX=${CXX:-clang++-17}
 
+SANITIZE=0
+for arg in "$@"; do
+  case "$arg" in
+    --sanitize) SANITIZE=1 ;;
+  esac
+done
+
+
 log() { printf '\n=== %s ===\n' "$*"; }
 as_root() {
   if [ "$(id -u)" -eq 0 ]; then
@@ -115,7 +123,12 @@ cmake -S . -B "$BUILD_DIR" -DCMAKE_BUILD_TYPE=Debug \
 log "Building"
 cmake --build "$BUILD_DIR" -j "$JOBS"
 
-log "Running tests"
-ctest --test-dir "$BUILD_DIR" --output-on-failure
+if [ "$SANITIZE" -eq 1 ]; then
+  log "Running sanitizer suites"
+  bash "$ROOT/scripts/sanitizers.sh"
+else
+  log "Running tests"
+  ctest --test-dir "$BUILD_DIR" --output-on-failure
+fi
 
 log "Done"
