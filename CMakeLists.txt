@@ -5,7 +5,7 @@ cmake_minimum_required(VERSION 3.15)
 project(CrossPlatformApp LANGUAGES CXX C)
 
 # 包含 Conan 工具链文件
-set(CONAN_DIR "${CMAKE_CURRENT_SOURCE_DIR}/conan_debug_build"
+set(CONAN_DIR "${CMAKE_CURRENT_SOURCE_DIR}/conan_build"
     CACHE PATH "Conan 依赖目录（可按环境覆盖）")
 if(EXISTS ${CONAN_DIR})
     list(APPEND CMAKE_PREFIX_PATH "${CONAN_DIR}")
