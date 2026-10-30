@@ -350,6 +350,7 @@ recreateGiveUpClient():
 | 主题 | 代表用例 |
 | --- | --- |
 | 真实 server 读写 | T94/T110/T111/T116/T117/T166 |
+| 真实 server 全标量类型 | T173/T174（13 种 S7 类型 + 空 STRING） |
 | 数字 NodeId | T163/T164/T165（Mock）、T166（真实 server） |
 | NodeId 缺省类型 | T170 |
 | 响应出口/畸形响应 | T97/T106/T124/T130 |
@@ -359,4 +360,4 @@ recreateGiveUpClient():
 | 异常安全/no-throw | T135/T136/T137/T167/T168 |
 | 三元组快照 | T159 |
 | Result 适配器契约 | T171/T172 |
-| 封装完整性 | T87/T101、`tests/compile/*` |
+| 封装完整性 | T87/T101、`tests/compile/*`（含 RecreateSync 的 ODR 类型探针） |

@@ -47,8 +47,10 @@ set(
     ${CMAKE_CURRENT_SOURCE_DIR}/test42.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/test43.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/test44.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/test45.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/util/ClientTestFixture.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/compile/RuleOfFiveAsserts.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/compile/RecreateSyncProbe.cpp
 )
 
 #设置源头文件目录
@@ -66,6 +68,7 @@ target_compile_definitions(${appleName} PRIVATE
     OPCUAPACKING_ENABLE_TEST_HOOKS
 )
 
+target_compile_features(tests PRIVATE cxx_std_17)
 set_target_properties(tests PROPERTIES
     BUILD_RPATH "${OPEN62541_BUILD}/bin"
     INSTALL_RPATH "${OPEN62541_BUILD}/bin")

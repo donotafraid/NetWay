@@ -1,46 +1,9 @@
+# Portable clangd configuration: no developer-specific absolute paths.
+# Configure a build first (quickstart.sh writes build/compile_commands.json).
 CompileFlags:
-  Add: 
-    - -isystem
-    - /usr/lib/llvm-17/include
-    - -isystem
-    - /usr/lib/llvm-17/include/c++/v1
-    - -isystem
-    - /usr/local/include
-    - -isystem
-    - /usr/include/x86_64-linux-gnu/qt5 
-    - -isystem
-    - /usr/include
+  Add:
     - -std=gnu++17
-    - -I
-    - /root/NetWay/opcuaNetWay/include
-    - -I
-    - /root/snap7/release/wrappers/c-cpp/
-    - -I
-    - /root/snap7/src/core/
-    - -I
-    - /root/open62541-v1.4.14/include/
-    - -I
-    - /root/open62541-v1.4.14/build/src_generated
-    - -I
-    - /root/open62541-v1.4.14/plugins/include/
-    - -I
-    - /root/prometheus-cpp/build/core/include
-    - -I
-    - /root/prometheus-cpp/build/pull/include/
-    - -I
-    - /root/prometheus-cpp/build/push/include/
-    - -I
-    - /root/prometheus-cpp/pull/include/
-    - -I
-    - /root/prometheus-cpp/push/include/
-    - -I
-    - /root/prometheus-cpp/core/include/
-    - -I
-    - /usr/include/
-    - -I
-    - /root/NetWay/opcuaNetWay
-    - -DOPCUAPACKING_ENABLE_TEST_HOOKS
-  CompilationDatabase: compile_commands.json
+  CompilationDatabase: build
 
 Index:
-  Background: Build 
+  Background: Build

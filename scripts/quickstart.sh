@@ -25,6 +25,10 @@ CONAN_DIR=${CONAN_DIR:-$ROOT/conan_build}
 JOBS=${JOBS:-$(nproc 2>/dev/null || echo 2)}
 CC=${CC:-clang-17}
 CXX=${CXX:-clang++-17}
+# Conan builds its dependency packages with the compiler named in the profile.
+# Export the pinned executables so a shell variable does not silently fall back
+# to a distro clang (for example /usr/bin/clang-14) when Conan spawns CMake.
+export CC CXX
 
 SANITIZE=0
 for arg in "$@"; do

@@ -32,16 +32,17 @@ BUILD_DIR=build ./scripts/quickstart.sh
 ```
 
 ```sh
-ctest --test-dir build              # 174 个 ctest = 172 gtest（171 pass + 1 skip）+ 2 个编译/链接探针
+ctest --test-dir build              # 176 个 ctest = 174 gtest（173 pass + 1 skip）+ 2 个编译/链接探针
 ./scripts/run_asan.sh               # ASan + UBSan
 ./scripts/run_lsan.sh               # ASan + LSan
 ./scripts/run_tsan.sh               # TSan + 过滤器完整性
-./scripts/run_slo_bench.sh          # 5 次中位数 + bootstrap CI
+./scripts/run_slo_bench.sh          # 15 次中位数 + bootstrap CI（默认 RUNS=15）
 ```
 
 benchmark 证据的可信度取决于“归档已提交 + 二进制不旧于源码 + 构建类型/源码
 哈希 + 原始 run + errors=0”；发布前先看 `bench-results/<stamp>_slo/env.txt`
 的 `bin vs src`、`--- build ---`、`--- source hash ---` 段。当前归档是
-`bench-results/20261030_083718_slo/`（与当前 `ua.cpp` 的 SHA-256 一致）；
-`20261029_141357_slo` 只作上一轮基线。PASS/FAIL 与 operating point 分析见
+`bench-results/20261030_141909_slo/`（干净 HEAD `228df04`，与当前 `ua.cpp`
+的 SHA-256 一致）；`20261030_083718_slo` 是 5 次历史归档，
+`20261029_141357_slo` 只作补丁前基线。PASS/FAIL 与 operating point 分析见
 [docs/benchmark.md](docs/benchmark.md)。

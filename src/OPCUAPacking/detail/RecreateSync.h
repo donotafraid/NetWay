@@ -6,7 +6,7 @@
 #include <mutex>
 #include <string>
 
-class ISdk;
+namespace OPCUAPacking::internal { class ISdk; }
 
 //  独立的外置对象，确保整个对象析构时，部分未完成线程还能调用某些对象
 namespace OPCUAPacking::internal {

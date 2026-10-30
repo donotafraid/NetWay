@@ -1,7 +1,8 @@
 # 已知限制
 
 本文只写“当前实现真的做不到 / 尚未验证 / 有明确窗口”的事情。每条尽量给出
-影响、触发条件与应对方式；性能数字只引用带归档路径的 5 次中位数。
+影响、触发条件与应对方式；当前性能数字引用 `20261030_141909_slo` 的 15 次
+中位数，历史 5 次归档只作对照并明确标注。
 
 ## 1. 功能与语义
 
@@ -118,18 +119,21 @@
 - **数字 NodeId 的真实 server 覆盖只有一个变量。** T166 用
   `ns=1;i=20001` 做 INT16 往返；没有覆盖 NUMERIC 的越界/不存在节点、复数
   命名空间、GUID/ByteString。后者是能力缺口，不是测试缺口。
-- **benchmark 不在 CI 门禁内。** `bench/` 与 `scripts/run_slo_bench.sh`
-  覆盖 8 线程 `batchRead`/`batchWrite` 的 P50/P99、断线恢复耗时分布、
-  长时间 RSS 曲线。这些是观测值，需要人工跑并归档原始结果，CI 不设阈值。
+- **CI 只门禁已归档的 capacity/CI 指标，不跑完整 benchmark。** `bench/` 与
+  `scripts/run_slo_bench.sh` 覆盖 8 线程 `batchRead`/`batchWrite` 的
+  P50/P99、断线恢复耗时分布、长时间 RSS 曲线；这些是观测值，需要人工跑并
+  归档原始结果。`check_bench_slo.py --profile capacity --ci-upper-ms 1.0
+  --min-runs 15` 只对已提交的 `median.txt`/`ci.txt` 做 1T p99.9、8T 容量
+  下限和 errors 校验；8T 严格线性与固定率诊断仍是人工判断，不设为 CI 门禁。
 - **单次延迟 p99 不可复现，且 p99 依赖吞吐。** 同一份代码、同一台机器，
-  单次 8 线程 p99 可以在数毫秒到数十毫秒之间波动；当前归档的 `8t` 25.740ms
-  是 7982.5 calls/s 的饱和点，固定 4268 calls/s 的 `8t_r80` 是 2.205ms。
-  引用 p99 必须同时给 calls/s、构建类型和中位数；不能把“上一会话
-  2.037ms”当稳定容量。
-- **1T p99.9 的 1ms 判据目前只是中位数通过。** 当前归档中位数 0.641ms，但
-  bootstrap 95% CI 上界 1.546ms，原始 5 次里 2 次超过 1ms。要把它当发布
-  门禁，需要 `RUNS=15` 或在更安静的主机重跑，并同时报告 CI 上界；不要把
-  “中位数 ≤1ms”写成“硬保证”。
+  单次 8 线程 p99 可以在数毫秒到数十毫秒之间波动；当前归档的 `8t` 9.308ms
+  是 8376.1 calls/s 的饱和点，固定 4268 calls/s 的 `8t_r80` 是 1.794ms。
+  引用 p99 必须同时给 calls/s、构建类型和中位数；不能把上一轮的 25.740ms
+  或本轮的 9.308ms 单独当成稳定容量。
+- **1T p99.9 的 1ms 判据在这一轮通过，但不是跨机器保证。** 当前归档 15 次
+  中位数 0.715ms、bootstrap 95% CI 上界 0.763ms，15 个原始 run 的 p99.9
+  最大值 0.773ms；`check_bench_slo.py --ci-upper-ms 1.0 --min-runs 15` 会
+  同时检查中位数、CI 上界和样本数。仍要按本机/本构建引用；换主机需重跑。
 - **benchmark 证据必须带“二进制不旧于源码 + 构建类型 + 源码哈希”的证明。**
   `scripts/run_slo_bench.sh` 的 `env.txt` 记录 `bin vs src`、`CMAKE_BUILD_TYPE`、
   `-O*`、源码/二进制 SHA-256、cgroup 配额和 `git diff --stat`；发布前必须
@@ -145,8 +149,8 @@
   `ClientConfig::logLevel` 默认 `LOG_WARNING`，`bench/` 用 `LOG_ERROR`；
   排查时显式调到 `LOG_INFO`/`LOG_DEBUG`，不要在产线默认打开。
 - **per-thread client 没有每线程绑核，也不需要把它当成代码优化项。**
-  `8t_ptc` 只用 `taskset -c 0-7` 允许迁移；当前 5 次中位数
-  p99=0.706ms、22753.8 calls/s，严格判据通过。8 个 client + 8 个看门狗 + server 在
+  `8t_ptc` 只用 `taskset -c 0-7` 允许迁移；当前 15 次中位数
+  p99=0.669ms、23483.2 calls/s，严格判据通过。8 个 client + 8 个看门狗 + server 在
   8 vCPU 上无法一对一绑定；要降低线程成本，优先做“所有 client 共享一个
   watchdog”或固定 client 池，而不是绑核。绑核属于 benchmark 控制变量。
 - **RSS soak 必须让 server 跑在独立进程。** `bench_rss` 读的是自身
@@ -160,9 +164,10 @@
   归档时保留 CSV 原始数据，`check_rss.py --min-hours` 用于拒绝被截断的曲线。
   `run_bench.sh` 的 soak 段是前台进程，会话退出会被 `trap` 连同独立 server
   一起终止；长跑必须用 `setsid nohup ... < /dev/null &` 脱离终端。
-- **当前 SLO 归档是 `bench-results/20261030_083718_slo/`。**
-  RelWithDebInfo/-O2，5×6 run，errors=0，源码哈希与当前 `ua.cpp` 一致；
-  `20261029_141357_slo` 是补丁前基线，只作跨会话方差对照。复跑必须用
+- **当前 SLO 归档是 `bench-results/20261030_141909_slo/`。**
+  RelWithDebInfo/-O2，15×6 = 90 个 run，errors=0；HEAD `228df04` 干净，
+  `dirty src/include` 为空。`20261030_083718_slo` 是 5 次历史归档，
+  `20261029_141357_slo` 是补丁前基线，两者只作跨会话方差对照。复跑必须用
   `docs/benchmark.md` 的命令生成新时间戳归档，并先 commit 再跑。
 - **旧 `median.txt` 不含 errors。** 原始 run 文件里有 `errors=0`；只看旧
   中位数无法发现某一次 run 出错。新脚本在汇总前拒绝 `errors!=0`，并把

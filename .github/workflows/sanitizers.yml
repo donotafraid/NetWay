@@ -24,6 +24,13 @@ jobs:
       - name: 检查文档引用的 benchmark 归档是否存在
         run: python3 scripts/check_bench_refs.py
 
+      - name: 检查 1T p99.9 的 15 次 CI 上界与 capacity 下限
+        run: |
+          python3 scripts/check_bench_slo.py \
+            bench-results/20261030_141909_slo/median.txt \
+            --profile capacity --require-errors \
+            --ci-upper-ms 1.0 --min-runs 15
+
       - name: 输出被测 SHA
         run: |
           echo "本次运行 SHA: ${{ github.sha }}"

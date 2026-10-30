@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""对 5 次 run 的 p99/p999 中位数做 bootstrap 95% CI。"""
+"""对归档内每个 label 的 p99/p999 中位数做 bootstrap 95% CI（run 数由文件发现）。"""
 import sys, glob, re, os
 import numpy as np
 

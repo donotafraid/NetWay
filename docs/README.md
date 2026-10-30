@@ -160,7 +160,8 @@ ctest --test-dir build-asan
 ./scripts/run_tsan.sh    # TSan + 并发过滤器完整性自查
 ```
 
-- `tests/`：44 个文件、172 个用例（171 pass + 1 真实设备 skip）。
+- `tests/`：45 个文件、174 个用例（173 pass + 1 真实设备 skip），加 2 个
+  编译/链接探针共 176 个 ctest。
   `MockSdk` 提供虚拟时钟、状态脚本、响应形状注入，以及空数组哨兵
   （`UA_EMPTY_ARRAY_SENTINEL`）、空 STRING（`length==0 && data!=NULL`）与
   `hasValue==true` 但 `variant.type==nullptr` 三种边界注入。
@@ -185,6 +186,13 @@ ctest --test-dir build-asan
   NodeId 缺省 dataType 不得静默为 BOOL（T170）、`Result::map` 四个重载
   （T171）、`Result::map_or/map_or_else` 与 `map_err/and_then/or_else`
   （T172）。
+- `tests/test45.cpp`：真实 server 上的 13 种标量类型批量读写往返（T173）、
+  空 STRING 往返（T174）；把 `TypeTraits` 的 S7→UA 映射从 Mock 观察推进到
+  真实解码/编码路径。
+- `tests/compile/RecreateSyncProbe.cpp`：编译期钉死
+  `RecreateSync::m_sdkForRecreate` 的类型是
+  `std::shared_ptr<OPCUAPacking::internal::ISdk>`，防止全局 `::ISdk` 前向
+  声明在跨 TU 时造成 ODR 类型不一致。
 - CI（`.github/workflows/sanitizers.yml`）：`build-open62541` 预热缓存后并行跑
   ASan+UBSan / ASan+LSan / TSan / `--gtest_repeat=50 --gtest_shuffle` 抖动四个
   job（Ubuntu 22.04、Clang 17、libc++、Conan 2）。TSan 构建在 Debug 下跳过
@@ -225,14 +233,15 @@ LATENCY_REPEATS=5 ./scripts/run_bench.sh    # 延迟跑 5 次并输出中位数
 - `bench_rss`：长跑时按间隔输出 `elapsed_s,rss_kb,calls,errors` CSV。
 - `bench_server`：独立进程的 server，供 soak 使用。
 
-**当前 5×6 SLO 归档是 `bench-results/20261030_083718_slo/`（源码哈希与
-当前 `ua.cpp` 一致），判据与 operating point 分析以
-[benchmark 判据](benchmark.md) 为准；`20261029_141357_slo` 只作上一轮基线。
-一句话结论：共享实例容量下限 PASS（8T p99 25.740ms、7982.5 calls/s），
-严格线性 FAIL；固定 4268 calls/s 下 p99 2.205ms 仍高于严格界；per-thread
-client 严格判据 PASS（0.706ms、22753.8 calls/s），不需要再做每线程绑核。
-1T p99.9 的 5 次中位数是 0.641ms，但 bootstrap 95% CI 上界 1.546ms，不能
-把“≤1ms”说成硬保证；细见 benchmark 文档。
+**当前 15×6 SLO 归档是 `bench-results/20261030_141909_slo/`（干净 HEAD
+`228df04`，源码哈希与当前 `ua.cpp` 一致），判据与 operating point 分析以
+[benchmark 判据](benchmark.md) 为准；`20261030_083718_slo` 是 5 次历史归档，
+`20261029_141357_slo` 只作补丁前基线。一句话结论：共享实例容量下限 PASS
+（8T p99 9.308ms、8376.1 calls/s），严格线性 FAIL；固定 4268 calls/s 下
+p99 1.794ms 仍高于严格界；per-thread client 严格判据 PASS（0.669ms、
+23483.2 calls/s），不需要再做每线程绑核。1T p99.9 的 15 次中位数是
+0.715ms，bootstrap 95% CI 上界 0.763ms，15 个原始 run 全部低于 1ms；这一轮
+可按 PASS 引用，但仍不是跨机器硬保证。
 
 ## 目录
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <variant>
 
 #include "Rust_error_deal/error_deal.h"
 #include <open62541/client_highlevel.h>

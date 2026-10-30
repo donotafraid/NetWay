@@ -1,6 +1,8 @@
 #pragma once
 
-#include "src/OPCUAPacking//detail/TypeTraits.h"
+#include <unordered_map>
+
+#include "src/OPCUAPacking/detail/TypeTraits.h"
 #include "OPCUAPacking/ValueTypes.h"
 
 namespace opcua::readConversion {

@@ -14,7 +14,7 @@
   安全通道生命周期、断线重连、状态机、批量读写；当前封装使用 None 安全
   策略/匿名身份，加密/证书/用户名身份尚未暴露。
 - **工程化**：GoogleTest、Mock/接缝测试、GitHub Actions、benchmark、
-  5 次中位数 + bootstrap CI、RSS soak、netem 故障注入、技术文档。
+  15 次中位数 + bootstrap CI、CI 上界门禁、RSS soak、netem 故障注入、技术文档。
 
 ## 项目：工业 OPC UA 客户端封装（C++17 / open62541 v1.4.14）
 
@@ -38,19 +38,24 @@
   SDK 接缝抛异常时由守卫/`CASGuard` 回滚；T167/T168 把运行时和编译期
   契约钉死；T172 补齐 `Result::map_or/map_or_else/map_err/and_then/or_else`
   的编译与运行覆盖。
-- 测试/门禁：172 个 gtest（171 pass + 1 真实设备 skip）、44 个测试文件；
-  ASan+UBSan、ASan+LSan、TSan 并发过滤器、异常注入、真实 server 集成、
-  24h RSS、netem 矩阵；CI 覆盖 ASan/LSan/TSan/50 次乱序抖动。
-- 性能（`bench-results/20261030_083718_slo/`，RelWithDebInfo/-O2、5 次
-  中位数、30 个 run 全部 `errors=0`）：1T 10273.3 calls/s、p99 0.223ms、
-  p99.9 0.641ms；8T 共享 7982.5 calls/s、p99 25.740ms（饱和点）；固定
-  4268 calls/s 时 p99 2.205ms；8T 每线程一个 client 22753.8 calls/s、
-  p99 0.706ms。共享实例严格 SLO 未通过，per-thread 严格判据通过；1T
-  p99.9 的 bootstrap 95% CI 上界为 1.546ms，不把中位数 0.641ms 说成硬保证。
-- 文档：README + 线程模型 + 已知限制 + benchmark 判据；锁序、所有权、
-  软预算、8T 结论、归档有效性全部可追溯；`scripts/check_bench_refs.py`
-  在 CI 中拒绝未提交或悬空的 benchmark 归档；`scripts/quickstart.sh`
-  提供从干净 checkout 一条命令构建并跑测试的入口。
+- 测试/门禁：174 个 gtest（173 pass + 1 真实设备 skip）、45 个测试文件、
+  176 个 ctest；ASan+UBSan、ASan+LSan、TSan 并发过滤器、异常注入、真实
+  server 集成、24h RSS、netem 矩阵；CI 覆盖 ASan/LSan/TSan/50 次乱序抖动。
+  补 T173/T174 后，真实 server 覆盖 13 种 S7 标量类型的批量读写和空 STRING；
+  `tests/compile/RecreateSyncProbe.cpp` 用编译期断言钉死内部头文件的
+  `internal::ISdk` 前向声明，避免跨 TU 的 ODR 类型不一致。
+- 性能（`bench-results/20261030_141909_slo/`，干净 HEAD 228df04、
+  RelWithDebInfo/-O2、15 次中位数、90 个 run 全部 `errors=0`）：1T
+  11497.6 calls/s、p99 0.173ms、p99.9 0.715ms（95% CI 上界 0.763ms，15 个
+  原始 run 均低于 1ms）；8T 共享 8376.1 calls/s、p99 9.308ms（饱和点，
+  0.728×1T）；固定 4268 calls/s 时 p99 1.794ms；8T 每线程一个 client
+  23483.2 calls/s、p99 0.669ms。共享实例容量下限通过、严格线性未通过，
+  per-thread 严格判据通过。
+- 文档/复现：README + 线程模型 + 已知限制 + benchmark 判据；锁序、所有权、
+  软预算、8T 结论、归档有效性全部可追溯；`scripts/check_bench_slo.py`
+  把 1T p99.9 的 CI 上界与样本数变成可执行门禁，
+  `scripts/check_bench_refs.py` 拒绝未提交/悬空归档；
+  `scripts/quickstart.sh` 是从干净 checkout 一条命令构建并跑测试的入口。
 
 ## 工作/实习经历
 

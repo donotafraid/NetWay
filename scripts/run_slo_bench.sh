@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# scripts/run_slo_bench.sh -- SLO 基准：独立 server、绑核、5 次中位数、归档
+# scripts/run_slo_bench.sh -- SLO 基准：独立 server、绑核、RUNS 次中位数、归档
 set -euo pipefail
 cd "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ROOT=$(pwd)
@@ -161,9 +161,31 @@ if grep -h 'errors=' "$OUT"/*_run*.txt 2>/dev/null | grep -qv 'errors=0'; then
   exit 5
 fi
 
+# ---- 完整性门禁：每个 label 必须恰好有 RUNS 个可解析的 run ----
+# 旧脚本只 grep 现有文件；一次 run 崩溃/漏写时，median 会安静地变成
+# “median over 15 runs”其实只有 14 个样本。这里先拒绝缺样本/缺字段的归档。
+LABELS=$(ls "$OUT"/*_run1.txt 2>/dev/null | xargs -n1 basename | sed 's/_run1.txt//' | sort)
+if [ -z "$LABELS" ]; then
+  echo "error: no benchmark run output found under $OUT" >&2
+  exit 7
+fi
+for label in $LABELS; do
+  count=$(find "$OUT" -maxdepth 1 -name "${label}_run*.txt" | wc -l)
+  if [ "$count" -ne "$RUNS" ]; then
+    echo "error: $label has $count run file(s), expected $RUNS" >&2
+    exit 7
+  fi
+  for f in "$OUT/${label}_run"*.txt; do
+    if ! grep -q 'calls_s=' "$f" || ! grep -q 'latency_ms p50=' "$f" \
+       || ! grep -q 'errors=' "$f"; then
+      echo "error: incomplete benchmark output: $f" >&2
+      exit 7
+    fi
+  done
+done
+
 # ---- 中位数汇总（动态发现所有 label）----
 med() { sort -n | awk '{a[NR]=$1} END{if(NR%2)print a[(NR+1)/2];else print (a[NR/2]+a[NR/2+1])/2}'; }
-LABELS=$(ls "$OUT"/*_run1.txt 2>/dev/null | xargs -n1 basename | sed 's/_run1.txt//' | sort)
 {
   for label in $LABELS; do
     echo "--- $label (median over $RUNS runs) ---"

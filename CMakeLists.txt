@@ -4,6 +4,9 @@ cmake_minimum_required(VERSION 3.15)
 #设置项目名和支持语言,该部分应该在上述设置之后。不然会造成 不断更新设置的死循环
 project(CrossPlatformApp LANGUAGES CXX C)
 
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
 # 包含 Conan 工具链文件
 set(CONAN_DIR "${CMAKE_CURRENT_SOURCE_DIR}/conan_build"
     CACHE PATH "Conan 依赖目录（可按环境覆盖）")

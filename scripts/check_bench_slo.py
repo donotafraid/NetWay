@@ -88,6 +88,17 @@ def main() -> int:
                     help="require an errors field in every gated section and "
                          "fail unless it is 0; run_slo_bench.sh writes this "
                          "field. Use it for new archives.")
+    ap.add_argument("--ci", type=Path, default=None,
+                    help="path to ci.txt (default: ci.txt next to median.txt). "
+                         "Only read when --ci-upper-ms is set.")
+    ap.add_argument("--ci-upper-ms", type=float, default=None,
+                    help="also gate the bootstrap upper bound for 1T p99.9 "
+                         "against this value; requires --ci (or ci.txt beside "
+                         "the input) and a line produced by bootstrap_ci.py")
+    ap.add_argument("--min-runs", type=int, default=0,
+                    help="with --ci-upper-ms, require at least this many runs "
+                         "in the 1T p999 CI line (prevents a 5-run archive from "
+                         "being presented as a 15-run result)")
     args = ap.parse_args()
 
     s = parse(args.input)
@@ -100,6 +111,27 @@ def main() -> int:
     add("1T p99.9 <= 1ms", f"{p999_1t:.3f}ms", p999_1t <= 1.0)
 
     target = args.target
+
+    if args.ci_upper_ms is not None:
+        ci_path = args.ci if args.ci is not None else args.input.with_name("ci.txt")
+        if not ci_path.is_file():
+            raise SystemExit(f"missing CI file {ci_path}; pass --ci or run "
+                             f"bootstrap_ci.py next to the archive")
+        ci_text = ci_path.read_text(encoding="utf-8")
+        ci_match = re.search(
+            r"^1t p999: median=([0-9.]+) CI=\[([0-9.]+),([0-9.]+)\] n=([0-9]+)$",
+            ci_text, re.MULTILINE)
+        if not ci_match:
+            raise SystemExit(f"missing '1t p999: median=... CI=[...,...] n=...' "
+                             f"line in {ci_path}")
+        ci_upper = float(ci_match.group(3))
+        ci_runs = int(ci_match.group(4))
+        add("1T p99.9 CI upper <= limit",
+            f"{ci_upper:.3f}ms <= {args.ci_upper_ms:.3f}ms",
+            ci_upper <= args.ci_upper_ms)
+        if args.min_runs > 0:
+            add("1T p999 sample size",
+                f"n={ci_runs} >= {args.min_runs}", ci_runs >= args.min_runs)
 
     # A median file without an errors field cannot prove the run was clean.
     # New archives include it (run_slo_bench.sh sums errors over the raw

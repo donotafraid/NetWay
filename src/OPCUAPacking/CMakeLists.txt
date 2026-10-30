@@ -15,6 +15,7 @@ set(
 #创建动态库/静态库文件名，将源文件添加到动态库/静态库文件里
 set(appleName "OPCUAPacking")
 add_library(${appleName} STATIC ${SOURCES})
+target_compile_features(${appleName} PUBLIC cxx_std_17)
 target_compile_options(OPCUAPacking PRIVATE -Wswitch-enum -Werror=switch-enum)
 
 #将源头文件的路径传递给建立的动态库/静态库文件里
