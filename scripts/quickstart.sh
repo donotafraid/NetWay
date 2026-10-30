@@ -22,6 +22,7 @@ ROOT=$(pwd)
 BUILD_DIR=${BUILD_DIR:-build}
 OPEN62541_ROOT=${OPEN62541_ROOT:-$ROOT/third_party/open62541-v1.4.14}
 CONAN_DIR=${CONAN_DIR:-$ROOT/conan_build}
+CONAN_BENCH_DIR=${CONAN_BENCH_DIR:-$ROOT/conan_bench_build}
 JOBS=${JOBS:-$(nproc 2>/dev/null || echo 2)}
 CC=${CC:-clang-17}
 CXX=${CXX:-clang++-17}
@@ -112,6 +113,17 @@ if [ ! -f "$CONAN_DIR/conan_toolchain.cmake" ]; then
     --build=missing
 else
   log "Reusing Conan toolchain at $CONAN_DIR"
+fi
+
+if [ ! -f "$CONAN_BENCH_DIR/conan_toolchain.cmake" ]; then
+  log "Installing Conan dependencies into $CONAN_BENCH_DIR"
+  conan profile detect --force >/dev/null
+  conan install . -of "$CONAN_BENCH_DIR" -s build_type=RelWithDebInfo \
+    -s compiler=clang -s compiler.version=17 \
+    -s compiler.libcxx=libc++ -s compiler.cppstd=gnu17 \
+    --build=missing
+else
+  log "Reusing Conan toolchain at $CONAN_BENCH_DIR"
 fi
 
 # ---------------------------------------------------------------------------
