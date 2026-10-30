@@ -15,15 +15,10 @@ set -euo pipefail
 # tree when it exists. An unconditional export ignored the
 # "OPEN62541_ROOT=/path/to/open62541-v1.4.14 ./scripts/run_bench.sh" form that
 # this file documents.
-if [[ -z "${OPEN62541_ROOT:-}" ]]; then
-  if [[ -d /root/open62541-v1.4.14-noSanitizer ]]; then
-    OPEN62541_ROOT=/root/open62541-v1.4.14-noSanitizer
-  else
-    echo "ERROR: OPEN62541_ROOT is not set and the default path does not exist." >&2
-    echo "       Run: OPEN62541_ROOT=/path/to/open62541-v1.4.14 $0" >&2
-    exit 2
-  fi
-fi
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
+ROOT=$(pwd)
+
+OPEN62541_ROOT=${OPEN62541_ROOT:-$ROOT/third_party/open62541-v1.4.14}
 export OPEN62541_ROOT
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
@@ -32,13 +27,16 @@ cd "${PROJECT_ROOT}"
 BUILD_DIR="${BUILD_DIR:-build-bench}"
 OUT_DIR="${OUT_DIR:-${PROJECT_ROOT}/bench-results}"
 BUILD_TYPE="${BENCH_BUILD_TYPE:-RelWithDebInfo}"
+CC=${CC:-clang-17}
+CXX=${CXX:-clang++-17}
 mkdir -p "${OUT_DIR}"
 
 CONAN_TOOLCHAIN="${CONAN_TOOLCHAIN:-${PROJECT_ROOT}/conan_bench_build/conan_toolchain.cmake}"
 
 CMAKE_ARGS=(-B "${BUILD_DIR}" -DCMAKE_BUILD_TYPE="${BUILD_TYPE}")
-if [[ -f "${CONAN_TOOLCHAIN}" ]]; then
+if [[ -n "${CONAN_TOOLCHAIN:-}" && -f "${CONAN_TOOLCHAIN}" ]]; then
   CMAKE_ARGS+=(-DCMAKE_TOOLCHAIN_FILE="${CONAN_TOOLCHAIN}")
+  CMAKE_ARGS+=(-DCMAKE_PREFIX_PATH="$(dirname "${CONAN_TOOLCHAIN}")")
 fi
 if [[ -n "${OPEN62541_ROOT:-}" ]]; then
   CMAKE_ARGS+=(-DOPEN62541_ROOT="${OPEN62541_ROOT}")
@@ -48,7 +46,7 @@ if [[ -n "${CXX:-}" ]]; then CMAKE_ARGS+=(-DCMAKE_CXX_COMPILER="${CXX}"); fi
 
 echo "=== configure ${BUILD_DIR} (${BUILD_TYPE}) ==="
 cmake "${CMAKE_ARGS[@]}"
-cmake --build "${BUILD_DIR}" --target bench_latency bench_recovery bench_rss bench_server -j
+cmake --build "${BUILD_DIR}" --target bench_latency bench_recovery bench_rss bench_server -j  
 
 BENCH_BIN="${BUILD_DIR}/bench-build"
 LATENCY_REPEATS="${LATENCY_REPEATS:-3}"
