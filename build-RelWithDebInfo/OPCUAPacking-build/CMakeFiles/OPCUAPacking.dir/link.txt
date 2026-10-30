@@ -1,2 +1,0 @@
-/usr/bin/llvm-ar-17 qc libOPCUAPacking.a CMakeFiles/OPCUAPacking.dir/ua.cpp.o
-/usr/bin/llvm-ranlib-17 libOPCUAPacking.a
