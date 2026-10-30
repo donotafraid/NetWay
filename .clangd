@@ -12,7 +12,7 @@ CompileFlags:
     - /usr/include
     - -std=gnu++17
     - -I
-    - /root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/include/
+    - /root/NetWay/opcuaNetWay/include
     - -I
     - /root/snap7/release/wrappers/c-cpp/
     - -I
@@ -38,7 +38,7 @@ CompileFlags:
     - -I
     - /usr/include/
     - -I
-    - /root/Cross_platform_file_transfer_tool-main/Cross_platform_file_transfer_tool-main/
+    - /root/NetWay/opcuaNetWay
     - -DOPCUAPACKING_ENABLE_TEST_HOOKS
   CompilationDatabase: compile_commands.json
 
