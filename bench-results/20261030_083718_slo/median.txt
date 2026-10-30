@@ -1,0 +1,54 @@
+--- 1t (median over 5 runs) ---
+p50: 0.083
+p90: 0.141
+p99: 0.223
+p999: 0.641
+max: 10.864
+calls_s: 10273.3
+errors: 0
+
+--- 4t (median over 5 runs) ---
+p50: 0.113
+p90: 0.160
+p99: 8.133
+p999: 43.998
+max: 151.925
+calls_s: 8440.8
+errors: 0
+
+--- 8t (median over 5 runs) ---
+p50: 0.116
+p90: 0.168
+p99: 25.740
+p999: 119.785
+max: 332.661
+calls_s: 7982.5
+errors: 0
+
+--- 8t_ptc (median over 5 runs) ---
+p50: 0.275
+p90: 0.540
+p99: 0.706
+p999: 0.944
+max: 1.879
+calls_s: 22753.8
+errors: 0
+
+--- 8t_ptc_r80 (median over 5 runs) ---
+p50: 0.303
+p90: 0.461
+p99: 0.614
+p999: 0.922
+max: 3.588
+calls_s: 2854.8
+errors: 0
+
+--- 8t_r80 (median over 5 runs) ---
+p50: 0.921
+p90: 1.506
+p99: 2.205
+p999: 26.928
+max: 59.846
+calls_s: 4267.7
+errors: 0
+

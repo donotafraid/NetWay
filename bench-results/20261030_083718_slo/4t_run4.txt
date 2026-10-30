@@ -1,0 +1,2 @@
+run=1/1 mode=read threads=4 ops=100000 batch=16 calls=100000 wall_ms=12272.9 calls_s=8148.0 items_s=130368.1 errors=0
+run=1 latency_ms p50=0.115 p90=0.167 p99=11.100 p999=43.998 max=145.248 mean=0.469
