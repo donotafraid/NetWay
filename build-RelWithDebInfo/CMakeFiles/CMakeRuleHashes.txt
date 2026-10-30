@@ -1,0 +1,2 @@
+# Hashes of file build rules.
+77ffc5a2571532e0bbc201a464c30cbd tests-build/CMakeFiles/check_encapsulation

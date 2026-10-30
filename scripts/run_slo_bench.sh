@@ -2,9 +2,17 @@
 # scripts/run_slo_bench.sh -- SLO 基准：独立 server、绑核、5 次中位数、归档
 set -euo pipefail
 cd "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT=$(pwd)
 
-BIN_LAT=./build-bench/bench-build/bench_latency
-BIN_SRV=./build-bench/bench-build/bench_server
+# ---- bench 构建树：单一事实来源 ----
+# 配置目录：含 CMakeCache.txt / compile_commands.json
+BENCH_BUILD_DIR=${BENCH_BUILD_DIR:-$ROOT/build-RelWithDebInfo}
+# 二进制目录：CMAKE_RUNTIME_OUTPUT_DIRECTORY 指向的子目录
+BENCH_BIN_DIR=${BENCH_BIN_DIR:-$BENCH_BUILD_DIR/bench-build}
+
+BIN_LAT=${BIN_LAT:-$BENCH_BIN_DIR/bench_latency}
+BIN_SRV=${BIN_SRV:-$BENCH_BIN_DIR/bench_server}
+
 STAMP=$(date +%Y%m%d_%H%M%S)
 OUT=bench-results/${STAMP}_slo
 mkdir -p "$OUT"
@@ -36,8 +44,9 @@ C8_CPUS=${C8_CPUS:-0-7}
   ls -l --time-style=full-iso "$BIN_LAT" "$BIN_SRV" src/OPCUAPacking/ua.cpp
   echo "--- build ---"
   grep -E '^(CMAKE_BUILD_TYPE|CMAKE_CXX_COMPILER|CMAKE_CXX_FLAGS):' \
-      build-bench/CMakeCache.txt 2>/dev/null || true
+      "$BENCH_BUILD_DIR/CMakeCache.txt" 2>/dev/null || true
   clang++-17 --version 2>/dev/null | head -1 || true
+  grep -m1 -o -- '-O[0-9s]' "$BENCH_BUILD_DIR/compile_commands.json" 2>/dev/null || true
   grep -m1 -o -- '-O[0-9s]' build-bench/compile_commands.json 2>/dev/null || true
   echo "--- source hash ---"
   sha256sum src/OPCUAPacking/ua.cpp include/OPCUAPacking/*.h \
@@ -55,6 +64,39 @@ C8_CPUS=${C8_CPUS:-0-7}
   echo "BENCH_PROFILE=PROFILE_LOCAL watchdogIntervalMs=1000 batch=$BATCH"
 } > "$OUT/env.txt" 2>&1
 
+# ---- 前置校验：构建树与二进制必须存在 ----
+if [ ! -f "$BENCH_BUILD_DIR/CMakeCache.txt" ]; then
+  echo "error: $BENCH_BUILD_DIR/CMakeCache.txt not found;" >&2
+  echo "       BENCH_BUILD_DIR=$BENCH_BUILD_DIR" >&2
+  echo "       configure first: cmake -S . -B \"$BENCH_BUILD_DIR\" -DCMAKE_BUILD_TYPE=RelWithDebInfo ..." >&2
+  exit 2
+fi
+for BIN in "$BIN_LAT" "$BIN_SRV"; do
+  if [ ! -x "$BIN" ]; then
+    echo "error: bench binary missing or not executable: $BIN" >&2
+    echo "       BENCH_BIN_DIR=$BENCH_BIN_DIR" >&2
+    exit 2
+  fi
+done
+
+# ---- 构建类型门禁：bench 数据必须来自优化构建 ----
+# Debug(-O0) 的延迟/吞吐与发布构建差数倍，不能作为 SLO 证据。
+BUILD_TYPE=$(grep -m1 '^CMAKE_BUILD_TYPE:' "$BENCH_BUILD_DIR/CMakeCache.txt" | cut -d= -f2)
+case "$BUILD_TYPE" in
+  Release|RelWithDebInfo|MinSizeRel) ;;
+  *)
+    echo "error: bench build type is '$BUILD_TYPE'; expected Release/RelWithDebInfo/MinSizeRel." >&2
+    echo "       -O0 Debug binaries produce non-representative results." >&2
+    exit 6
+    ;;
+esac
+# 二次确认实际编译命令没有 -O0（防止 cache 与实际 flags 不一致）
+if grep -q -- '-O0' "$BENCH_BUILD_DIR/compile_commands.json" 2>/dev/null; then
+  echo "error: compile_commands.json contains -O0; bench binaries are unoptimized." >&2
+  exit 6
+fi
+
+
 # ---- 证据门禁：binary 必须不旧于源码 ----
 # 2026-10-28 23:24 的归档就是因为 binary(13:38) 早于 ua.cpp(23:11)，结果
 # 被误当成当前源码的证据。这里在跑之前直接拒绝，避免再产生不可审计的归档。
@@ -67,7 +109,7 @@ for BIN in "$BIN_LAT" "$BIN_SRV"; do
       -newer "$BIN" -print -quit 2>/dev/null || true)
   if [ -n "$STALE_SRC" ]; then
     echo "error: $BIN is older than source: $STALE_SRC" >&2
-    echo "       rebuild (cmake --build build-bench --target bench_latency bench_server -j)" >&2
+    echo "       rebuild (cmake --build \"$BENCH_BUILD_DIR\" --target bench_latency bench_server -j)" >&2
     echo "       or set BIN_LAT/BIN_SRV to a fresh build" >&2
     exit 4
   fi
