@@ -9,12 +9,12 @@ STAMP=$(date +%Y%m%d_%H%M%S)
 OUT=bench-results/${STAMP}_slo
 mkdir -p "$OUT"
 
-RUNS=${RUNS:-5}
+RUNS=${RUNS:-15}
 OPS=${OPS:-100000}
 BATCH=${BATCH:-16}
 SRV_PORT=${SRV_PORT:-4892}
-# 4268 / 2864 是历史固定负载，不是“当前容量的 80%”。去日志后 8T 共享容量
-# 约 7032 calls/s，4268 只有约 61%；名字 RATE_80 仅为兼容已有归档脚本。
+# 4268 / 2864 是历史固定负载，不是“当前容量的 80%”。本机 8T 共享容量约
+# 7~8k calls/s，4268 只约 53~61%；名字 RATE_80 仅为兼容已有归档脚本。
 # 换机器/换构建后必须重新标定，不要把这两个值当成线性扩展承诺。
 RATE_80=${RATE_80:-4268}           # historical fixed load, not 80% of 7032
 RATE_80_PTC=${RATE_80_PTC:-2864}   # historical fixed load, not 80% of 21600
@@ -34,14 +34,34 @@ C8_CPUS=${C8_CPUS:-0-7}
   grep "cpu MHz" /proc/cpuinfo | head -8
   echo "--- bin vs src ---"
   ls -l --time-style=full-iso "$BIN_LAT" "$BIN_SRV" src/OPCUAPacking/ua.cpp
-  echo "--- config ---"; sed -n '546p;624p' src/OPCUAPacking/ua.cpp
+  echo "--- build ---"
+  grep -E '^(CMAKE_BUILD_TYPE|CMAKE_CXX_COMPILER|CMAKE_CXX_FLAGS):' \
+      build-bench/CMakeCache.txt 2>/dev/null || true
+  clang++-17 --version 2>/dev/null | head -1 || true
+  grep -m1 -o -- '-O[0-9s]' build-bench/compile_commands.json 2>/dev/null || true
+  echo "--- source hash ---"
+  sha256sum src/OPCUAPacking/ua.cpp include/OPCUAPacking/*.h \
+      include/Rust_error_deal/*.h src/OPCUAPacking/detail/*.h 2>/dev/null || true
+  echo "--- binary hash ---"
+  sha256sum "$BIN_LAT" "$BIN_SRV" 2>/dev/null || true
+  echo "--- cgroup/load ---"
+  cat /sys/fs/cgroup/cpu.max 2>/dev/null || true
+  grep -E 'nr_throttled|throttled_usec' /sys/fs/cgroup/cpu.stat 2>/dev/null || true
+  cat /proc/loadavg
+  echo "--- dirty src/include ---"
+  git diff --stat -- src include 2>/dev/null || true
   echo "--- params ---"
   echo "RUNS=$RUNS OPS=$OPS BATCH=$BATCH SRV_CPUS=$SRV_CPUS RATE_80=$RATE_80"
+  echo "BENCH_PROFILE=PROFILE_LOCAL watchdogIntervalMs=1000 batch=$BATCH"
 } > "$OUT/env.txt" 2>&1
 
 # ---- 证据门禁：binary 必须不旧于源码 ----
 # 2026-10-28 23:24 的归档就是因为 binary(13:38) 早于 ua.cpp(23:11)，结果
 # 被误当成当前源码的证据。这里在跑之前直接拒绝，避免再产生不可审计的归档。
+if ! git diff --quiet -- src include 2>/dev/null; then
+  echo "warning: src/include 有未提交改动；env.txt 已记录 diff --stat 和源码哈希，" >&2
+  echo "        但该归档不能仅凭 HEAD 复现。发布证据前先 commit 再重跑。" >&2
+fi
 for BIN in "$BIN_LAT" "$BIN_SRV"; do
   STALE_SRC=$(find src include -type f \( -name '*.cpp' -o -name '*.h' -o -name '*.hpp' \) \
       -newer "$BIN" -print -quit 2>/dev/null || true)

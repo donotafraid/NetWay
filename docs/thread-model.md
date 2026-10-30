@@ -5,7 +5,7 @@
 用 `#error` 强制）。本文的 SDK 事实全部来自 v1.4.14 源码，路径相对于
 open62541 仓库根目录。
 
-目标读者是维护者与面试官：既说明“现在怎么跑”，也明确“哪些窗口还没消除”。
+目标读者是维护者与集成方：既说明“现在怎么跑”，也明确“哪些窗口还没消除”。
 
 ## 1. 先看三条 SDK 事实
 
@@ -143,7 +143,7 @@ RUNNING ◀──────────────── RECOVERING ───
 
 | 成员 | 类型 | 保护对象 | 持有者 |
 | --- | --- | --- | --- |
-| `Impl::m_lock` | `std::mutex` | `m_impl` 快照、`getEffectiveStopSignal()` | 所有 API |
+| `Impl::m_lock` | `std::mutex` | `m_impl` shared_ptr 快照与生命周期门（`getEffectiveStopSignal()` 本身只读原子量） | 所有 API |
 | `Impl::m_sdkMutex` | `std::mutex` | 全部 `UA_Client_*` 调用（含 `run_iterate`；空闲轮询用 `timeout=0`） | SDK 调用点 |
 | `Impl::m_taskCvMx` + `m_taskCv` + `m_taskCounter` | `mutex`/`cv`/`size_t` | 在途读写计数（`InFlightGuard`），供 `shutdown()` drain | 读写、shutdown |
 | `Impl::m_watchDogMx` + `m_watchdogCv` | `mutex`/`cv` | 看门狗等待与唤醒 | 看门狗、shutdown |
@@ -154,12 +154,22 @@ RUNNING ◀──────────────── RECOVERING ───
 | `RecreateSync::m_recreateLock` | `std::mutex` | `m_recreating`、`m_shutdownInFlight`、`m_inFlight`、`m_recreateCv` | API 租约、recreate、shutdown、析构 |
 | `RecreateSync::m_shutdownInFlight` | `int`（受 `m_recreateLock`） | 已赢得 `shutdown()` 的调用者仍在 `shutdownInternal()` 内 | shutdown、析构 |
 | `RecreateSync::m_lock` | `std::mutex` | `pImpl` shared_ptr 快照 | 公开 API 入口 |
-| `Impl::m_watchdogThread` 的 join | — | `shutdown()`/`~Impl()` 先 join 再清理 | teardown |
 
-锁序：**`m_recreateLock` → `m_lock` → `m_sdkMutex`**。
-`m_recreateLock` 的 `wait` 在等待期间释放，因此 `ApiLease` 析构可以递减计数。
-`m_taskCvMx`、`m_watchDogMx`、`m_retryCvMx`、`m_BadStatusMsMx` 都是叶子锁，
-不会在持有时再去拿 `m_lock` / `m_sdkMutex`。
+锁的纪律不是“固定顺序”，而是**不跨阻塞 SDK 调用持外层锁**：
+
+- `ApiLease` 只在 `m_recreateLock` 下改计数，随后释放；公开入口在
+  `RecreateSync::m_lock` 下只拷贝 `pImpl`，随后释放。
+- `batchRead`/`batchWrite` 在 `Impl::m_lock` 下做 stop 检查，释放后才拿
+  `Impl::m_sdkMutex` 调 SDK。
+- `shutdown()` 在 `m_recreateLock` 下置位并计数，释放后 `shutdownInternal()`
+  在 `RecreateSync::m_lock` 下移出 `pImpl`，释放后才 join/drain。
+- 看门狗在 `Impl::m_lock` 下取 client 快照，释放后才进入 `m_sdkMutex`。
+- `m_taskCvMx`、`m_watchDogMx`、`m_retryCvMx`、`m_BadStatusMsMx` 都是叶子锁，
+  不会在持有时再去拿 `m_lock` / `m_sdkMutex`。
+
+例外是 `isConnected()`：它在 `m_sdkMutex` 内调用 `UA_Client_getState()`，而
+后者还要拿 SDK 的 `clientMutex`。这不是死锁（顺序固定），但会让 1s 一次的
+健康探针在服务调用后面排队，并把后续业务调用堵在 `m_sdkMutex` 外；见第 7 节。
 
 回调约束：`stateCallback` / `inactivityCallback` 在调用 `run_iterate` 或同步
 服务调用的线程内联执行，且可能持有 SDK clientMutex；它们只碰原子量/
@@ -288,7 +298,30 @@ recreateGiveUpClient():
 4. **`recreateGiveUpClient()` 的 drain 上限 2s**，超时返回
    `IN_FLIGHT_TIMEOUT`；旧实例保持原样，可重试。
 5. **看门狗线程 join 无独立超时**，依赖 `connect()` / `disconnect()` 的
-   墙钟兜底和 `delayFunction()` 的分段可唤醒。
+   墙钟兜底（`2×timeoutMs+500ms`）和 `delayFunction()` 的分段可唤醒。
+   `shutdown()` 文档里的 `max(timeoutMs, 2×watchdogIntervalMs)` 只约束
+   `m_taskCounter` drain，不约束 join。
+6. **健康探针的 `getState` 队列放大。** `isConnected(0)` 在 `m_sdkMutex` 内
+   调用 `UA_Client_getState()`，而 `getState` 还要拿 SDK `clientMutex`。
+   若服务调用正持有 `clientMutex` 等 server，1s 一次的探针会持
+   `m_sdkMutex` 排队，所有业务调用跟着排队。这是设计上的头阻塞，不是数据
+   竞争；要做的是在探针路径用 `try_lock` 跳过，或把 `getState` 移出
+   包装层锁，并用固定率 A/B 量化。
+7. **recreate 与析构的候选 Impl 泄漏（已修）。** 旧代码在
+   `startWatchdog()` 之后、`pImpl` 换入之前检查 `m_terminated`，命中时直接
+   `return`；候选 Impl 只被自己的 watchdog 以 `shared_from_this()` 持有，
+   线程和 `UA_Client` 都不会释放。现在用 `CandidateGuard` 在未收养时调用
+   `shutdown()`；T169 用 `clientNewCallCount == clientDeleteCallCount`
+   钉死。
+8. **配置在 `UA_Client_newWithConfig()` 之后被就地修改。** 官方文档说
+   “configuration should not be modified after it is passed to a client”
+   （v1.4.14 `client.html#client-configuration`）。`applyConfiguration()`
+   在 `connect()` 之前改 timeout/callback/logger，靠“单线程、未启动”保证
+   安全；它不构成悬垂指针，但违反文档契约。更干净的做法是在
+   `clientNew()` 之前把 `UA_ClientConfig` 填完；当前保留为已记录的技术债。
+9. **TSan 构建曾最终落到 `-O0`。** `ENABLE_TSAN` 先加 `-O1`，Top-level
+   CMake 的 Debug 分支又在末尾加 `-O0`，编译器取后者。已改为 TSan 时跳过
+   `-O0`；在此之前产出的 TSan 日志不能声称覆盖了 `-O1` 下的竞态。
 
 ## 8. 异常与 no-throw 契约
 
@@ -318,10 +351,12 @@ recreateGiveUpClient():
 | --- | --- |
 | 真实 server 读写 | T94/T110/T111/T116/T117/T166 |
 | 数字 NodeId | T163/T164/T165（Mock）、T166（真实 server） |
+| NodeId 缺省类型 | T170 |
 | 响应出口/畸形响应 | T97/T106/T124/T130 |
 | 重试/预算 | T21/T22/T38 |
 | 断线/自愈/GIVEN_UP | T19/T44/T100/T119/T128/T131/T132 |
-| shutdown/recreate 生命周期 | T16/T17/T18/T150/T153 |
+| shutdown/recreate 生命周期 | T16/T17/T18/T150/T153/T169 |
 | 异常安全/no-throw | T135/T136/T137/T167/T168 |
 | 三元组快照 | T159 |
+| Result 适配器契约 | T171/T172 |
 | 封装完整性 | T87/T101、`tests/compile/*` |

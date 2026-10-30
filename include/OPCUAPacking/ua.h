@@ -9,7 +9,7 @@
 
 #include <string>
 #include "Rust_error_deal/error_deal.h"
-#include "OPCUAPacking/WriteRequestAddres.h"
+#include "OPCUAPacking/ValueTypes.h"
 
 #include "OPCUAPacking/Types.h"
 
@@ -36,9 +36,12 @@ public:
   //   uint32_t     -> ns=<ns>;i=<id>  (UA_NODEIDTYPE_NUMERIC)
   // 不支持的标识类型（GUID / ByteString）无法通过该 variant 表达。
   struct NodeId {
-    uint16_t ns;
-    std::variant<std::string,uint32_t>id;
-    S7DataType dataType;
+    uint16_t ns{0};
+    std::variant<std::string,uint32_t> id;
+    // An omitted dataType must not silently become S7DataType::BOOL (the
+    // zero enumerator). UNKNOWN reaches the converter as TYPE_NOTSUPPORT:
+    // reads report it per item, writes reject the batch before the SDK call.
+    S7DataType dataType{S7DataType::UNKNOWN};
   };
   struct ReadValue {
     NodeId node;
@@ -93,7 +96,8 @@ public:
   // 重建失败时旧 pImpl 保持不变，上层可再次调用重试
   // recreate/shutdown 替换前等 m_inFlight == 0
   // 契约：进入 API 后要么被明确拒绝，要么完整执行完
-  // 代价：recreate/shutdown 会阻塞在长操作上（用有界等待 + 超时兜底
+  // 代价：in-flight drain 上限 2s；旧 Impl 的 shutdown/join 仍受
+  //       connect()/disconnect() 的墙钟兜底（2×timeoutMs+500ms）约束。
   Result<Unit, RichError> recreateGiveUpClient() noexcept;
   // 业务可以通过这里获取客户端的存活状态
   // 语义：
@@ -111,8 +115,9 @@ public:
   Result<Unit, RichError> disconnect() noexcept;
   // shutdown():
   //   - 幂等：可随时调用；已关闭状态下调用返回 success。
-  //   - 阻塞：本函数会等待任务计数器归零，超时上限为
-  //           max(timeoutMs, 2×watchdogIntervalMs)。
+  //   - 阻塞：先 join 看门狗线程（join 无独立超时，最坏受 connect/disconnect
+  //           的 2×timeoutMs+500ms 墙钟兜底约束），再等待任务计数器归零，
+  //           drain 上限为 max(timeoutMs, 2×watchdogIntervalMs)。
   // 超时后在途请求由各自出口守卫清理，shutdown 不强行释放。
   // 并发调用安全：两个线程同时调用，仅一个执行关闭，另一个立即返回 success（不等待关闭完成）。
   Result<Unit,RichError> shutdown() noexcept;

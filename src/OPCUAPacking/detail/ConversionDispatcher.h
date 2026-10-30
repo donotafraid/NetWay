@@ -1,7 +1,7 @@
 #pragma once
 
 #include "src/OPCUAPacking//detail/TypeTraits.h"
-#include "OPCUAPacking/WriteRequestAddres.h"
+#include "OPCUAPacking/ValueTypes.h"
 
 namespace opcua::readConversion {
 template <S7DataType S7type>

@@ -24,7 +24,7 @@ fi
 
 TSAN_ENV="halt_on_error=1:exitcode=66:report_signal_unsafe=1:second_deadlock_stack=1:suppressions=${TSAN_SUPP}"
 
-FILTER_CONCURRENCY='Client.T3_*:Client.TA2_*:Client.TC_*:ClientTest.T5_*:Client.T16_*:Client.T17_*:Client.T18_*:Client.T25_*:Client.T26_*:Client.T40_*:Client.T41_*:Client.T42_*:Client.T44_*:Client.T45_*:Client.T51_*:Client.T53_*:Client.T64_*:Client.T66_*:Client.T77_*:Client.T78_*:Client.T85_*:Client.T86_*:Client.T91_*:Client.T98_*:Client.T99_*:Client.T127_*:Client.T8B_*:Client.T8C2_*:ClientExtra.T108_*:ClientTest.T4_*:ClientTest.T9_*:ClientTest.TD_*:ClientTest.T112_*:ClientLifecycle.T150_*:ClientLifecycle.T152_*:ClientLifecycle.T153_*:ClientLifecycle.T154_*:ClientStateRace.*'
+FILTER_CONCURRENCY='Client.T3_*:Client.TA2_*:Client.TC_*:ClientTest.T5_*:Client.T16_*:Client.T17_*:Client.T18_*:Client.T25_*:Client.T26_*:Client.T40_*:Client.T41_*:Client.T42_*:Client.T44_*:Client.T45_*:Client.T51_*:Client.T53_*:Client.T64_*:Client.T66_*:Client.T77_*:Client.T78_*:Client.T85_*:Client.T86_*:Client.T91_*:Client.T98_*:Client.T99_*:Client.T127_*:Client.T8B_*:Client.T8C2_*:ClientExtra.T108_*:ClientTest.T4_*:ClientTest.T9_*:ClientTest.TD_*:ClientTest.T112_*:ClientLifecycle.T150_*:ClientLifecycle.T152_*:ClientLifecycle.T153_*:ClientLifecycle.T154_*:ClientLifecycle.T169_*:ClientStateRace.*'
 FILTER_API_LEASE='Client.T27_*'
 FILTER_DESTRUCTOR='Client.T8C1*'
 FILTER_CHECK_CONNECTED='Client.T31_*:Client.T32_*:Client.T33_*'

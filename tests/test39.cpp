@@ -57,7 +57,7 @@ ClientConfig localCfg() {
 } // namespace
 
 // ============================================================
-// T150 (red -> green): destructor must wait for the winning shutdown().
+// T150 (regression): destructor must wait for the winning shutdown().
 //
 // The second shutdown() is allowed to return immediately (existing T77
 // contract). What is not allowed is freeing the object while the first

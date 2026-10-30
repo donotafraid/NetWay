@@ -1,7 +1,7 @@
 // tests/test36.cpp
 //
-// Fourth review round. These cases target three defects that the existing
-// 128 cases cannot see, and every one of them is a red -> green regression
+// Regression cases target three defects that the existing
+// 128 cases cannot see, and every one of them is a regression
 // against the production fix shipped in the same patch:
 //
 //   T128  The give-up timer is only armed when the SDK reports a non-GOOD
@@ -82,7 +82,7 @@ ClientConfig localCfg() {
 } // namespace
 
 // ============================================================
-// T128 (red -> green): give-up timer must arm when session is lost even if the
+// T128 (regression): give-up timer must arm when session is lost even if the
 // SDK still reports connectStatus == GOOD.
 // ============================================================
 TEST(ClientBug, T128_GiveUpTimer_ArmsWithGoodStatusButLostSession) {
@@ -123,7 +123,7 @@ TEST(ClientBug, T128_GiveUpTimer_ArmsWithGoodStatusButLostSession) {
 }
 
 // ============================================================
-// T129 (red -> green): successful disconnect() must not leave RUNNING while
+// T129 (regression): successful disconnect() must not leave RUNNING while
 // the channel is CLOSED and isHealthy() already fails.
 // ============================================================
 TEST(ClientBug, T129_Disconnect_ChannelClosedSessionActivated_MustNotStayRunning) {
@@ -153,7 +153,7 @@ TEST(ClientBug, T129_Disconnect_ChannelClosedSessionActivated_MustNotStayRunning
 }
 
 // ============================================================
-// T130 (red -> green, ASan): malformed diagnosticInfos must not dereference
+// T130 (regression, ASan): malformed diagnosticInfos must not dereference
 // null; the response guards must release both arrays.
 // ============================================================
 TEST(ClientBug, T130_MalformedDiagnosticInfos_NoNullDerefNoLeak) {

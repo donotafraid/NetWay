@@ -27,6 +27,13 @@
   不支持数组下标范围读取。
 - **没有 MethodCall / Browse / Subscription。** 当前 API 只有批量读、批量写、
   连接/健康/生命周期管理。报警、历史数据、订阅需要另开 API 面。
+- **没有加密、证书或用户身份配置。** `RealSdk` 用
+  `UA_ClientConfig_setDefault()` 的默认值；在没有证书/身份配置时实际只会
+  选 None 安全策略 + 匿名端点。`ClientConfig` 没有 securityMode/证书/
+  用户名密码字段。它只适合受控网络或前置安全网关；不要把“SecureChannel”
+  误认为“已加密”。
+- **没有断线后的会话转移。** `noNewSession=true` 时会话丢失会让 SDK 关闭
+  通道；封装层的重试只能重新建会话，不能保留原 Session 的订阅/状态。
 - **无最大批量上限。** `batchRead` / `batchWrite` 对元素个数没有上限，只受
   内存与 `maxTotalWaitMs` 约束。`UA_Array_new` 在超大 size 时可能失败，实现
   返回 `INTERNAL_ERROR`。工业现场建议调用方分批，或在 `ClientConfig` 增加
@@ -54,6 +61,20 @@
   当前空闲轮询和健康探针用 `timeout=0`，只处理已到达事件；
   `disconnect()`/`connect()` 的恢复分支仍然允许阻塞，但只发生在看门狗判定
   不健康时。
+- **健康探针可能把服务调用堵在包装锁外。** `isConnected(0)` 在
+  `m_sdkMutex` 内调用 `UA_Client_getState()`；`getState` 还要拿 SDK
+  `clientMutex`。如果服务调用正持有 `clientMutex` 等 server，1s 一次的
+  探针会持 `m_sdkMutex` 排队，后续业务调用跟着排队。这是头阻塞，不是数据
+  竞争；修复方向是探针用 `try_lock` 跳过或把 `getState` 移出包装锁，并用
+  固定率 A/B 量化。
+- **配置在 `UA_Client_newWithConfig()` 之后被就地修改。**
+  `applyConfiguration()` 改 timeout/callback/logger，发生在 `connect()` 之前
+  的单线程窗口；没有悬垂指针，但违反官方“configuration should not be
+  modified after it is passed to a client”的约定。更干净的做法是在
+  `clientNew()` 之前填完 `UA_ClientConfig`。
+- **TSan 曾经最终落到 `-O0`。** `ENABLE_TSAN` 追加 `-O1` 后，Top-level CMake
+  的 Debug 分支又追加 `-O0`；当前已改为 TSan 跳过 `-O0`。旧 TSan 日志不能
+  声称覆盖 `-O1` 下的竞态。
 - **单次调用阻塞上界。** 预算只在每次尝试**开始前**检查：一次 `batchRead`
   最坏 ≈ `maxTotalWaitMs + 一次在途调用`，而单次在途调用还包含 SDK 内部的
   `connectSync`，可能接近 `2 × timeoutMs`。`maxTotalWaitMs` 是软预算，不会
@@ -82,6 +103,11 @@
   锁/条件变量失败会吞掉，不会终止进程。
 - **`recreateGiveUpClient()` 的 drain 上限 2s**，超时返回
   `IN_FLIGHT_TIMEOUT`；此时旧实例保持原样，可重试。
+- **recreate 与析构的候选 Impl 泄漏（已修）。** 旧代码在
+  `startWatchdog()` 之后、`pImpl` 换入之前命中 `m_terminated` 时直接返回；
+  候选 Impl 只被自己的 watchdog 以 `shared_from_this()` 持有，线程和
+  `UA_Client` 都不会释放。现在 `CandidateGuard` 在未收养时调用
+  `shutdown()`，T169 用 client 新建/删除计数钉死。
 
 ## 3. 测试与文档边界
 
@@ -95,23 +121,32 @@
 - **benchmark 不在 CI 门禁内。** `bench/` 与 `scripts/run_slo_bench.sh`
   覆盖 8 线程 `batchRead`/`batchWrite` 的 P50/P99、断线恢复耗时分布、
   长时间 RSS 曲线。这些是观测值，需要人工跑并归档原始结果，CI 不设阈值。
-- **单次延迟 p99 不可复现。** 同一份代码、同一台机器，单次 8 线程 p99 可以在
-  数毫秒到数十毫秒之间波动；`bench_latency --repeats N` 的中位数才是可引用值。
-  报告必须带 5 次原始文件、中位数、bootstrap CI 和构建类型。
-- **benchmark 证据必须带“二进制不旧于源码”的证明。**
-  `scripts/run_slo_bench.sh` 的 `env.txt` 记录 `bin vs src` 时间戳；发布前
-  必须确认 binary 晚于 `src/`、`include/` 的最后修改，否则结果不代表当前
-  HEAD。`bench-results/20261028_232459_slo` 就是反例：env 显示 binary
-  13:38、`ua.cpp` 23:11，且工作区有未提交改动；该归档只能作为历史对照，
-  不能作为当前源码的证据。
+- **单次延迟 p99 不可复现，且 p99 依赖吞吐。** 同一份代码、同一台机器，
+  单次 8 线程 p99 可以在数毫秒到数十毫秒之间波动；当前归档的 `8t` 25.740ms
+  是 7982.5 calls/s 的饱和点，固定 4268 calls/s 的 `8t_r80` 是 2.205ms。
+  引用 p99 必须同时给 calls/s、构建类型和中位数；不能把“上一会话
+  2.037ms”当稳定容量。
+- **1T p99.9 的 1ms 判据目前只是中位数通过。** 当前归档中位数 0.641ms，但
+  bootstrap 95% CI 上界 1.546ms，原始 5 次里 2 次超过 1ms。要把它当发布
+  门禁，需要 `RUNS=15` 或在更安静的主机重跑，并同时报告 CI 上界；不要把
+  “中位数 ≤1ms”写成“硬保证”。
+- **benchmark 证据必须带“二进制不旧于源码 + 构建类型 + 源码哈希”的证明。**
+  `scripts/run_slo_bench.sh` 的 `env.txt` 记录 `bin vs src`、`CMAKE_BUILD_TYPE`、
+  `-O*`、源码/二进制 SHA-256、cgroup 配额和 `git diff --stat`；发布前必须
+  确认 binary 晚于 `src/`、`include/` 的最后修改，且工作区干净或哈希可追溯。
+- **归档必须真实存在且已纳入 git。** 旧文档出现过的 `20261028_101222_slo`
+  和 `20261029_131811_slo` 都不在当前 checkout；前者从未存在，后者只保留在
+  历史证据目录。`scripts/check_bench_refs.py` 在 CI 中拒绝悬空的
+  `bench-results/<stamp>_slo` 路径和未 `git add` 的归档；数字没有可获取的
+  归档就不是证据。
 - **日志默认门槛是 WARNING，不是“全量 trace”。** SDK 以
   `UA_LOGLEVEL=100` 编译；如果 `customLog()` 不按 `UA_LogLevel` 过滤，
   一次 10 万次批量读会写出约 55MB stderr。现在
   `ClientConfig::logLevel` 默认 `LOG_WARNING`，`bench/` 用 `LOG_ERROR`；
   排查时显式调到 `LOG_INFO`/`LOG_DEBUG`，不要在产线默认打开。
 - **per-thread client 没有每线程绑核，也不需要把它当成代码优化项。**
-  `8t_ptc` 只用 `taskset -c 0-7` 允许迁移；在 valid 的 5 次中位数里
-  p99 已在亚毫秒级，严格判据通过。8 个 client + 8 个看门狗 + server 在
+  `8t_ptc` 只用 `taskset -c 0-7` 允许迁移；当前 5 次中位数
+  p99=0.706ms、22753.8 calls/s，严格判据通过。8 个 client + 8 个看门狗 + server 在
   8 vCPU 上无法一对一绑定；要降低线程成本，优先做“所有 client 共享一个
   watchdog”或固定 client 池，而不是绑核。绑核属于 benchmark 控制变量。
 - **RSS soak 必须让 server 跑在独立进程。** `bench_rss` 读的是自身
@@ -125,11 +160,10 @@
   归档时保留 CSV 原始数据，`check_rss.py --min-hours` 用于拒绝被截断的曲线。
   `run_bench.sh` 的 soak 段是前台进程，会话退出会被 `trap` 连同独立 server
   一起终止；长跑必须用 `setsid nohup ... < /dev/null &` 脱离终端。
-- **归档历史。** 旧文档引用的 `bench-results/20261028_101222_slo/` 在当前
-  checkout 中不存在，不能作为可审计证据；现存 `20261028_133818_slo/` 是
-  有效的 5 次中位数（源码 12:16、二进制 13:38），`20261028_232459_slo/`
-  的二进制早于 23:11 的源码改动，只能作历史对照。当前源码的复跑应以
-  `docs/benchmark.md` 的命令重新生成带时间戳的归档。
+- **当前 SLO 归档是 `bench-results/20261030_083718_slo/`。**
+  RelWithDebInfo/-O2，5×6 run，errors=0，源码哈希与当前 `ua.cpp` 一致；
+  `20261029_141357_slo` 是补丁前基线，只作跨会话方差对照。复跑必须用
+  `docs/benchmark.md` 的命令生成新时间戳归档，并先 commit 再跑。
 - **旧 `median.txt` 不含 errors。** 原始 run 文件里有 `errors=0`；只看旧
   中位数无法发现某一次 run 出错。新脚本在汇总前拒绝 `errors!=0`，并把
   `errors: 0` 写进 median；`check_bench_slo.py --require-errors` 会对缺少

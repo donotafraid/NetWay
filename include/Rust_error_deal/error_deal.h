@@ -1,11 +1,11 @@
-#pragma  once
-
-#include <variant>
-#include <string>
+#pragma once
 
 #include <cstdint>
+#include <functional>
 #include <string>
+#include <type_traits>
 #include <utility>
+#include <variant>
 
 class RichError {
 public:
@@ -184,10 +184,11 @@ public:
         // 必须显式调用，然后返回 Unit
         std::forward<callable>(transform_callable)(
             std::get<T>(result));    // 执行函数（副作用）
-        return Result<R, E>(Unit{}); // 返回包含 Unit 的 Result
+        return Result<R, E>::success(Unit{}); // 返回包含 Unit 的 Result
       } else {
-        return Result<R, E>(std::forward<callable>(transform_callable)(
-            std::get<T>(result))); // 正常执行变换，将结果包装进 Result
+        return Result<R, E>::success(
+            std::forward<callable>(transform_callable)(
+                std::get<T>(result))); // 正常执行变换，将结果包装进 Result
       }
     } else {
       return Result<R, E>(ErrorTag{},std::get<E>(result));
@@ -206,10 +207,11 @@ public:
         // 必须显式调用，然后返回 Unit
         std::forward<callable>(transform_callable)(
             std::get<T>(result));    // 执行函数（副作用）
-        return Result<R, E>(Unit{}); // 返回包含 Unit 的 Result
+        return Result<R, E>::success(Unit{}); // 返回包含 Unit 的 Result
       } else {
-        return Result<R, E>(std::forward<callable>(transform_callable)(
-            std::get<T>(result))); // 正常执行变换，将结果包装进 Result
+        return Result<R, E>::success(
+            std::forward<callable>(transform_callable)(
+                std::get<T>(result))); // 正常执行变换，将结果包装进 Result
       }
     } else {
       return Result<R, E>(ErrorTag{},std::get<E>(result));
@@ -228,11 +230,11 @@ public:
         // 必须显式调用，然后返回 Unit
         std::forward<callable>(transform_callable)(
             std::get<T>(std::move(result))); // 执行函数（副作用）
-        return Result<R, E>(Unit{});         // 返回包含 Unit 的 Result
+        return Result<R, E>::success(Unit{}); // 返回包含 Unit 的 Result
       } else {
-        return Result<R, E>(
-            std::forward<callable>(transform_callable)(std::get<T>(
-                std::move(result)))); // 正常执行变换，将结果包装进 Result
+        return Result<R, E>::success(
+            std::forward<callable>(transform_callable)(
+                std::get<T>(std::move(result)))); // 正常执行变换，将结果包装进 Result
       }
     } else {
       return Result<R, E>(ErrorTag{},std::get<E>(std::move(result)));
@@ -252,11 +254,11 @@ public:
         // 必须显式调用，然后返回 Unit
         std::forward<callable>(transform_callable)(
             std::get<T>(std::move(result))); // 执行函数（副作用）
-        return Result<R, E>(Unit{});         // 返回包含 Unit 的 Result
+        return Result<R, E>::success(Unit{}); // 返回包含 Unit 的 Result
       } else {
-        return Result<R, E>(
-            std::forward<callable>(transform_callable)(std::get<T>(
-                std::move(result)))); // 正常执行变换，将结果包装进 Result
+        return Result<R, E>::success(
+            std::forward<callable>(transform_callable)(
+                std::get<T>(std::move(result)))); // 正常执行变换，将结果包装进 Result
       }
     } else {
       return Result<R, E>(ErrorTag{},std::get<E>(std::move(result)));
@@ -496,90 +498,79 @@ public:
     }
   }
 
-  // 提取值并提供默认值
+  // 提取值并提供默认值（Rust 语义：成功返回 f(value)，失败返回 default）。
+  // 返回的是普通值，不是 Result；因此不能构造 Result 的 tag 对象。
   template <typename F, typename U>
   auto map_or(F &&f, U &&default_value) & {
     using ReturnType =
         std::common_type_t<std::invoke_result_t<F, T &>, std::decay_t<U>>;
-    if (is_success()) {
-      return ReturnType(SuccessTag{},std::forward<F>(f)(std::get<T>(result)));
-    } else {
-      return ReturnType(ErrorTag{},std::forward<U>(default_value));
-    }
+    if (is_success())
+      return ReturnType(std::forward<F>(f)(std::get<T>(result)));
+    return ReturnType(std::forward<U>(default_value));
   }
 
   template <typename F, typename U>
   auto map_or(F &&f, U &&default_value) const & {
     using ReturnType =
         std::common_type_t<std::invoke_result_t<F, const T &>, std::decay_t<U>>;
-    if (is_success()) {
-      return ReturnType(SuccessTag{},std::forward<F>(f)(std::get<T>(result)));
-    } else {
-      return ReturnType(ErrorTag{},std::forward<U>(default_value));
-    }
+    if (is_success())
+      return ReturnType(std::forward<F>(f)(std::get<T>(result)));
+    return ReturnType(std::forward<U>(default_value));
   }
 
   template <typename F, typename U>
   auto map_or(F &&f, U &&default_value) && {
     using ReturnType =
         std::common_type_t<std::invoke_result_t<F, T &&>, std::decay_t<U>>;
-    if (is_success()) {
-      return ReturnType(SuccessTag{},std::forward<F>(f)(std::get<T>(std::move(result))));
-    } else {
-      return ReturnType(ErrorTag{},std::forward<U>(default_value));
-    }
+    if (is_success())
+      return ReturnType(
+          std::forward<F>(f)(std::get<T>(std::move(result))));
+    return ReturnType(std::forward<U>(default_value));
   }
 
   template <typename F, typename U>
   auto map_or(F &&f, U &&default_value) const && {
     using ReturnType =
         std::common_type_t<std::invoke_result_t<F, const T &&>, std::decay_t<U>>;
-    if (is_success()) {
-      return ReturnType(SuccessTag{},std::forward<F>(f)(std::get<T>(std::move(result))));
-    } else {
-      return ReturnType(ErrorTag{},std::forward<U>(default_value));
-    }
+    if (is_success())
+      return ReturnType(
+          std::forward<F>(f)(std::get<T>(std::move(result))));
+    return ReturnType(std::forward<U>(default_value));
   }
 
-  // 提取值并提供函数计算的默认值                                   
+  // 提取值并提供函数计算的默认值（Rust 语义，返回普通值）。
   template <typename F, typename U> auto map_or_else(F &&f, U &&default_value) & {
     using ReturnType =
         std::common_type_t<std::invoke_result_t<F, T &>, std::invoke_result_t<U>>;
-    if (is_success()) {
-      return ReturnType(SuccessTag{},std::forward<F>(f)(std::get<T>(result)));
-    } else {
-      return ReturnType(ErrorTag{},std::forward<U>(default_value)());
-    }
+    if (is_success())
+      return ReturnType(std::forward<F>(f)(std::get<T>(result)));
+    return ReturnType(std::forward<U>(default_value)());
   }
 
   template <typename F, typename U> auto map_or_else(F &&f, U &&default_value) const & {
     using ReturnType =
         std::common_type_t<std::invoke_result_t<F,const T &>, std::invoke_result_t<U>>;
-    if (is_success()) {
-      return ReturnType(SuccessTag{},std::forward<F>(f)(std::get<T>(result)));
-    } else {
-      return ReturnType(ErrorTag{},std::forward<U>(default_value)());
-    }
+    if (is_success())
+      return ReturnType(std::forward<F>(f)(std::get<T>(result)));
+    return ReturnType(std::forward<U>(default_value)());
   }
 
   template <typename F, typename U> auto map_or_else(F &&f, U &&default_value)  && {
     using ReturnType =
         std::common_type_t<std::invoke_result_t<F, T &&>, std::invoke_result_t<U>>;
-    if (is_success()) {
-      return ReturnType(SuccessTag{},std::forward<F>(f)(std::get<T>(std::move(result))));
-    } else {
-      return ReturnType(ErrorTag{},std::forward<U>(default_value)());
-    }
+    if (is_success())
+      return ReturnType(
+          std::forward<F>(f)(std::get<T>(std::move(result))));
+    return ReturnType(std::forward<U>(default_value)());
   }
 
   template <typename F, typename U>
   auto map_or_else(F &&f, U &&default_value) const && {
     using ReturnType = std::common_type_t<std::invoke_result_t<F, const T &&>,
                                           std::invoke_result_t<U>>;
-    if (is_success()) {
-      return ReturnType(SuccessTag{},std::forward<F>(f)(std::get<T>(std::move(result))));
-    } else {
-      return ReturnType(ErrorTag{},std::forward<U>(default_value)());
-    }
+    if (is_success())
+      return ReturnType(
+          std::forward<F>(f)(std::get<T>(std::move(result))));
+    return ReturnType(std::forward<U>(default_value)());
   }
 };

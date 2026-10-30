@@ -1,6 +1,6 @@
 // tests/test42.cpp
 //
-// Review follow-ups for the 2026-10-28 snapshot:
+// Regression coverage for the 2026-10-28 snapshot:
 //   T160  ClientConfig::logLevel must reach the UA_Logger installed on the
 //         client, and must be validated. The SDK is built with
 //         UA_LOGLEVEL=100, so an unfiltered logger writes trace/debug frames

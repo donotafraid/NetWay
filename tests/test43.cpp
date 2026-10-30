@@ -1,6 +1,6 @@
 // tests/test43.cpp
 //
-// Review follow-ups for the 2026-10-29 snapshot:
+// Regression coverage for the 2026-10-29 snapshot:
 //   T163  Numeric NodeId (ns=1;i=20001) must reach the SDK as
 //         UA_NODEIDTYPE_NUMERIC for batchRead.
 //   T164  The same must hold for batchWrite. This failed before the fix:

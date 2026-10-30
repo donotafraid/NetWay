@@ -21,6 +21,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: 检查文档引用的 benchmark 归档是否存在
+        run: python3 scripts/check_bench_refs.py
+
       - name: 输出被测 SHA
         run: |
           echo "本次运行 SHA: ${{ github.sha }}"

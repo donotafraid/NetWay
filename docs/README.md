@@ -45,7 +45,10 @@ cfg.applyProfile(ClientConfig::PROFILE_LOCAL); // 本地现场预设，check() �
 
 auto created = OPC_UA_Client::create("opc.tcp://127.0.0.1:4840", cfg,
                                      /*useDefault=*/false);
-if (created.is_fail()) { /* created.get_error()->code()/what() */ }
+if (created.is_fail()) {
+  // created.get_error()->code()/what()
+  return 1;
+}
 std::unique_ptr<OPC_UA_Client> client = std::move(*created.get());
 
 // 读：STRING NodeId（ns=1;s=TestInt）
@@ -122,8 +125,24 @@ FATAL=600），默认 `LOG_WARNING`。SDK 以 `UA_LOGLEVEL=100` 编译；如果�
 
 ## 构建
 
+从干净 checkout 开始，推荐直接跑一键脚本（会补齐工具链、open62541 和
+Conan 依赖）：
+
 ```sh
-# 需要 open62541 v1.4.14 已构建，且 Conan 依赖已就绪
+./scripts/quickstart.sh
+```
+
+已有工具链与依赖树时，也可以复用它们（不联网）：
+
+```sh
+OPEN62541_ROOT=/path/to/open62541-v1.4.14 \
+CONAN_DIR=/path/to/conan_build \
+BUILD_DIR=build ./scripts/quickstart.sh
+```
+
+手工等价步骤：
+
+```sh
 conan install . -of conan_debug_build -s build_type=Debug --build=missing
 cmake -B build-asan -DENABLE_ASAN=ON -DCMAKE_BUILD_TYPE=Debug \
       -DCMAKE_C_COMPILER=clang-17 -DCMAKE_CXX_COMPILER=clang++-17 \
@@ -141,7 +160,7 @@ ctest --test-dir build-asan
 ./scripts/run_tsan.sh    # TSan + 并发过滤器完整性自查
 ```
 
-- `tests/`：43 个文件、168 个用例（167 pass + 1 真实设备 skip）。
+- `tests/`：44 个文件、172 个用例（171 pass + 1 真实设备 skip）。
   `MockSdk` 提供虚拟时钟、状态脚本、响应形状注入，以及空数组哨兵
   （`UA_EMPTY_ARRAY_SENTINEL`）、空 STRING（`length==0 && data!=NULL`）与
   `hasValue==true` 但 `variant.type==nullptr` 三种边界注入。
@@ -162,9 +181,15 @@ ctest --test-dir build-asan
 - `tests/test43.cpp`：数字 NodeId 的 Mock/真实 server 往返（T163~T166）、
   SDK 抛异常时 public API 不穿透 + CAS/recreate 回滚（T167）、
   `noexcept` 编译期契约（T168）。
+- `tests/test44.cpp`：recreate 与析构竞态不泄漏候选 Impl（T169）、
+  NodeId 缺省 dataType 不得静默为 BOOL（T170）、`Result::map` 四个重载
+  （T171）、`Result::map_or/map_or_else` 与 `map_err/and_then/or_else`
+  （T172）。
 - CI（`.github/workflows/sanitizers.yml`）：`build-open62541` 预热缓存后并行跑
   ASan+UBSan / ASan+LSan / TSan / `--gtest_repeat=50 --gtest_shuffle` 抖动四个
-  job（Ubuntu 22.04、Clang 17、libc++、Conan 2）。
+  job（Ubuntu 22.04、Clang 17、libc++、Conan 2）。TSan 构建在 Debug 下跳过
+  `-O0`，保留 `-O1`；`scripts/check_bench_refs.py` 检查文档引用的归档是否存在
+  且已纳入 git。`scripts/quickstart.sh` 是干净 checkout 的构建入口。
 
 ## 性能与耐久（benchmark）
 
@@ -200,11 +225,14 @@ LATENCY_REPEATS=5 ./scripts/run_bench.sh    # 延迟跑 5 次并输出中位数
 - `bench_rss`：长跑时按间隔输出 `elapsed_s,rss_kb,calls,errors` CSV。
 - `bench_server`：独立进程的 server，供 soak 使用。
 
-**当前源码的 5 次中位数与 PASS/FAIL 表以
-[benchmark 判据](benchmark.md) 为准。** 不要引用旧文档中已不存在的
-`20261028_101222_slo`；现存归档的证据强度按 `docs/benchmark.md` 的
-“证据清单”判定。一句话结论：共享实例容量下限 PASS、严格线性 FAIL；
-per-thread client 严格判据 PASS，不需要再做每线程绑核。
+**当前 5×6 SLO 归档是 `bench-results/20261030_083718_slo/`（源码哈希与
+当前 `ua.cpp` 一致），判据与 operating point 分析以
+[benchmark 判据](benchmark.md) 为准；`20261029_141357_slo` 只作上一轮基线。
+一句话结论：共享实例容量下限 PASS（8T p99 25.740ms、7982.5 calls/s），
+严格线性 FAIL；固定 4268 calls/s 下 p99 2.205ms 仍高于严格界；per-thread
+client 严格判据 PASS（0.706ms、22753.8 calls/s），不需要再做每线程绑核。
+1T p99.9 的 5 次中位数是 0.641ms，但 bootstrap 95% CI 上界 1.546ms，不能
+把“≤1ms”说成硬保证；细见 benchmark 文档。
 
 ## 目录
 
@@ -222,5 +250,6 @@ docs/                            线程模型、已知限制、benchmark 判据
 ## 已知限制
 
 见 [已知限制](limitations.md)：无 GUID/ByteString NodeId、无 MethodCall/
-Subscription、无最大批量上限、写不自动重试、GUID/ByteString 标识无法表达、
-高 RTT 链路需要显式调大 `timeoutMs` 等。
+Subscription、无最大批量上限、写不自动重试、高 RTT 链路需要显式调大
+`timeoutMs`；当前只配置 None 安全策略/匿名身份，没有加密、证书或用户名
+身份；`shutdown()` 的 join 无独立超时。

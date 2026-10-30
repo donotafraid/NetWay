@@ -16,14 +16,32 @@ VALUE 属性；写不自动重试。不支持的标识类型与能力边界见
 - [docs/limitations.md](docs/limitations.md)
 - [docs/benchmark.md](docs/benchmark.md)
 
+## 一条命令构建并测试（Ubuntu/Debian）
+
 ```sh
-ctest --test-dir build-asan          # 168 个 gtest（167 pass + 1 真实设备 skip）
-./scripts/run_asan.sh                # ASan + UBSan
-./scripts/run_lsan.sh                # ASan + LSan
-./scripts/run_tsan.sh                # TSan + 过滤器完整性
-./scripts/run_slo_bench.sh           # 5 次中位数 + bootstrap CI
+./scripts/quickstart.sh
 ```
 
-benchmark 证据的可信度取决于“二进制不旧于源码 + 原始 run 文件 + errors=0”；
-发布前先看 `bench-results/<stamp>_slo/env.txt` 的 `bin vs src` 段。当前源码
-的 5 次复跑命令与 PASS/FAIL 表见 [docs/benchmark.md](docs/benchmark.md)。
+脚本会安装缺失的 Clang 17/libc++/Conan，构建锁定的 open62541 v1.4.14，
+解析 Conan 依赖，然后执行 Debug 构建和 `ctest`。已有依赖树时可以完全离线复用：
+
+```sh
+OPEN62541_ROOT=/path/to/open62541-v1.4.14 \
+CONAN_DIR=/path/to/conan_build \
+BUILD_DIR=build ./scripts/quickstart.sh
+```
+
+```sh
+ctest --test-dir build              # 174 个 ctest = 172 gtest（171 pass + 1 skip）+ 2 个编译/链接探针
+./scripts/run_asan.sh               # ASan + UBSan
+./scripts/run_lsan.sh               # ASan + LSan
+./scripts/run_tsan.sh               # TSan + 过滤器完整性
+./scripts/run_slo_bench.sh          # 5 次中位数 + bootstrap CI
+```
+
+benchmark 证据的可信度取决于“归档已提交 + 二进制不旧于源码 + 构建类型/源码
+哈希 + 原始 run + errors=0”；发布前先看 `bench-results/<stamp>_slo/env.txt`
+的 `bin vs src`、`--- build ---`、`--- source hash ---` 段。当前归档是
+`bench-results/20261030_083718_slo/`（与当前 `ua.cpp` 的 SHA-256 一致）；
+`20261029_141357_slo` 只作上一轮基线。PASS/FAIL 与 operating point 分析见
+[docs/benchmark.md](docs/benchmark.md)。

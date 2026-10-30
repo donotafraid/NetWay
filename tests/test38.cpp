@@ -2,7 +2,7 @@
 //
 // 异常安全补充用例。
 //
-// 现有 159 个用例只让 ISdk 返回错误码，没有任何用例让 SDK 接缝**抛异常**。
+// 现有用例大多只让 ISdk 返回错误码，缺少让 SDK 接缝**抛异常**的覆盖。
 // 公共 batchRead/batchWrite/create/createWithSdk 声明为返回 Result（不抛），
 // 因此异常必须由 RAII 守卫清干净：
 //   · UA_ReadRequest / UA_WriteRequest 不能泄漏；

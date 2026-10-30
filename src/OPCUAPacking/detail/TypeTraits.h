@@ -5,7 +5,7 @@
 #include "Rust_error_deal/error_deal.h"
 #include <open62541/client_highlevel.h>
 #include "OPCUAPacking/S7TypeStruct.h"
-#include "OPCUAPacking/WriteRequestAddres.h"
+#include "OPCUAPacking/ValueTypes.h"
 
 namespace TypeTraits{
 // NodeId 的字符串表示不允许内嵌 '\0'：UA_NODEID_STRING_ALLOC 内部走
@@ -59,17 +59,17 @@ struct UATypeTraits; // 特化提供 UA_DataType* 和转换函数
 
 // 按 UA_TYPES 索引顺序排列
 template<> struct UATypeTraits<bool> : UATypeTraitsBase<bool, UA_TYPES_BOOLEAN> {};        // 0
-template<> struct UATypeTraits<int8_t> : UATypeTraitsBase<int8_t, UA_TYPES_SBYTE> {};      // 1 ← 新增
+template<> struct UATypeTraits<int8_t> : UATypeTraitsBase<int8_t, UA_TYPES_SBYTE> {};      // 1
 template<> struct UATypeTraits<uint8_t> : UATypeTraitsBase<uint8_t, UA_TYPES_BYTE> {};      // 2
 template<> struct UATypeTraits<int16_t> : UATypeTraitsBase<int16_t, UA_TYPES_INT16> {};     // 3
 template<> struct UATypeTraits<uint16_t> : UATypeTraitsBase<uint16_t, UA_TYPES_UINT16> {};  // 4
 template<> struct UATypeTraits<int32_t> : UATypeTraitsBase<int32_t, UA_TYPES_INT32> {};     // 5
 template<> struct UATypeTraits<uint32_t> : UATypeTraitsBase<uint32_t, UA_TYPES_UINT32> {};  // 6
-template<> struct UATypeTraits<int64_t> : UATypeTraitsBase<int64_t, UA_TYPES_INT64> {};     // 7 ← 新增
-template<> struct UATypeTraits<uint64_t> : UATypeTraitsBase<uint64_t, UA_TYPES_UINT64> {};  // 8 ← 新增
+template<> struct UATypeTraits<int64_t> : UATypeTraitsBase<int64_t, UA_TYPES_INT64> {};     // 7
+template<> struct UATypeTraits<uint64_t> : UATypeTraitsBase<uint64_t, UA_TYPES_UINT64> {};  // 8
 template<> struct UATypeTraits<float> : UATypeTraitsBase<float, UA_TYPES_FLOAT> {};         // 9
-template<> struct UATypeTraits<double> : UATypeTraitsBase<double, UA_TYPES_DOUBLE> {};      // 10 ← 新增
-template<> struct UATypeTraits<std::string> : UATypeTraitsBase<std::string, UA_TYPES_STRING> {};      // 10 ← 新增
+template<> struct UATypeTraits<double> : UATypeTraitsBase<double, UA_TYPES_DOUBLE> {};      // 11
+template<> struct UATypeTraits<std::string> : UATypeTraitsBase<std::string, UA_TYPES_STRING> {};      // 11
 
 template <S7DataType> struct S7TypeToUATraits;
 
@@ -206,7 +206,7 @@ template <>
 struct UATypeTraits<bool> : UATypeTraitsBase<bool, UA_TYPES_BOOLEAN> {}; // 0
 template <>
 struct UATypeTraits<int8_t> : UATypeTraitsBase<int8_t, UA_TYPES_SBYTE> {
-}; // 1 ← 新增
+}; // 1
 template <>
 struct UATypeTraits<uint8_t> : UATypeTraitsBase<uint8_t, UA_TYPES_BYTE> {}; // 2
 template <>
@@ -223,18 +223,18 @@ struct UATypeTraits<uint32_t> : UATypeTraitsBase<uint32_t, UA_TYPES_UINT32> {
 }; // 6
 template <>
 struct UATypeTraits<int64_t> : UATypeTraitsBase<int64_t, UA_TYPES_INT64> {
-}; // 7 ← 新增
+}; // 7
 template <>
 struct UATypeTraits<uint64_t> : UATypeTraitsBase<uint64_t, UA_TYPES_UINT64> {
-}; // 8 ← 新增
+}; // 8
 template <>
 struct UATypeTraits<float> : UATypeTraitsBase<float, UA_TYPES_FLOAT> {}; // 9
 template <>
 struct UATypeTraits<double> : UATypeTraitsBase<double, UA_TYPES_DOUBLE> {
-}; // 10 ← 新增
+}; // 10
 template <>
 struct UATypeTraits<std::string> : UATypeTraitsBase<std::string, UA_TYPES_STRING> {
-}; // 11 ← 新增
+}; // 11
 
 template <S7DataType> struct S7TypeToUATraits;
 

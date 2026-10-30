@@ -10,7 +10,16 @@ build-lsan/
 build-tsan/
 build-bench/
 conan_bench_build/
-bench-results/
+# Keep the SLO archives cited by docs/benchmark.md auditable; other run
+# output stays local.
+bench-results/*
+!bench-results/20261029_141357_slo/
+!bench-results/20261029_141357_slo/**
+!bench-results/20261030_083718_slo/
+!bench-results/20261030_083718_slo/**
+conan_build/
+build/
+third_party/
 sanitizer-logs/
 code_review/
 test-simultaneously/

@@ -1719,48 +1719,63 @@ uint32_t OPC_UA_Client::Impl::calculateBackoff(uint32_t retry) const {
 }
 
 void OPC_UA_Client::Impl::runWatchdog() {
-  auto last_decision_time =  m_sdk->nowMs();
+  auto last_decision_time = m_sdk->nowMs();
   uint32_t retryCounter = 0;
   auto pImplQuote = shared_from_this();
-  while (!getEffectiveStopSignal()) {
-    UA_ClientPtr client;
-    {
-      std::lock_guard lock(m_lock);
-      if (!m_impl)
-        return;
-      client = m_impl;
-    }
-    if (client) {
-      // Idle housekeeping must not hold m_sdkMutex across UA_Client_run_iterate's
-      // full timeout: open62541 releases its own client lock inside el->run(),
-      // but the wrapper lock would still block every service call for up to
-      // `timeout` ms. timeout==0 processes already-received events only; the
-      // 100 ms cadence below bounds how long events wait.
-      callRunIterate(client, 0);
-    }
 
-    if (m_lifeState.load(std::memory_order_acquire) == LifeState::RECOVERING) {
+  while (!getEffectiveStopSignal()) {
+    // 单次迭代的异常在这里被捕获，不逃出线程函数，不触发 std::terminate。
+    // 也不在 catch 里直接 return：让循环条件决定是否继续/退出。
+    try {
+      UA_ClientPtr client;
+      {
+        std::lock_guard lock(m_lock);
+        if (!m_impl)
+          return;
+        client = m_impl;
+      }
+      if (client) {
+        // Idle housekeeping must not hold m_sdkMutex across UA_Client_run_iterate's
+        // full timeout: open62541 releases its own client lock inside el->run(),
+        // but the wrapper lock would still block every service call for up to
+        // `timeout` ms. timeout==0 processes already-received events only; the
+        // 100 ms cadence below bounds how long events wait.
+        callRunIterate(client, 0);
+      }
+
+      if (m_lifeState.load(std::memory_order_acquire) == LifeState::RECOVERING) {
+        delayFunction(++retryCounter);
+      }
+
+      auto now = m_sdk->nowMs();
+      if (now - last_decision_time >= (m_config.watchdogIntervalMs)) {
+        doWatchdogDecision(pImplQuote); // ← 一次裁决，一次尝试
+        last_decision_time = now;
+
+        const auto lifeAfter = m_lifeState.load(std::memory_order_acquire);
+        if (lifeAfter == LifeState::RECOVERING) {
+          ++retryCounter;
+        } else {
+          retryCounter = 0;
+        }
+      }
+
+      {
+        std::unique_lock lock(m_watchDogMx);
+        m_watchdogCv.wait_for(lock, std::chrono::milliseconds(100),
+                              [this] { return getEffectiveStopSignal(); });
+      }
+    } catch (const std::bad_alloc &e) {
+      // 内存分配失败：watchdog 无法继续可靠工作，转 GIVEN_UP 让上层重建。
+      TurnToGiveup();
+      break;
+    } catch (const std::system_error &e) {
+      // 线程/系统级失败：同样不可恢复，退出线程。
+      TurnToGiveup();
+      break;
+    } catch (...) {
       delayFunction(++retryCounter);
     }
-
-     auto now =  m_sdk->nowMs();
-     if (now - last_decision_time >= (m_config.watchdogIntervalMs)) {
-       doWatchdogDecision(pImplQuote); // ← 一次裁决，一次尝试
-       last_decision_time = now;
-
-       const auto lifeAfter = m_lifeState.load(std::memory_order_acquire);
-       if (lifeAfter == LifeState::RECOVERING) {
-         ++retryCounter;
-       } else {
-         retryCounter = 0;
-       }
-     }
-
-     {
-       std::unique_lock lock(m_watchDogMx);
-       m_watchdogCv.wait_for(lock, std::chrono::milliseconds(100),
-                             [this] { return getEffectiveStopSignal(); });
-     }
   }
 }
 
@@ -2499,6 +2514,20 @@ Result<Unit, RichError> OPC_UA_Client::recreateGiveUpClient() noexcept {
         std::make_shared<Impl>(effectiveConfig, m_recreateSync->m_endpointUrl,
                                std::move(raw), callbackContext_, sdkPtr);
 
+    // Any early return below (configure/connect/startWatchdog/terminated)
+    // leaves newImpl unowned. Its watchdog holds shared_from_this(), so
+    // destroying the local shared_ptr alone does not stop the thread or
+    // release the UA_Client. Tear the candidate down unless it was adopted
+    // into pImpl.
+    struct CandidateGuard {
+      std::shared_ptr<Impl> impl;
+      bool adopted = false;
+      ~CandidateGuard() {
+        if (!adopted && impl)
+          impl->shutdown();
+      }
+    } candidate{newImpl};
+
     // 4. 完整初始化新 Impl（配置 → 连接 → 启动看门狗）
     //    这些操作可能耗时，但此时不持锁，不会阻塞其他线程
     auto configResult = newImpl->configureClient(true);
@@ -2536,6 +2565,7 @@ Result<Unit, RichError> OPC_UA_Client::recreateGiveUpClient() noexcept {
       }
       old = std::move(pImpl);
       pImpl = newImpl;
+      candidate.adopted = true;
     }
 
     if (old) {
@@ -2978,7 +3008,7 @@ Result<Unit,RichError> OPC_UA_Client::Impl::setGiveUpSignal() {
 }
 
 //  辅助函数:返回实时时间
-int64_t OPC_UA_Client::Impl::nowMsImpl() { return m_sdk->nowMs(); } // 新增
+int64_t OPC_UA_Client::Impl::nowMsImpl() { return m_sdk->nowMs(); }
 
 //  辅助函数:外部sdk锁内调用UA_Client_run_iterate
 void OPC_UA_Client::Impl::callRunIterate(UA_ClientPtr &client,

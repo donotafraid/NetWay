@@ -71,12 +71,19 @@ def require(sections: dict[str, dict[str, float]], label: str,
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("input", type=Path)
-    ap.add_argument("--profile", choices=("strict", "capacity"), default="strict")
+    ap.add_argument("--profile", choices=("strict", "capacity", "fixed-rate"),
+                    default="strict",
+                    help="fixed-rate gates p99 only; throughput is intentionally "
+                         "capped by --rate, so the 1T throughput comparison "
+                         "does not apply")
     ap.add_argument("--rtt-ms", type=float, default=1.0,
                     help="RTT allowance for the strict 8T p99 bound")
     ap.add_argument("--target", default="8t",
                     help="section to gate (default 8t; use 8t_ptc for the "
                          "per-thread-client baseline)")
+    ap.add_argument("--expected-rate", type=float, default=0.0,
+                    help="fixed-rate profile: expected calls/s; fail when the "
+                         "archived calls_s differs by more than 5%%")
     ap.add_argument("--require-errors", action="store_true",
                     help="require an errors field in every gated section and "
                          "fail unless it is 0; run_slo_bench.sh writes this "
@@ -119,6 +126,16 @@ def main() -> int:
             f"{p99_8t:.3f}ms <= {bound:.3f}ms", p99_8t <= bound)
         add(f"{target} calls/s >= 1T calls/s",
             f"{calls_8t:.1f} >= {calls_1t:.1f}", calls_8t >= calls_1t)
+    elif args.profile == "fixed-rate":
+        bound = 3.0 * p99_1t + args.rtt_ms
+        add(f"{target} p99 <= 3*1T p99 + RTT",
+            f"{p99_8t:.3f}ms <= {bound:.3f}ms", p99_8t <= bound)
+        if args.expected_rate > 0:
+            low = args.expected_rate * 0.95
+            high = args.expected_rate * 1.05
+            add(f"{target} offered rate within 5%",
+                f"{calls_8t:.1f} in [{low:.1f}, {high:.1f}]",
+                low <= calls_8t <= high)
     else:
         add(f"{target} p99 <= 50ms", f"{p99_8t:.3f}ms", p99_8t <= 50.0)
         add(f"{target} calls/s >= 3000", f"{calls_8t:.1f}", calls_8t >= 3000.0)

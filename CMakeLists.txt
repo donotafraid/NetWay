@@ -11,21 +11,30 @@ if(EXISTS ${CONAN_DIR})
     list(APPEND CMAKE_PREFIX_PATH "${CONAN_DIR}")
 endif()
 
-# open62541 source root. Supply it with -DOPEN62541_ROOT=... (scripts/run_bench.sh
-# and the sanitizer workflow both do). The previous hard-coded absolute default
-# made a fresh checkout fail on every machine but the original developer's.
+# open62541 source root. Supply it with -DOPEN62541_ROOT=... (scripts/quickstart.sh,
+# scripts/run_bench.sh and the sanitizer workflow all do). A fresh checkout finds
+# the tree created by scripts/quickstart.sh under third_party/; the old developer
+# path is kept only as a fallback for an existing workspace.
 set(OPEN62541_ROOT "" CACHE PATH "open62541 source root (e.g. /opt/open62541-v1.4.14)")
 if(NOT OPEN62541_ROOT)
-  if(EXISTS "/root/open62541-v1.4.14-noSanitizer")
+  if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/open62541-v1.4.14/build/bin/libopen62541.so")
+    set(OPEN62541_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/third_party/open62541-v1.4.14")
+  elseif(EXISTS "/root/open62541-v1.4.14-noSanitizer")
     set(OPEN62541_ROOT "/root/open62541-v1.4.14-noSanitizer")
   else()
     message(FATAL_ERROR
-      "OPEN62541_ROOT is not set. Reconfigure with "
+      "OPEN62541_ROOT is not set and no third_party/open62541-v1.4.14 build "
+      "exists. Run ./scripts/quickstart.sh, or reconfigure with "
       "-DOPEN62541_ROOT=/path/to/open62541-v1.4.14")
   endif()
 endif()
 set(OPEN62541_BUILD "${OPEN62541_ROOT}/build"
     CACHE PATH "open62541 build dir")
+if(NOT EXISTS "${OPEN62541_BUILD}/bin/libopen62541.so")
+  message(FATAL_ERROR
+    "No libopen62541.so under ${OPEN62541_BUILD}/bin. Build open62541 v1.4.14 "
+    "first: bash scripts/build_open62541.sh ${OPEN62541_ROOT}")
+endif()
 
 # ============================================================
 # Sanitizer 选项（ASan+UBSan / LSan / TSan 互斥）
@@ -189,8 +198,10 @@ target_link_libraries(third_party_deps INTERFACE
     GTest::gtest_main
 )
 
-# Debug 下强制 -O0（GCC / Clang 通用）
-if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+# Debug 下强制 -O0（GCC / Clang 通用）。
+# TSan 例外：ENABLE_TSAN 已经显式追加 -O1；这里再追加 -O0 会让编译器
+# 最终采用 -O0，和上面的“TSan 推荐 -O1”以及 CI 的意图相反。
+if(CMAKE_BUILD_TYPE STREQUAL "Debug" AND NOT ENABLE_TSAN)
     add_compile_options(-O0)
 endif()
 

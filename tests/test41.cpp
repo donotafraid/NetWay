@@ -1,6 +1,6 @@
 // tests/test41.cpp
 //
-// Additional coverage for three API-contract gaps found in review:
+// Additional coverage for three API-contract gaps:
 //   T155  default_value_for() must be available to every consumer of the
 //         public S7TypeStruct.h and must cover every scalar PLC type. The
 //         previous definition lived in the PLC library (undefined reference
