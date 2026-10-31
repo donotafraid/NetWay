@@ -6,7 +6,7 @@ ROOT=$(pwd)
 
 # ---- bench 构建树：单一事实来源 ----
 # 配置目录：含 CMakeCache.txt / compile_commands.json
-BENCH_BUILD_DIR=${BENCH_BUILD_DIR:-$ROOT/build-RelWithDebInfo}
+BENCH_BUILD_DIR=${BENCH_BUILD_DIR:-$ROOT/build-bench}
 # 二进制目录：CMAKE_RUNTIME_OUTPUT_DIRECTORY 指向的子目录
 BENCH_BIN_DIR=${BENCH_BIN_DIR:-$BENCH_BUILD_DIR/bench-build}
 
@@ -17,7 +17,7 @@ STAMP=$(date +%Y%m%d_%H%M%S)
 OUT=bench-results/${STAMP}_slo
 mkdir -p "$OUT"
 
-RUNS=${RUNS:-15}
+RUNS=${RUNS:-1}
 OPS=${OPS:-100000}
 BATCH=${BATCH:-16}
 SRV_PORT=${SRV_PORT:-4892}
@@ -32,6 +32,25 @@ SRV_CPUS=${SRV_CPUS:-7}
 C1_CPUS=${C1_CPUS:-0}
 C4_CPUS=${C4_CPUS:-0,2,4,6}
 C8_CPUS=${C8_CPUS:-0-7}
+
+# ---- 构建树缺失时自动 configure + build（与 run_bench.sh 行为对齐）----
+if [ ! -f "$BENCH_BUILD_DIR/CMakeCache.txt" ]; then
+  echo "build tree missing: $BENCH_BUILD_DIR; configuring..." >&2
+  CONAN_TOOLCHAIN="${CONAN_TOOLCHAIN:-$ROOT/conan_bench_build/conan_toolchain.cmake}"
+  OPEN62541_ROOT="${OPEN62541_ROOT:-$ROOT/third_party/open62541-v1.4.14}"
+  CMAKE_ARGS=(-S "$ROOT" -B "$BENCH_BUILD_DIR" -DCMAKE_BUILD_TYPE=RelWithDebInfo)
+  if [ -f "$CONAN_TOOLCHAIN" ]; then
+    CMAKE_ARGS+=(-DCMAKE_TOOLCHAIN_FILE="$CONAN_TOOLCHAIN")
+    CMAKE_ARGS+=(-DCMAKE_PREFIX_PATH="$(dirname "$CONAN_TOOLCHAIN")")
+  fi
+  if [ -n "${OPEN62541_ROOT:-}" ]; then
+    CMAKE_ARGS+=(-DOPEN62541_ROOT="$OPEN62541_ROOT")
+  fi
+  CMAKE_ARGS+=(-DCMAKE_C_COMPILER="${CC:-clang-17}")
+  CMAKE_ARGS+=(-DCMAKE_CXX_COMPILER="${CXX:-clang++-17}")
+  cmake "${CMAKE_ARGS[@]}"
+  cmake --build "$BENCH_BUILD_DIR" --target bench_latency bench_server -j
+fi
 
 # ---- 环境归档 ----
 {

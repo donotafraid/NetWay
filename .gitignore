@@ -11,7 +11,7 @@ build-tsan/
 build-bench/
 conan_bench_build/
 # Keep every build tree, IDE file and compile database out of the repository.
-# `build-RelWithDebInfo/` was accidentally committed once; the pattern below
+# `build-bench/` was accidentally committed once; the pattern below
 # prevents a repeat. CMake commands in README/docs use `build` / `build-*`.
 build*/
 compile_commands.json
